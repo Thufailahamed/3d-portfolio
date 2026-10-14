@@ -153,7 +153,7 @@ export default function BoardView() {
   const leave = (href: string, tint: string, image: string) => (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey) return;
     e.preventDefault();
-    if (reduced()) return router.push(href);
+    if (reduced()) return router.push(href, { scroll: href !== "/about" });
     router.prefetch(href);
     // back to the globe: the arrival in reverse. The camera pushes back in onto the map as
     // the room dims, then the About page rolls that map back up into the globe
@@ -171,7 +171,9 @@ export default function BoardView() {
         onComplete: () => {
           sceneState.unfold.t = 1;
           document.documentElement.dataset.unfold = "";
-          router.push(href);
+          // no scroll-to-top: the journey lands itself on the globe, and the router's own
+          // reset would otherwise drop the visitor back at the forest
+          router.push(href, { scroll: false });
         },
       });
       return;
