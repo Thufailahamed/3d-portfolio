@@ -55,9 +55,11 @@ void main(){
   float smoke = smoothstep(-0.3, 0.9, n);
   // thin-film style rainbow on the smoke ridges
   vec3 irid = 0.5 + 0.5 * cos(6.2831 * (n * 1.4 + vec3(0.0, 0.33, 0.67)));
-  vec3 col = mix(vec3(0.02), uTint * 0.35, smoke);
-  col += irid * pow(smoke, 3.0) * 0.12;
-  col += vec3(0.8) * pow(smoke, 6.0) * 0.18;
-  col *= 1.0 - 0.45 * length(uv);
+  // mostly dark: the smoke only gathers toward the top, so the copy reads on near-black
+  float fall = smoothstep(-0.7, 0.6, uv.y);
+  vec3 col = mix(vec3(0.014), uTint * 0.09, smoke * fall);
+  col += irid * pow(smoke, 3.0) * 0.03 * fall;
+  col += vec3(0.8) * pow(smoke, 6.0) * 0.06 * fall;
+  col *= 1.0 - 0.5 * length(uv);
   gl_FragColor = vec4(col, uOpacity);
 }`;

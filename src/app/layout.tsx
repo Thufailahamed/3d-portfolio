@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter_Tight, JetBrains_Mono } from "next/font/google";
 import Cursor from "@/components/Cursor";
+import Curtain from "@/components/Curtain";
 import ExperienceGate from "@/components/ExperienceGate";
 import Header from "@/components/Header";
 import SmoothScroll from "@/components/SmoothScroll";
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main id="main" className="relative z-10">
           {children}
         </main>
+        <Curtain />
         <Toast />
         <Cursor />
         <div aria-hidden className="grain pointer-events-none fixed inset-0 z-[60]" />

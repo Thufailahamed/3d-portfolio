@@ -8,13 +8,14 @@ import { chapterScroll } from "@/lib/chapters";
 import { gsap, Observer, ScrollTrigger, useGSAP } from "@/lib/gsap";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
+import { curtain } from "../Curtain";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /**
  * Carousel controls layered over the prism: drag / swipe / arrow keys / buttons
- * switch the project; "Discover" dives the camera into the prism and opens the page.
+ * switch the project; clicking the crystal (or "Discover") dives the camera into it and opens the page.
  */
 export default function ProjectsHUD() {
   const root = useRef<HTMLDivElement>(null);
@@ -23,6 +24,9 @@ export default function ProjectsHUD() {
   const router = useRouter();
   const index = useApp((s) => s.activeProject);
   const [active, setActive] = useState(false);
+  const entering = useRef(false);
+  const enterRef = useRef(() => {});
+  const isMobile = useApp((s) => s.isMobile);
   const project = projects[index];
 
   const go = (dir: number) => {
@@ -35,6 +39,7 @@ export default function ProjectsHUD() {
   useGSAP(() => {
     // undo the fade from a previous "Discover" dive if this page was restored from cache
     gsap.set(root.current, { clearProps: "opacity,visibility" });
+    entering.current = false;
     const st = ScrollTrigger.create({
       ...chapterScroll("projects", 0.16, 0.88),
       onToggle: (self) => setActive(self.isActive),
@@ -60,13 +65,23 @@ export default function ProjectsHUD() {
   useEffect(() => {
     if (!active || !dragLayer.current) return;
     let startX = 0;
+    let startY = 0;
+    const layer = dragLayer.current;
     const obs = Observer.create({
-      target: dragLayer.current,
+      target: layer,
       type: "pointer,touch",
       dragMinimum: 6,
       lockAxis: true,
       onPress: (self) => {
         startX = self.x ?? 0;
+        startY = self.y ?? 0;
+      },
+      // a tap (no drag) on the crystal enters the project
+      onClick: (self) => {
+        const x = self.x ?? 0;
+        const y = self.y ?? 0;
+        if (Math.hypot(x - startX, y - startY) > 8) return;
+        if (sceneState.crystal.pick((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1)) enterRef.current();
       },
       onDrag: (self) => {
         sceneState.drag = gsap.utils.clamp(-1, 1, ((self.x ?? 0) - startX) / (innerWidth * 0.4));
@@ -82,23 +97,48 @@ export default function ProjectsHUD() {
       if (e.key === "ArrowLeft") go(-1);
     };
     addEventListener("keydown", onKey);
+
+    // the cursor says "Enter" over the crystal
+    let over = false;
+    const watch = () => {
+      if (sceneState.crystal.hover !== over) {
+        over = sceneState.crystal.hover;
+        layer.dataset.cursor = over ? "enter" : "drag";
+        layer.style.cursor = over ? "pointer" : "";
+        layer.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+      }
+    };
+    gsap.ticker.add(watch);
     return () => {
       obs.kill();
       removeEventListener("keydown", onKey);
+      gsap.ticker.remove(watch);
     };
   }, [active]);
 
-  const discover = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (e.metaKey || e.ctrlKey || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    e.preventDefault();
+  // camera pushes into the crystal, its light opens over the screen, the page swaps underneath
+  const enter = () => {
+    if (entering.current) return;
     const href = `/projects/${project.slug}`;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return router.push(href);
+    entering.current = true;
+    router.prefetch(href);
     gsap.to(root.current, { autoAlpha: 0, duration: 0.4 });
-    gsap.to(sceneState, {
-      dive: 1,
-      duration: 1.1,
-      ease: "power3.in",
-      onComplete: () => router.push(href),
+    gsap.to(sceneState, { dive: 1, duration: 1.3, ease: "power3.in" });
+    gsap.delayedCall(0.75, () => {
+      curtain
+        .cover({ x: sceneState.crystal.x, y: sceneState.crystal.y, tint: project.tint, image: project.cover })
+        .then(() => router.push(href));
     });
+  };
+  useEffect(() => {
+    enterRef.current = enter;
+  });
+
+  const discover = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    enter();
   };
 
   return (
@@ -119,7 +159,7 @@ export default function ProjectsHUD() {
       />
 
       <p className="label pointer-events-none absolute left-1/2 top-[62svh] -translate-x-1/2 md:top-[70svh]">
-        ← Drag to switch project →
+        ← Drag to switch · {isMobile ? "tap" : "click"} the crystal to enter →
       </p>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-6 px-gutter pb-8 md:pb-10">

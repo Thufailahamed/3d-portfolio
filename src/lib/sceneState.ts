@@ -11,6 +11,11 @@ export const sceneState = {
   intro: 0,
   /** 0 → 1 while the camera dives into the prism before opening a project */
   dive: 0,
+  /**
+   * The projects crystal: its centre on screen (px), whether the pointer is over it,
+   * and a picker for taps (normalised device coords → hit?). Set by the scene.
+   */
+  crystal: { x: 0, y: 0, hover: false, pick: (() => false) as (x: number, y: number) => boolean },
   /** live horizontal drag on the projects carousel, roughly -1..1 */
   drag: 0,
   /** About sequence clock in reference seconds, softly damped behind the scroll (see aboutTimeline) */

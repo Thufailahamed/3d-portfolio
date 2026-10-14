@@ -158,3 +158,354 @@ html.has-cursor * {
     opacity: 0;
   }
 }
+
+/* dive curtain: the project's light, brightest where the crystal was */
+.curtain-light {
+  background:
+    radial-gradient(ellipse at 50% 45%, color-mix(in oklab, var(--tint, #fff) 55%, transparent), transparent 70%),
+    linear-gradient(to bottom, transparent 40%, var(--color-bg));
+  mix-blend-mode: screen;
+}
+
+/* ── project case study (/projects/[slug]) ─────────────────── */
+.pd {
+  --tint: var(--color-accent);
+  --line: color-mix(in oklab, var(--color-fg) 10%, transparent);
+  --tint-soft: color-mix(in oklab, var(--tint) 40%, transparent);
+}
+.pd ::selection {
+  background: var(--tint);
+}
+.pd-tint {
+  color: var(--tint) !important;
+}
+.pd-progress {
+  background: linear-gradient(to right, transparent, var(--tint));
+  box-shadow: 0 0 12px var(--tint);
+}
+.pd-hero-wash {
+  background:
+    radial-gradient(ellipse 70% 55% at 70% 20%, color-mix(in oklab, var(--tint) 18%, transparent), transparent 70%),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-bg) 30%, transparent), var(--color-bg) 92%);
+}
+.pd-tag {
+  font-family: var(--font-mono);
+  font-size: clamp(11px, 1vw, 14px);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--tint);
+}
+.pd-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: color 0.3s;
+}
+.pd-back:hover {
+  color: var(--tint) !important;
+}
+.pd-back-arrow {
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pd-back:hover .pd-back-arrow {
+  transform: translateX(-4px);
+}
+.pd-cta {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  align-self: flex-start;
+  border-radius: 999px;
+  background: var(--color-fg);
+  color: var(--color-bg);
+  padding: 16px 28px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition: background 0.4s, box-shadow 0.4s, transform 0.2s;
+}
+.pd-cta:hover {
+  background: var(--tint);
+  box-shadow: 0 0 40px color-mix(in oklab, var(--tint) 55%, transparent);
+}
+.pd-cta:active {
+  transform: scale(0.97);
+}
+.pd-cta-arrow {
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.pd-cta:hover .pd-cta-arrow {
+  transform: translate(3px, -3px);
+}
+.pd-glass {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(160deg, color-mix(in oklab, var(--color-fg) 5%, transparent), color-mix(in oklab, var(--color-fg) 1%, transparent));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: border-color 0.5s, background 0.5s;
+}
+.pd-glass:hover {
+  border-color: var(--tint-soft);
+}
+.pd-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tint);
+  box-shadow: 0 0 10px var(--tint);
+  animation: pd-pulse 2s ease-in-out infinite;
+}
+@keyframes pd-pulse {
+  50% { opacity: 0.35; }
+}
+.pd-h2 {
+  font-size: clamp(2rem, 4.2vw, 4rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.pd-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-fg) 85%, transparent);
+}
+
+/* the live product in a browser window */
+.pd-frame {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #0e0e10;
+  transform-origin: 50% 0%;
+  box-shadow:
+    0 60px 160px -40px color-mix(in oklab, var(--tint) 35%, transparent),
+    0 30px 80px -20px rgb(0 0 0 / 0.8);
+}
+.pd-frame-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 11px 16px;
+}
+.pd-frame-bar i {
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-fg) 18%, transparent);
+}
+.pd-frame-url {
+  overflow: hidden;
+  max-width: 60%;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-fg) 6%, transparent);
+  padding: 4px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: color-mix(in oklab, var(--color-fg) 55%, transparent);
+}
+
+.pd-metric {
+  padding: 24px;
+}
+@media (min-width: 768px) {
+  .pd-metric { padding: 28px; }
+}
+.pd-metric-pip {
+  width: 7px;
+  height: 7px;
+  rotate: 45deg;
+  border: 1px solid var(--tint);
+}
+.pd-metric-bar {
+  height: 1px;
+  background: linear-gradient(to right, var(--tint), transparent 70%);
+  opacity: 0.7;
+}
+.pd-statement {
+  padding: 32px;
+}
+
+.pd-card {
+  padding: 26px;
+}
+@media (min-width: 768px) {
+  .pd-card { padding: 30px; }
+}
+.pd-move {
+  margin-top: 28px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  transition: border-color 0.5s, background 0.5s;
+}
+.group:hover .pd-move {
+  border-color: var(--tint-soft);
+  background: color-mix(in oklab, var(--tint) 5%, transparent);
+}
+.pd-move-dot {
+  width: 5px;
+  height: 5px;
+  rotate: 45deg;
+  background: var(--tint);
+}
+
+/* architecture: a stack of layers on a live wire */
+.pd-stack {
+  position: relative;
+}
+.pd-stack-line {
+  position: absolute;
+  left: 3px;
+  top: 30px;
+  bottom: 30px;
+  width: 1px;
+  overflow: hidden;
+  background: var(--line);
+}
+.pd-stack-pulse {
+  position: absolute;
+  inset-inline: 0;
+  height: 30%;
+  background: linear-gradient(to bottom, transparent, var(--tint), transparent);
+  animation: pd-flow 2.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+@keyframes pd-flow {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(400%); }
+}
+.pd-layer {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 24px 0 24px 28px;
+  transition: background 0.4s;
+}
+.pd-layer:hover {
+  background: linear-gradient(to right, color-mix(in oklab, var(--tint) 7%, transparent), transparent 70%);
+}
+.pd-layer-node {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  translate: 0 -50%;
+  rotate: 45deg;
+  border: 1px solid var(--tint);
+  background: var(--color-bg);
+}
+.pd-layer:hover .pd-layer-node {
+  background: var(--tint);
+  box-shadow: 0 0 12px var(--tint);
+}
+@media (max-width: 767px) {
+  .pd-layer > .label:first-of-type { display: none; }
+}
+
+/* timeline spine */
+.pd-spine-track {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 16px;
+  width: 1px;
+  background: var(--line);
+}
+.pd-spine-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: top;
+  background: linear-gradient(to bottom, var(--tint), color-mix(in oklab, var(--tint) 30%, transparent));
+  box-shadow: 0 0 12px var(--tint);
+}
+.pd-spine-node {
+  position: absolute;
+  left: 16px;
+  top: 30px;
+  width: 11px;
+  height: 11px;
+  translate: -50% 0;
+  border-radius: 999px;
+  background: var(--tint);
+  box-shadow: 0 0 16px var(--tint);
+  z-index: 1;
+}
+@media (min-width: 768px) {
+  .pd-spine-track,
+  .pd-spine-node {
+    left: 50%;
+  }
+  .pd-spine-track {
+    translate: -50% 0;
+  }
+}
+
+.pd-outcome {
+  padding: 32px;
+  background:
+    radial-gradient(ellipse at 0% 0%, color-mix(in oklab, var(--tint) 12%, transparent), transparent 60%),
+    linear-gradient(160deg, color-mix(in oklab, var(--color-fg) 5%, transparent), transparent);
+}
+@media (min-width: 768px) {
+  .pd-outcome { padding: 56px; }
+}
+.pd-check {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--tint-soft);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--tint);
+}
+
+.pd-onward {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  transition: border-color 0.5s;
+}
+.pd-onward:hover {
+  border-color: color-mix(in oklab, var(--tint) 50%, transparent);
+}
+.pd-onward-img {
+  opacity: 0.35;
+  transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.6s;
+}
+.pd-onward:hover .pd-onward-img {
+  transform: scale(1.05);
+  opacity: 0.55;
+}
+.pd-onward-wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, var(--color-bg) 15%, color-mix(in oklab, var(--color-bg) 40%, transparent));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-dot, .pd-stack-pulse { animation: none; }
+}

@@ -118,7 +118,12 @@ function Dune({ count }: { count: number }) {
 }
 
 type Mats = ReturnType<typeof crystalMaterials>;
-type Motion = { spin: number; pulse: number; scale: number };
+type Motion = { spin: number; pulse: number; scale: number; hover: number };
+
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const centre = new THREE.Vector3();
+const canHover = typeof matchMedia !== "undefined" && matchMedia("(hover: hover) and (pointer: fine)").matches;
 
 /** Every layer (and the floor reflection) shares the same uniform objects. */
 function crystalMaterials(shared: Record<string, THREE.IUniform>, reflect: boolean) {
@@ -167,7 +172,10 @@ function crystalMaterials(shared: Record<string, THREE.IUniform>, reflect: boole
 /** A layered "phantom" crystal: smoky outer glass, two nested growth shells and a glowing core. */
 function Crystal() {
   const textures = useTexture(COVERS);
-  const motion = useRef<Motion>({ spin: 0, pulse: 0, scale: 1 });
+  const motion = useRef<Motion>({ spin: 0, pulse: 0, scale: 1, hover: 0 });
+  const pickMesh = useRef<THREE.Mesh>(null);
+  const camera = useThree((s) => s.camera);
+  const size = useThree((s) => s.size);
   const { nodes } = useGLTF(CRYSTALS_URL) as unknown as { nodes: Record<string, THREE.Mesh> };
 
   useMemo(() => {
@@ -252,15 +260,43 @@ function Crystal() {
     });
   }, [shared, textures]);
 
-  useFrame(({ clock }) => {
+  // clicking the crystal enters the project: the HUD asks the scene whether a tap hit it
+  useEffect(() => {
+    const hit = (x: number, y: number) => {
+      const mesh = pickMesh.current;
+      if (!mesh || !mesh.parent?.parent?.visible) return false;
+      ndc.set(x, y);
+      raycaster.setFromCamera(ndc, camera);
+      return raycaster.intersectObject(mesh, false).length > 0;
+    };
+    sceneState.crystal.pick = hit;
+    return () => {
+      sceneState.crystal.pick = () => false;
+      sceneState.crystal.hover = false;
+    };
+  }, [camera]);
+
+  useFrame(({ clock }, dt) => {
     shared.uTime.value = clock.elapsedTime;
-    shared.uPulse.value = motion.current.pulse;
+    const m = motion.current;
+    const live = !!pickMesh.current?.parent?.parent?.visible && sceneState.dive === 0;
+    const over = live && canHover && sceneState.crystal.pick(sceneState.mouse.x, sceneState.mouse.y);
+    sceneState.crystal.hover = over;
+    m.hover += ((over ? 1 : 0) - m.hover) * Math.min(1, dt * 6);
+    // entering: the core flares as the camera pushes in
+    shared.uPulse.value = m.pulse + m.hover * 0.5 + sceneState.dive * 2.5;
+    // the crystal's centre on screen: the dive's curtain opens from here
+    if (pickMesh.current) {
+      pickMesh.current.getWorldPosition(centre).project(camera);
+      sceneState.crystal.x = (centre.x * 0.5 + 0.5) * size.width;
+      sceneState.crystal.y = (-centre.y * 0.5 + 0.5) * size.height;
+    }
   });
 
   return (
     <>
       {/* draw order: reflection → water surface → floor glow → crystal */}
-      <CrystalBody geometry={geometry} mats={mats.main} motion={motion} order={10} />
+      <CrystalBody geometry={geometry} mats={mats.main} motion={motion} order={10} pickRef={pickMesh} />
       <group scale={[1, -1, 1]}>
         <CrystalBody geometry={geometry} mats={mats.mirror} motion={motion} order={2} />
       </group>
@@ -278,11 +314,13 @@ function CrystalBody({
   mats,
   motion,
   order,
+  pickRef,
 }: {
   geometry: THREE.BufferGeometry;
   mats: Mats;
   motion: React.RefObject<Motion>;
   order: number;
+  pickRef?: React.RefObject<THREE.Mesh | null>;
 }) {
   const spin = useRef<THREE.Group>(null);
   const heart = useRef<THREE.Mesh>(null);
@@ -291,12 +329,12 @@ function CrystalBody({
     const g = spin.current;
     if (!g) return;
     const time = clock.elapsedTime;
-    const { spin: turn, pulse, scale } = motion.current;
+    const { spin: turn, pulse, scale, hover } = motion.current;
     // idle float + slow turn; a switch adds a facet's worth of rotation
     g.rotation.y = time * 0.18 + turn + sceneState.mouse.x * 0.25 + sceneState.drag * 1.4;
     g.rotation.x = sceneState.mouse.y * 0.06;
     g.position.y = PRISM_Y + Math.sin(time * 0.9) * 0.06;
-    g.scale.setScalar((1 + pulse * 0.06) * scale);
+    g.scale.setScalar((1 + pulse * 0.06 + hover * 0.05) * scale);
     // the innermost phantom drifts against the outer shell
     if (heart.current) heart.current.rotation.y = -time * 0.32 - turn * 0.6;
   });
@@ -310,7 +348,7 @@ function CrystalBody({
       {/* phantoms: the same cut, smaller, grown up from the base */}
       <mesh ref={heart} geometry={geometry} material={mats.heart} scale={0.46} position-y={-0.3} renderOrder={order + 2} frustumCulled={false} />
       <mesh geometry={geometry} material={mats.phantom} scale={0.74} position-y={-0.18} renderOrder={order + 3} frustumCulled={false} />
-      <mesh geometry={geometry} material={mats.front} renderOrder={order + 4} frustumCulled={false} />
+      <mesh ref={pickRef} geometry={geometry} material={mats.front} renderOrder={order + 4} frustumCulled={false} />
     </group>
   );
 }
