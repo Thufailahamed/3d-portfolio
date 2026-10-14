@@ -41,12 +41,35 @@ export default function Contact() {
     m.uniforms.uExposure.value *= 1.35; // moonlight bakes darker than the intro's sun
     return m;
   }, []);
-  const scenery = useMemo(() => SCENERY.map((n) => nodes[n]).filter((m): m is THREE.Mesh => !!m?.isMesh), [nodes]);
+  const scenery = useMemo(
+    () => SCENERY.filter((n) => n !== "Arch").map((n) => nodes[n]).filter((m): m is THREE.Mesh => !!m?.isMesh),
+    [nodes],
+  );
+  // the arch answers the cursor like the intro's: runes wake in the stone and the joints brighten
+  const archMat = useMemo(() => {
+    const m = makeBakedMaterial(THREE.DoubleSide);
+    m.uniforms.uExposure.value = baked.uniforms.uExposure.value;
+    return m;
+  }, [baked]);
+  const arch = useRef<THREE.Mesh>(null);
+  const camera = useThree((s) => s.camera);
+  const hover = useMemo(
+    () => ({
+      ray: new THREE.Raycaster(),
+      ndc: new THREE.Vector2(),
+      target: new THREE.Vector3(),
+      hit: false,
+      canHover: typeof matchMedia !== "undefined" && matchMedia("(hover: hover) and (pointer: fine)").matches,
+    }),
+    [],
+  );
 
   const light = useMemo(() => {
     const on = { value: 0 };
     const flare = { value: 0 };
     const time = { value: 0 };
+    const hoverPos = archMat.uniforms.uHoverPos;
+    const hoverAmt = archMat.uniforms.uHoverAmt;
     const make = (frag: string, color: THREE.Color, intensity: number, extra: Record<string, THREE.IUniform> = {}) =>
       new THREE.ShaderMaterial({
         vertexShader: glowVert,
@@ -59,6 +82,8 @@ export default function Contact() {
           uFlare: flare,
           uTime: time,
           uTop: { value: TOP },
+          uHoverPos: hoverPos,
+          uHoverAmt: hoverAmt,
           ...extra,
         },
       });
@@ -75,7 +100,7 @@ export default function Contact() {
         side: THREE.DoubleSide,
       }),
     };
-  }, []);
+  }, [archMat]);
 
   // one cool shaft through the canopy, landing on the crown
   const shaft = useMemo(() => {
@@ -162,6 +187,7 @@ export default function Contact() {
   useEffect(
     () => () => {
       baked.dispose();
+      archMat.dispose();
       light.seams.dispose();
       light.lines.dispose();
       light.veil.dispose();
@@ -172,7 +198,7 @@ export default function Contact() {
       motes.g.dispose();
       motes.m.dispose();
     },
-    [baked, light, shaft, dust, motes],
+    [baked, archMat, light, shaft, dust, motes],
   );
 
   // copying the email answers with a surge through the arch
@@ -196,6 +222,23 @@ export default function Contact() {
     light.on.value = THREE.MathUtils.smoothstep(t, 0.18, 0.62);
     light.time.value += dt;
     baked.uniforms.uTime.value += dt;
+    archMat.uniforms.uTime.value += dt;
+
+    // cursor over the arch: same feel as the intro (snap in, ease out, trail the pointer)
+    hover.hit = false;
+    if (hover.canHover && arch.current && light.on.value > 0.5) {
+      hover.ndc.set(sceneState.mouse.x, sceneState.mouse.y);
+      hover.ray.setFromCamera(hover.ndc, camera);
+      const hit = hover.ray.intersectObject(arch.current, false)[0];
+      if (hit) {
+        hover.hit = true;
+        hover.target.copy(hit.point);
+      }
+    }
+    const u = archMat.uniforms;
+    if (u.uHoverAmt.value < 0.01 && hover.hit) u.uHoverPos.value.copy(hover.target);
+    u.uHoverPos.value.lerp(hover.target, Math.min(1, dt * 10));
+    u.uHoverAmt.value += ((hover.hit ? 1 : 0) - u.uHoverAmt.value) * Math.min(1, dt * (hover.hit ? 5 : 2.5));
     shaft.material.uniforms.uTime.value += dt;
     dust.m.uniforms.uTime.value += dt;
     motes.m.uniforms.uTime.value += dt;
@@ -203,15 +246,18 @@ export default function Contact() {
 
   // the contact camera sits close: the clearing is shown at a smaller scale. Desktop sets the
   // arch to the right of the copy; phones keep it centred above it
-  const x = isMobile ? 0 : 2.0;
-  const scale = isMobile ? 0.5 : 0.62;
+  const x = isMobile ? 0 : 1.7;
+  const scale = isMobile ? 0.6 : 0.8;
 
   return (
     <group ref={group} position={CONTACT_ORIGIN} visible={false}>
-      <group position={[x, 0.8, 0]} scale={scale}>
+      <group position={[x, isMobile ? 0.1 : 0.45, 0]} scale={scale}>
         {scenery.map((m) => (
           <mesh key={m.name} geometry={m.geometry} material={baked} position={m.position} quaternion={m.quaternion} />
         ))}
+        {nodes.Arch && (
+          <mesh ref={arch} geometry={nodes.Arch.geometry} material={archMat} position={nodes.Arch.position} quaternion={nodes.Arch.quaternion} />
+        )}
         {nodes.Seams && <mesh geometry={nodes.Seams.geometry} material={light.seams} />}
         {nodes.Lines && <mesh geometry={nodes.Lines.geometry} material={light.lines} />}
         {nodes.Veil && <mesh geometry={nodes.Veil.geometry} material={light.veil} renderOrder={6} />}
