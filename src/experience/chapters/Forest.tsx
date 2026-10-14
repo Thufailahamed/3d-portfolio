@@ -261,7 +261,7 @@ function butterflyGeometry() {
 type Flight = { c: THREE.Vector3; amp: THREE.Vector3; f: THREE.Vector3; ph: THREE.Vector3 };
 
 /** Small blue butterflies flitting around the arch: wandering paths, flapping, now and then gliding. */
-function Butterflies({ count }: { count: number }) {
+export function Butterflies({ count }: { count: number }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
 
   const { geometry, material, flights } = useMemo(() => {

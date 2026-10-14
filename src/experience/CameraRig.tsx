@@ -67,10 +67,18 @@ export default function CameraRig() {
       isMobile
         ? { p: atP("about", 0.99), pos: A(0.3, 3.2, 8.2), look: A(0, 1.6, 0) }
         : { p: atP("about", 0.99), pos: A(0.4, 3.3, 5.8), look: A(-0.95, 2.85, 0) },
-      // dip to black → contact: the shard in its beam
+      // dip to black → contact: the clearing, years later. Phones look down on it, so the
+      // arch sits in the top half above the copy
       { p: atP("contact", 0.012), pos: C(0, 4, 12 * az), look: C(0, 1.8, 0) },
-      { p: atP("contact", 0.6), pos: C(-0.5, 2, 7.5 * az), look: C(0, 1.9, 0) },
-      { p: 1, pos: C(0.2, 1.9, 6.6 * az), look: C(0, 2.1, 0) },
+      ...(isMobile
+        ? [
+            { p: atP("contact", 0.6), pos: C(-0.3, 2.9, 9.6), look: C(0, -0.2, 0) },
+            { p: 1, pos: C(0, 2.6, 9), look: C(0, -0.6, 0) },
+          ]
+        : [
+            { p: atP("contact", 0.6), pos: C(-0.5, 2, 7.5), look: C(0, 1.9, 0) },
+            { p: 1, pos: C(0.2, 1.9, 6.6), look: C(0, 2.1, 0) },
+          ]),
     ];
   }, [isMobile]);
 

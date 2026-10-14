@@ -5,135 +5,109 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { chapter, CONTACT_ORIGIN, local } from "@/lib/chapters";
+import { gsap } from "@/lib/gsap";
 import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { dustFrag, dustVert, raysFrag, raysVert } from "../shaders/atmosphere";
 import { fireflyFrag, fireflyVert } from "../shaders/forest";
-import { coreFrag, coreVert } from "../shaders/signal";
+import { glowFrag, glowVert, veilFrag } from "../shaders/finale";
+import { Butterflies, makeBakedMaterial, RUNE_BLUE } from "./Forest";
 
-export const SHRINE_URL = "/models/shrine.glb";
+export const FINALE_URL = "/models/finale.glb";
 
-// Canopy beam direction and target landing on the altar
-const SUN = new THREE.Vector3(-0.45, -1, 0.15).normalize();
-const ALTAR_TARGET: [number, number, number] = [0.5, 2.0, -0.2];
+/** Moonlight: the intro's sun direction, through the same gap in the canopy. */
+const MOON = new THREE.Vector3(-0.5, -1, -0.1).normalize();
+const SCENERY = ["Ground", "Dais", "Rocks", "Trunks", "Ferns", "Arch"];
+/** Height of the arch's crown (the light climbs to here) and half the doorway's width. */
+const TOP = 3.9;
+const DOOR = 0.98;
 
 /**
- * Chapter 6 — The Deep Jungle Shrine ("LET'S BUILD SOMETHING THAT GLOWS")
- * An ancient runic sanctuary nestled deep in a tropical jungle clearing:
- *   - Overgrown stone dais with ancient arch, climbing ivy, banyan trees, and roots
- *   - Fractured obsidian monolith with radiant cyan core and orbital rune rings
- *   - Volumetric canopy god rays, floating dust motes, and electric fireflies
- *   - Responsive cursor parallax and pulsating energy glow
+ * Chapter 6 — the intro's clearing, years later. The same arch and trees, recut and lit
+ * from within: blue light in the joints, a fine line around the doorway, a polished dais.
+ * Lighting is baked in Blender (art/build_finale.py → export_finale.py); the light itself
+ * is drawn live so it can switch on as you arrive and answer when the email is copied.
  */
 export default function Contact() {
   const isMobile = useApp((s) => s.isMobile);
   const dpr = useThree((s) => s.viewport.dpr);
   const c = chapter("contact");
   const group = useRef<THREE.Group>(null);
+  const { nodes } = useGLTF(FINALE_URL, "/draco/") as unknown as { nodes: Record<string, THREE.Mesh> };
 
-  // ------------------------------------------------------------------ 3D GLTF scene
-  const { nodes } = useGLTF(SHRINE_URL, "/draco/") as unknown as {
-    nodes: Record<string, THREE.Mesh>;
-  };
+  const baked = useMemo(() => {
+    const m = makeBakedMaterial(THREE.DoubleSide);
+    m.uniforms.uExposure.value *= 1.35; // moonlight bakes darker than the intro's sun
+    return m;
+  }, []);
+  const scenery = useMemo(() => SCENERY.map((n) => nodes[n]).filter((m): m is THREE.Mesh => !!m?.isMesh), [nodes]);
 
-  // Centerpiece animation refs
-  const shrineCore = useRef<THREE.Group>(null);
-  const ring0 = useRef<THREE.Mesh>(null);
-  const ring1 = useRef<THREE.Mesh>(null);
-
-  // ------------------------------------------------------------------ custom materials
-  const customMats = useMemo(() => {
-    const core = new THREE.ShaderMaterial({
-      vertexShader: coreVert,
-      fragmentShader: coreFrag,
-      toneMapped: false,
-      uniforms: {
-        uAccent: { value: new THREE.Color("#00a2ff") },
-        uRim: { value: 1.8 },
-        uFill: { value: 0.12 },
-      },
-    });
-
-    const ringCyan = new THREE.MeshStandardMaterial({
-      color: "#051828",
-      emissive: new THREE.Color("#0095ff"),
-      emissiveIntensity: 2.5,
-      roughness: 0.2,
-      metalness: 0.8,
-      toneMapped: false,
-    });
-
-    const ringGold = new THREE.MeshStandardMaterial({
-      color: "#241805",
-      emissive: new THREE.Color("#ffb833"),
-      emissiveIntensity: 2.2,
-      roughness: 0.25,
-      metalness: 0.8,
-      toneMapped: false,
-    });
-
-    const obsidian = new THREE.MeshStandardMaterial({
-      color: "#090b0e",
-      roughness: 0.22,
-      metalness: 0.9,
-      envMapIntensity: 1.5,
-    });
-
-    return { core, ringCyan, ringGold, obsidian };
+  const light = useMemo(() => {
+    const on = { value: 0 };
+    const flare = { value: 0 };
+    const time = { value: 0 };
+    const make = (frag: string, color: THREE.Color, intensity: number, extra: Record<string, THREE.IUniform> = {}) =>
+      new THREE.ShaderMaterial({
+        vertexShader: glowVert,
+        fragmentShader: frag,
+        toneMapped: false,
+        uniforms: {
+          uColor: { value: color },
+          uIntensity: { value: intensity },
+          uOn: on,
+          uFlare: flare,
+          uTime: time,
+          uTop: { value: TOP },
+          ...extra,
+        },
+      });
+    return {
+      on,
+      flare,
+      time,
+      seams: make(glowFrag, RUNE_BLUE.clone(), 1.6),
+      lines: make(glowFrag, new THREE.Color("#8cc4ff"), 2.4),
+      veil: Object.assign(make(veilFrag, RUNE_BLUE.clone(), 1, { uHalf: { value: DOOR } }), {
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+    };
   }, []);
 
-  // ------------------------------------------------------------------ double-sided foliage
-  useEffect(() => {
-    for (const [name, mesh] of Object.entries(nodes)) {
-      if (!mesh?.isMesh) continue;
-      if (name.includes("Ivy") || name.includes("Leaves") || name.includes("Ferns")) {
-        const mat = mesh.material;
-        if (Array.isArray(mat)) {
-          mat.forEach((m) => (m.side = THREE.DoubleSide));
-        } else if (mat) {
-          mat.side = THREE.DoubleSide;
-        }
-      }
-    }
-  }, [nodes]);
-
-  // ------------------------------------------------------------------ god rays
+  // one cool shaft through the canopy, landing on the crown
   const shaft = useMemo(() => {
-    const geometry = new THREE.CylinderGeometry(0.3, 1.4, 20, 36, 1, true);
+    const geometry = new THREE.CylinderGeometry(0.22, 1, 18, 40, 1, true);
     const material = new THREE.ShaderMaterial({
       vertexShader: raysVert,
       fragmentShader: raysFrag,
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      uniforms: {
-        uTime: { value: 0 },
-        uIntensity: { value: 0.22 },
-        uColor: { value: new THREE.Color("#cde4ff") },
-      },
+      uniforms: { uTime: { value: 0 }, uIntensity: { value: 0.16 }, uColor: { value: new THREE.Color("#b8cdff") } },
     });
-
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), SUN.clone().negate());
-    const pos = new THREE.Vector3(...ALTAR_TARGET).addScaledVector(SUN, -(10 - 2.5));
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), MOON.clone().negate());
+    const pos = new THREE.Vector3(0.2, 3.2, 0).addScaledVector(MOON, -6.5);
     return { geometry, material, q, pos };
   }, []);
 
-  // ------------------------------------------------------------------ dust motes
-  const motes = useMemo(() => {
-    const count = isMobile ? 450 : 1200;
-    const random = rng(888);
-    const pos = new Float32Array(count * 3);
-    const rndVals = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      pos[i * 3] = (random() - 0.5) * 14 + ALTAR_TARGET[0];
-      pos[i * 3 + 1] = random() * 8.5;
-      pos[i * 3 + 2] = (random() - 0.5) * 12 + ALTAR_TARGET[2];
-      rndVals[i] = random();
+  // fine dust in the moonlight, and a few blue motes drifting low where the fireflies were
+  const dust = useMemo(() => {
+    const n = isMobile ? 350 : 900;
+    const random = rng(2077);
+    const pos = new Float32Array(n * 3);
+    const rnd = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = (random() - 0.5) * 11;
+      pos[i * 3 + 1] = random() * 7;
+      pos[i * 3 + 2] = (random() - 0.5) * 9;
+      rnd[i] = random();
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    g.setAttribute("aRand", new THREE.BufferAttribute(rndVals, 1));
+    g.setAttribute("aRand", new THREE.BufferAttribute(rnd, 1));
     const m = new THREE.ShaderMaterial({
       vertexShader: dustVert,
       fragmentShader: dustFrag,
@@ -142,32 +116,31 @@ export default function Contact() {
       blending: THREE.AdditiveBlending,
       uniforms: {
         uTime: { value: 0 },
-        uSize: { value: 22 },
+        uSize: { value: 16 },
         uPixelRatio: { value: dpr },
-        uBeam: { value: new THREE.Vector3(...ALTAR_TARGET) },
-        uColor: { value: new THREE.Color("#bce0ff") },
+        uBeam: { value: new THREE.Vector3() },
+        uColor: { value: new THREE.Color("#c8d8ff") },
       },
     });
     return { g, m };
   }, [isMobile, dpr]);
 
-  // ------------------------------------------------------------------ electric fireflies
-  const fireflies = useMemo(() => {
-    const count = isMobile ? 32 : 65;
-    const random = rng(999);
-    const pos = new Float32Array(count * 3);
-    const rndVals = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      let x = (random() - 0.5) * 12 + ALTAR_TARGET[0];
-      if (Math.abs(x - ALTAR_TARGET[0]) < 1.0) x += Math.sign(x - ALTAR_TARGET[0] || 1) * 1.5;
+  const motes = useMemo(() => {
+    const n = isMobile ? 16 : 30;
+    const random = rng(31);
+    const pos = new Float32Array(n * 3);
+    const rnd = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let x = (random() - 0.5) * 10;
+      if (Math.abs(x) < 1.6) x += Math.sign(x || 1) * 1.8;
       pos[i * 3] = x;
-      pos[i * 3 + 1] = 0.3 + Math.pow(random(), 1.4) * 3.6;
-      pos[i * 3 + 2] = 2.0 - random() * 8.0 + ALTAR_TARGET[2];
-      rndVals[i] = random();
+      pos[i * 3 + 1] = 0.3 + Math.pow(random(), 1.4) * 2.6;
+      pos[i * 3 + 2] = 2 - random() * 7;
+      rnd[i] = random();
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    g.setAttribute("aRand", new THREE.BufferAttribute(rndVals, 1));
+    g.setAttribute("aRand", new THREE.BufferAttribute(rnd, 1));
     const m = new THREE.ShaderMaterial({
       vertexShader: fireflyVert,
       fragmentShader: fireflyFrag,
@@ -177,133 +150,78 @@ export default function Contact() {
       toneMapped: false,
       uniforms: {
         uTime: { value: 0 },
-        uSize: { value: 95 },
+        uSize: { value: 80 },
         uPixelRatio: { value: dpr },
-        uIntensity: { value: 1.0 },
-        uColor: { value: new THREE.Color("#00bbff") },
+        uIntensity: { value: 0.8 },
+        uColor: { value: new THREE.Color("#7fb4ff") },
       },
     });
     return { g, m };
   }, [isMobile, dpr]);
 
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      Object.values(customMats).forEach((m) => m.dispose());
+  useEffect(
+    () => () => {
+      baked.dispose();
+      light.seams.dispose();
+      light.lines.dispose();
+      light.veil.dispose();
       shaft.geometry.dispose();
       shaft.material.dispose();
+      dust.g.dispose();
+      dust.m.dispose();
       motes.g.dispose();
       motes.m.dispose();
-      fireflies.g.dispose();
-      fireflies.m.dispose();
-    };
-  }, [customMats, shaft, motes, fireflies]);
+    },
+    [baked, light, shaft, dust, motes],
+  );
 
-  // ------------------------------------------------------------------ frame animation
-  useFrame(({ clock }, dt) => {
+  // copying the email answers with a surge through the arch
+  useEffect(
+    () =>
+      useApp.subscribe((s, prev) => {
+        if (!s.toast || s.toast === prev.toast || sceneState.p < c.start) return;
+        gsap.fromTo(light.flare, { value: 1 }, { value: 0, duration: 1.8, ease: "power2.out", overwrite: true });
+      }),
+    [light, c.start],
+  );
+
+  useFrame((_, dt) => {
     const g = group.current;
     if (!g) return;
-
-    // Visibility gate: visible when approaching contact chapter
-    const active = sceneState.p >= c.start - 0.01;
-    g.visible = active;
-    if (!active) return;
-
-    const time = clock.elapsedTime;
+    const visible = sceneState.p >= c.start - 0.015;
+    g.visible = visible;
+    if (!visible) return;
     const t = local(sceneState.p, "contact");
-
-    // Idle breathing & subtle cursor parallax on hero monolith
-    if (shrineCore.current) {
-      shrineCore.current.position.y = Math.sin(time * 0.9) * 0.04;
-      shrineCore.current.rotation.y = time * 0.12 + sceneState.mouse.x * 0.25;
-      shrineCore.current.rotation.x = sceneState.mouse.y * 0.05;
-    }
-
-    // Opposite spinning orbital gyro rings
-    if (ring0.current) {
-      ring0.current.rotation.x += dt * 0.45;
-      ring0.current.rotation.y += dt * 0.65;
-    }
-    if (ring1.current) {
-      ring1.current.rotation.y -= dt * 0.55;
-      ring1.current.rotation.z += dt * 0.35;
-    }
-
-    // Pulse core glow
-    customMats.core.uniforms.uRim.value = 1.4 + Math.sin(time * 1.6) * 0.4 + t * 0.5;
-
-    // Advance particle and ray shaders
+    // the light climbs the arch as the camera settles in front of it
+    light.on.value = THREE.MathUtils.smoothstep(t, 0.18, 0.62);
+    light.time.value += dt;
+    baked.uniforms.uTime.value += dt;
     shaft.material.uniforms.uTime.value += dt;
+    dust.m.uniforms.uTime.value += dt;
     motes.m.uniforms.uTime.value += dt;
-    fireflies.m.uniforms.uTime.value += dt;
   });
+
+  // the contact camera sits close: the clearing is shown at a smaller scale. Desktop sets the
+  // arch to the right of the copy; phones keep it centred above it
+  const x = isMobile ? 0 : 2.0;
+  const scale = isMobile ? 0.5 : 0.62;
 
   return (
     <group ref={group} position={CONTACT_ORIGIN} visible={false}>
-      {/* Cool atmospheric moonlight and subtle ambient illumination */}
-      <ambientLight intensity={0.75} color="#1e2c38" />
-      <directionalLight position={[-4, 12, 6]} intensity={1.3} color="#a8cde8" />
-
-      {/* Dynamic radiant light spilling from the glowing core onto the dais & jungle */}
-      <pointLight position={[0.5, 2.05, -0.2]} color="#0099ff" intensity={22} distance={12} decay={2} />
-      <pointLight position={[0.5, 2.05, -0.2]} color="#ffb020" intensity={8} distance={5} decay={2} />
-
-      {/* Static jungle environment meshes */}
-      {nodes.JungleGround && <primitive object={nodes.JungleGround} />}
-      {nodes.Boulders && <primitive object={nodes.Boulders} />}
-      {nodes.Trees && <primitive object={nodes.Trees} />}
-      {nodes.Branches && <primitive object={nodes.Branches} />}
-      {nodes.Roots && <primitive object={nodes.Roots} />}
-      {nodes.Lianas && <primitive object={nodes.Lianas} />}
-      {nodes.Dais && <primitive object={nodes.Dais} />}
-      {nodes.ArchPillars && <primitive object={nodes.ArchPillars} />}
-      {nodes.RuinedArch && <primitive object={nodes.RuinedArch} />}
-      {nodes.ArchIvy && <primitive object={nodes.ArchIvy} />}
-      {nodes.JungleBroadleaves && <primitive object={nodes.JungleBroadleaves} />}
-      {nodes.DenseFerns && <primitive object={nodes.DenseFerns} />}
-
-      {/* The Hero Monolith & Levitating Core */}
-      <group position={[0.5, 0.0, -0.2]}>
-        <group ref={shrineCore}>
-          {nodes.MonolithShell && (
-            <mesh geometry={nodes.MonolithShell.geometry} material={customMats.obsidian} />
-          )}
-          {nodes.GlowingCoreBeacon && (
-            <mesh geometry={nodes.GlowingCoreBeacon.geometry} material={customMats.core} />
-          )}
-          {nodes.Orbital_Ring_0 && (
-            <mesh
-              ref={ring0}
-              geometry={nodes.Orbital_Ring_0.geometry}
-              material={customMats.ringCyan}
-              position={[0, 0.15, 0]}
-            />
-          )}
-          {nodes.Orbital_Ring_1 && (
-            <mesh
-              ref={ring1}
-              geometry={nodes.Orbital_Ring_1.geometry}
-              material={customMats.ringGold}
-              position={[0, 0.35, 0]}
-            />
-          )}
-        </group>
+      <group position={[x, 0.8, 0]} scale={scale}>
+        {scenery.map((m) => (
+          <mesh key={m.name} geometry={m.geometry} material={baked} position={m.position} quaternion={m.quaternion} />
+        ))}
+        {nodes.Seams && <mesh geometry={nodes.Seams.geometry} material={light.seams} />}
+        {nodes.Lines && <mesh geometry={nodes.Lines.geometry} material={light.lines} />}
+        {nodes.Veil && <mesh geometry={nodes.Veil.geometry} material={light.veil} renderOrder={6} />}
+        <mesh geometry={shaft.geometry} material={shaft.material} position={shaft.pos} quaternion={shaft.q} renderOrder={5} />
+        <points geometry={dust.g} material={dust.m} frustumCulled={false} />
+        <points geometry={motes.g} material={motes.m} frustumCulled={false} renderOrder={7} />
+        <Butterflies count={isMobile ? 2 : 4} />
       </group>
-
-      {/* Volumetric canopy god ray shaft */}
-      <mesh
-        geometry={shaft.geometry}
-        material={shaft.material}
-        position={shaft.pos}
-        quaternion={shaft.q}
-        renderOrder={5}
-      />
-
-      {/* Drifting motes & electric fireflies */}
-      <points geometry={motes.g} material={motes.m} frustumCulled={false} />
-      <points geometry={fireflies.g} material={fireflies.m} frustumCulled={false} renderOrder={6} />
     </group>
   );
 }
 
-useGLTF.preload(SHRINE_URL, "/draco/");
+useGLTF.preload(FINALE_URL, "/draco/");
