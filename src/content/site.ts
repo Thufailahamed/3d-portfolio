@@ -78,6 +78,7 @@ export const about = {
   ],
   annotations: [
     { label: "Studio", value: "SynapX" },
+    { label: "Based in", value: "Colombo, Sri Lanka" },
     { label: "Focus", value: "SaaS · AI · Cloud" },
     { label: "Stack", value: "Next.js · Supabase · Workers" },
   ],

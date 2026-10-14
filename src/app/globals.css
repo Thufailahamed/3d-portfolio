@@ -509,3 +509,40 @@ html.has-cursor * {
 @media (prefers-reduced-motion: reduce) {
   .pd-dot, .pd-stack-pulse { animation: none; }
 }
+
+/* ── About ───────────────────────────────────────────────── */
+.about-shade {
+  background: linear-gradient(to top, var(--color-bg) 0%, color-mix(in oklab, var(--color-bg) 70%, transparent) 45%, transparent 75%);
+}
+@media (min-width: 768px) {
+  .about-shade {
+    background: radial-gradient(ellipse 55% 80% at 15% 50%, color-mix(in oklab, var(--color-bg) 75%, transparent), transparent 75%);
+  }
+}
+.about-service {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  border-top: 1px solid color-mix(in oklab, var(--color-fg) 12%, transparent);
+  padding: 11px 12px 11px 0;
+}
+@media (min-width: 768px) {
+  .about-service { padding: 14px 16px 14px 0; }
+}
+.about-service:nth-last-child(-n + 2) {
+  border-bottom: 1px solid color-mix(in oklab, var(--color-fg) 12%, transparent);
+}
+.globe-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-fg) 55%, transparent);
+  text-shadow: 0 0 12px var(--color-bg);
+}
+.globe-label [data-time] {
+  color: var(--color-fg);
+}
+.globe-label.is-home {
+  color: var(--color-accent);
+}

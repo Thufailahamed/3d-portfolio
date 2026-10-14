@@ -1,17 +1,20 @@
 "use client";
 
-import { useRef } from "react";
-import { about } from "@/content/site";
+import { useEffect, useRef } from "react";
+import { about, person } from "@/content/site";
 import { gsap, SplitText, useGSAP } from "@/lib/gsap";
-import { sceneState } from "@/lib/sceneState";
 import { useChapterActive } from "@/hooks/useChapterActive";
 
+const pad = (n: number) => String(n).padStart(2, "0");
+const home = about.places[0];
+
 /**
- * About copy beside the globe, plus annotation notes whose leader lines are
- * pinned to spots on the globe (projected from 3D every frame).
+ * About copy beside the globe: headline, story, what I do and the studio facts,
+ * plus a live local-time readout for home in the corner.
  */
 export default function AboutHUD() {
   const root = useRef<HTMLElement>(null);
+  const clock = useRef<HTMLSpanElement>(null);
   const active = useChapterActive("about", 0.8, 0.95);
 
   // reveal once the globe has formed
@@ -21,14 +24,13 @@ export default function AboutHUD() {
       if (!active) {
         gsap.set(split.lines, { yPercent: 110 });
         gsap.set(".about-in", { opacity: 0, y: 14 });
-        gsap.set(".note", { opacity: 0 });
+        gsap.set(".about-rule", { scaleX: 0 });
         return () => split.revert();
       }
       const tl = gsap.timeline();
       tl.to(split.lines, { yPercent: 0, duration: 1.1, stagger: 0.08, ease: "expo.out" })
-        .to(".about-in", { opacity: 1, y: 0, duration: 0.8, stagger: 0.06, ease: "power2.out" }, 0.2)
-        .to(".note", { opacity: 1, duration: 0.6, stagger: 0.12 }, 0.5)
-        .fromTo(".note-line", { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.8, stagger: 0.12 }, 0.4);
+        .to(".about-rule", { scaleX: 1, duration: 1.2, stagger: 0.05, ease: "expo.inOut" }, 0.1)
+        .to(".about-in", { opacity: 1, y: 0, duration: 0.8, stagger: 0.05, ease: "power2.out" }, 0.25);
       return () => {
         tl.kill();
         split.revert();
@@ -37,41 +39,16 @@ export default function AboutHUD() {
     { scope: root, dependencies: [active] },
   );
 
-  // follow the projected anchors (desktop only — mobile shows the notes inline)
-  useGSAP(
-    () => {
-      if (!active) return;
-      const notes = gsap.utils.toArray<HTMLElement>(".note", root.current);
-      const lines = gsap.utils.toArray<SVGLineElement>(".note-line", root.current);
-      const tick = () => {
-        const desktop = innerWidth >= 768;
-        const xs = sceneState.anchors.map((a) => a.x);
-        const mid = xs.reduce((s, x) => s + x, 0) / xs.length;
-        sceneState.anchors.forEach((a, i) => {
-          const note = notes[i];
-          const line = lines[i];
-          if (!note || !line) return;
-          const show = desktop && a.visible;
-          note.style.visibility = show ? "visible" : "hidden";
-          line.style.visibility = show ? "visible" : "hidden";
-          if (!show) return;
-          // push each note outward from the globe, a little above its anchor
-          const dir = a.x >= mid ? 1 : -1;
-          const nx = a.x + dir * (70 + i * 14);
-          const ny = a.y - 56 + i * 12;
-          const w = note.offsetWidth;
-          note.style.transform = `translate(${dir > 0 ? nx : nx - w}px, ${ny - note.offsetHeight / 2}px)`;
-          line.setAttribute("x1", String(a.x));
-          line.setAttribute("y1", String(a.y));
-          line.setAttribute("x2", String(nx));
-          line.setAttribute("y2", String(ny));
-        });
-      };
-      gsap.ticker.add(tick);
-      return () => gsap.ticker.remove(tick);
-    },
-    { scope: root, dependencies: [active] },
-  );
+  // home's local time, ticking
+  useEffect(() => {
+    const fmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: home.tz });
+    const update = () => {
+      if (clock.current) clock.current.textContent = fmt.format(new Date());
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <section
@@ -81,58 +58,61 @@ export default function AboutHUD() {
         active ? "opacity-100" : "pointer-events-none invisible opacity-0"
       }`}
     >
-      {/* leader lines + anchor dots, in screen space */}
-      <svg aria-hidden className="pointer-events-none absolute inset-0 hidden h-full w-full md:block">
-        {about.annotations.map((_, i) => (
-          <line
-            key={i}
-            className="note-line"
-            pathLength={1}
-            strokeDasharray="1"
-            stroke="var(--color-accent)"
-            strokeOpacity="0.7"
-            strokeWidth="1"
-          />
-        ))}
-      </svg>
-      <div aria-hidden className="pointer-events-none absolute inset-0 hidden md:block">
-        {about.annotations.map((n) => (
-          <div key={n.label} className="note hud-card absolute left-0 top-0 whitespace-nowrap">
-            <span className="text-accent">● </span>
-            {n.label}
-            <span className="mt-1 block text-[11px] tracking-normal text-fg normal-case">{n.value}</span>
-          </div>
-        ))}
-      </div>
+      {/* a soft shade behind the copy, so it reads over the stars and strands */}
+      <div aria-hidden className="about-shade pointer-events-none absolute inset-0" />
 
-      <div className="absolute inset-x-0 bottom-0 px-gutter pb-8 md:bottom-auto md:top-1/2 md:max-w-[46vw] md:-translate-y-1/2 md:pb-0">
-        <p className="about-in label mb-4">About — How I work</p>
-        <h2 id="about-title" className="about-headline display text-[11vw] md:text-[5.4vw]">
+      <div className="absolute inset-x-0 bottom-0 px-gutter pb-7 md:bottom-auto md:top-1/2 md:w-[min(44vw,640px)] md:-translate-y-[46%] md:pb-0 md:pr-0">
+        <div className="about-in mb-5 flex items-center gap-4 md:mb-7">
+          <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)]" />
+          <span className="label">About — How I work</span>
+          <span aria-hidden className="about-rule h-px flex-1 origin-left bg-fg/15" />
+        </div>
+
+        <h2 id="about-title" className="about-headline display text-[12vw] md:text-[clamp(44px,min(5.1vw,9.5vh),96px)]">
           {about.headline}
         </h2>
-        <div className="mt-5 max-w-[46ch] space-y-3 text-sm leading-relaxed text-fg/75 md:mt-7 md:text-base">
+
+        <div className="mt-5 max-w-[48ch] space-y-3 text-[15px] leading-relaxed text-fg/70 md:mt-7 md:text-[16px] 2xl:text-[17px]">
           {about.body.map((p, i) => (
-            <p key={i} className={`about-in ${i > 0 ? "hidden md:block" : ""}`}>
+            <p key={i} className={`about-in ${i === 0 ? "text-fg/90" : "hidden md:block md:[@media(max-height:780px)]:hidden"}`}>
               {p}
             </p>
           ))}
         </div>
-        <ul className="about-in mt-5 flex flex-wrap gap-2 md:mt-7" aria-label="Services">
-          {about.services.map((s) => (
-            <li key={s} className="label rounded-full border border-fg/15 px-3 py-1.5 !text-fg/80">
-              {s}
+
+        {/* what I do */}
+        <ul className="mt-6 grid grid-cols-2 md:mt-8" aria-label="Services">
+          {about.services.map((s, i) => (
+            <li key={s} className="about-in about-service">
+              <span className="label tabular-nums !text-accent">{pad(i + 1)}</span>
+              <span className="text-[13px] md:text-[15px]">{s}</span>
             </li>
           ))}
         </ul>
-        {/* on phones the notes sit inline instead of floating on the globe */}
-        <dl className="about-in mt-4 grid grid-cols-3 gap-2 md:sr-only">
+
+        {/* the studio, in four facts */}
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 md:mt-8 xl:grid-cols-4">
           {about.annotations.map((n) => (
-            <div key={n.label} className="hud-card">
-              <dt>{n.label}</dt>
-              <dd className="mt-1 text-[10px] tracking-normal text-fg normal-case">{n.value}</dd>
+            <div key={n.label} className="about-in">
+              <dt className="label !text-[10px]">{n.label}</dt>
+              <dd className="mt-1 text-[12px] leading-snug text-fg/90 md:text-[13px]">{n.value}</dd>
             </div>
           ))}
         </dl>
+      </div>
+
+      {/* home, live */}
+      <div className="about-in absolute bottom-8 right-gutter hidden text-right md:block" aria-label={`Local time in ${home.city}`}>
+        <p className="label flex items-center justify-end gap-2">
+          <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)]" />
+          Local time · {home.city}
+        </p>
+        <p className="mt-1 font-mono text-[28px] font-light tabular-nums tracking-tight text-fg">
+          <span ref={clock}>--:--:--</span>
+        </p>
+        <p className="label mt-1">
+          {home.lat.toFixed(2)}° N · {home.lon.toFixed(2)}° E — {person.available ? "taking new builds" : "booked"}
+        </p>
       </div>
     </section>
   );

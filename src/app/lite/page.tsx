@@ -83,7 +83,7 @@ export default function LitePage() {
                 {b}
               </p>
             ))}
-            <dl className="reveal grid grid-cols-1 gap-2 pt-4 sm:grid-cols-3">
+            <dl className="reveal grid grid-cols-2 gap-2 pt-4 sm:grid-cols-4">
               {about.annotations.map((n) => (
                 <div key={n.label} className="hud-card">
                   <dt>{n.label}</dt>

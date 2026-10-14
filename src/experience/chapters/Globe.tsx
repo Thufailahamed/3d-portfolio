@@ -5,16 +5,19 @@ import { useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { about } from "@/content/site";
-import { local } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { damp, LINES_OUT, POWER, span } from "../aboutTimeline";
 import {
+  arcFrag,
+  arcVert,
   atmoFrag,
   atmoVert,
   borderFrag,
   borderVert,
   earthFrag,
   earthVert,
+  gridFrag,
+  gridVert,
   markerFrag,
   markerVert,
 } from "../shaders/globe";
@@ -30,8 +33,8 @@ const WAVE = new THREE.Color("#dff5ee");
 /** Soft moonlight from the upper left, so the night side still reads as a sphere. */
 const MOON = new THREE.Vector3(-0.6, 0.5, 0.65).normalize();
 const asBinary = (l: THREE.Loader) => (l as THREE.FileLoader).setResponseType("arraybuffer");
-/** Starting turn so Europe / Africa / Asia face the camera. */
-const START_TURN = (240 * Math.PI) / 180;
+/** Starting turn so home (Colombo) and the arcs flying out of it face the camera. */
+const START_TURN = (175 * Math.PI) / 180;
 export const TILT = 0.41; // Earth's axial tilt
 /** The globe can be grabbed once the visitor has read in (≈ the HUD hand-off). */
 const GRAB_FROM = 12;
@@ -44,12 +47,66 @@ export function lonLat(lon: number, lat: number, r: number, out = new THREE.Vect
   return out.set(-Math.cos(phi) * Math.sin(theta) * r, Math.cos(theta) * r, Math.sin(phi) * Math.sin(theta) * r);
 }
 
-/** Front-facing spots (about-group space, not rotating) where the HUD notes pin their lines. */
-const ANCHORS = [
-  new THREE.Vector3(0.55, 0.5, 0.67),
-  new THREE.Vector3(0.78, -0.12, 0.62),
-  new THREE.Vector3(-0.3, -0.6, 0.74),
-].map((d) => d.normalize().multiplyScalar(GLOBE_R).add(new THREE.Vector3(0, GLOBE_Y, 0)));
+/** Where the studio is: arcs fly out from here and its marker wears the accent. */
+const HOME = 0;
+const ACCENT = new THREE.Color("#c8ff3d");
+
+/** Great-circle arcs from home to every other place, lifted higher the further they fly. */
+function arcGeometry() {
+  const SEG = 72;
+  const home = lonLat(about.places[HOME].lon, about.places[HOME].lat, 1);
+  const pos: number[] = [];
+  const t: number[] = [];
+  const seed: number[] = [];
+  const a = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  let k = 0;
+  about.places.forEach((p, i) => {
+    if (i === HOME) return;
+    const to = lonLat(p.lon, p.lat, 1);
+    const angle = home.angleTo(to);
+    const axis = new THREE.Vector3().crossVectors(home, to).normalize();
+    const lift = 0.05 + 0.32 * (angle / Math.PI);
+    const point = (u: number) => {
+      q.setFromAxisAngle(axis, angle * u);
+      return a.copy(home).applyQuaternion(q).multiplyScalar(GLOBE_R * (1.006 + Math.sin(Math.PI * u) * lift)).toArray();
+    };
+    for (let s = 0; s < SEG; s++) {
+      const u0 = s / SEG;
+      const u1 = (s + 1) / SEG;
+      pos.push(...point(u0), ...point(u1));
+      t.push(u0, u1);
+      seed.push(k / 7, k / 7);
+    }
+    k++;
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("aT", new THREE.Float32BufferAttribute(t, 1));
+  g.setAttribute("aSeed", new THREE.Float32BufferAttribute(seed, 1));
+  return g;
+}
+
+/** Latitude rings and meridians every 20°. */
+function gridGeometry() {
+  const pos: number[] = [];
+  const v = new THREE.Vector3();
+  const r = GLOBE_R * 1.001;
+  const push = (lon: number, lat: number) => pos.push(...lonLat(lon, lat, r, v).toArray());
+  for (let lat = -60; lat <= 60; lat += 20)
+    for (let lon = -180; lon < 180; lon += 3) {
+      push(lon, lat);
+      push(lon + 3, lat);
+    }
+  for (let lon = -180; lon < 180; lon += 20)
+    for (let lat = -80; lat < 80; lat += 3) {
+      push(lon, lat);
+      push(lon, lat + 3);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  return g;
+}
 
 /**
  * Night-side Earth that the strands open into. Light runs up the strands and powers it:
@@ -70,7 +127,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     map.anisotropy = 8;
   }, [map]);
 
-  const { earthMat, atmoMat, borderMat, borderGeo, markerMat, markerGeo } = useMemo(() => {
+  const { earthMat, atmoMat, borderMat, borderGeo, markerMat, markerGeo, arcGeo, arcMat, gridGeo, gridMat } = useMemo(() => {
     const body = { value: 0 };
     const power = { value: 0 };
     const atmo = { value: ATMO };
@@ -97,6 +154,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
       new THREE.BufferAttribute(Float32Array.from(about.places.flatMap((p) => lonLat(p.lon, p.lat, GLOBE_R * 1.008).toArray())), 3),
     );
     markerGeo.setAttribute("aSeed", new THREE.BufferAttribute(Float32Array.from(about.places, (_, i) => i * 0.37), 1));
+    markerGeo.setAttribute("aHome", new THREE.BufferAttribute(Float32Array.from(about.places, (_, i) => (i === HOME ? 1 : 0)), 1));
 
     const glass: THREE.ShaderMaterialParameters = {
       transparent: true,
@@ -106,6 +164,27 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     return {
       borderGeo,
       markerGeo,
+      arcGeo: arcGeometry(),
+      gridGeo: gridGeometry(),
+      arcMat: new THREE.ShaderMaterial({
+        ...glass,
+        vertexShader: arcVert,
+        fragmentShader: arcFrag,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+          uColor: { value: new THREE.Color("#9fd0ff") },
+          uR: { value: GLOBE_R * 0.995 },
+          uDraw: { value: 0 },
+          uTime: { value: 0 },
+        },
+      }),
+      gridMat: new THREE.ShaderMaterial({
+        ...glass,
+        vertexShader: gridVert,
+        fragmentShader: gridFrag,
+        blending: THREE.AdditiveBlending,
+        uniforms: { uColor: { value: new THREE.Color("#8fb8ff") }, uOn: { value: 0 } },
+      }),
       earthMat: new THREE.ShaderMaterial({
         ...glass,
         vertexShader: earthVert,
@@ -145,6 +224,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
         blending: THREE.AdditiveBlending,
         uniforms: {
           uColor: { value: new THREE.Color("#fff1d6") },
+          uHome: { value: ACCENT },
           uOn: { value: 0 },
           uTime: { value: 0 },
           uPixelRatio: { value: dpr },
@@ -155,9 +235,9 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
 
   useEffect(
     () => () => {
-      for (const o of [borderGeo, markerGeo, earthMat, atmoMat, borderMat, markerMat]) o.dispose();
+      for (const o of [borderGeo, markerGeo, arcGeo, gridGeo, earthMat, atmoMat, borderMat, markerMat, arcMat, gridMat]) o.dispose();
     },
-    [borderGeo, markerGeo, earthMat, atmoMat, borderMat, markerMat],
+    [borderGeo, markerGeo, arcGeo, gridGeo, earthMat, atmoMat, borderMat, markerMat, arcMat, gridMat],
   );
 
   const tmp = useMemo(
@@ -171,7 +251,6 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
 
   useFrame(({ clock }, delta) => {
     const dt = Math.min(delta, 0.1);
-    const t = local(sceneState.p, "about");
     const time = clock.elapsedTime;
     const sec = sceneState.aboutSec;
     // the dark planet forms inside the opening strands; then the light arriving through
@@ -181,6 +260,10 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     const markersOn = span(sec, POWER[1], POWER[1] + 0.6);
     markerMat.uniforms.uOn.value = markersOn;
     markerMat.uniforms.uTime.value = time;
+    // once the cities are lit: the grid settles in and arcs fly out from home
+    gridMat.uniforms.uOn.value = span(sec, POWER[1] - 0.4, POWER[1] + 1);
+    arcMat.uniforms.uDraw.value = span(sec, POWER[1], POWER[1] + 1.3);
+    arcMat.uniforms.uTime.value = time;
 
     // grab and spin: dragging turns it on its axis (yaw) and tips it toward you (pitch),
     // with momentum on release; it drifts on its own when left alone
@@ -236,20 +319,6 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
       out.x = (tmp.v.x * 0.5 + 0.5) * size.width;
       out.y = (-tmp.v.y * 0.5 + 0.5) * size.height;
     });
-
-    // project the note anchors to screen space for the DOM HUD
-    const on = live && t > 0.75;
-    for (let a = 0; a < ANCHORS.length; a++) {
-      const out = sceneState.anchors[a];
-      if (!on) {
-        out.visible = false;
-        continue;
-      }
-      tmp.v.copy(ANCHORS[a]).applyMatrix4(parent.matrixWorld).project(camera);
-      out.x = (tmp.v.x * 0.5 + 0.5) * size.width;
-      out.y = (-tmp.v.y * 0.5 + 0.5) * size.height;
-      out.visible = tmp.v.z < 1;
-    }
   });
 
   return (
@@ -260,7 +329,9 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
             <mesh material={earthMat} renderOrder={10}>
               <sphereGeometry args={[GLOBE_R, 160, 80]} />
             </mesh>
+            <lineSegments geometry={gridGeo} material={gridMat} renderOrder={11} />
             <lineSegments geometry={borderGeo} material={borderMat} renderOrder={11} />
+            <lineSegments geometry={arcGeo} material={arcMat} renderOrder={12} frustumCulled={false} />
             <points geometry={markerGeo} material={markerMat} renderOrder={13} frustumCulled={false} />
           </group>
           <mesh material={atmoMat} scale={1.14} renderOrder={9}>

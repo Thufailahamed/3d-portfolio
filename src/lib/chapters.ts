@@ -38,7 +38,7 @@ export const ABOUT_ORIGIN: [number, number, number] = [0, 0, -200];
 export const CONTACT_ORIGIN: [number, number, number] = [0, 0, -280];
 
 /** Where in each chapter a deep link or menu jump lands (fraction of the chapter). */
-const LANDING: Record<ChapterId, number> = { hero: 0, fracture: 0.1, tunnel: 0, projects: 0.3, about: 0.86, contact: 1 };
+const LANDING: Record<ChapterId, number> = { hero: 0, fracture: 0.1, tunnel: 0, projects: 0.3, about: 0.9, contact: 1 };
 
 /** Master progress of a chapter's landing spot. */
 export const landing = (id: ChapterId) => at(id, LANDING[id]);

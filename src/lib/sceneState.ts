@@ -20,8 +20,6 @@ export const sceneState = {
   drag: 0,
   /** About sequence clock in reference seconds, softly damped behind the scroll (see aboutTimeline) */
   aboutSec: 0,
-  /** screen-space positions (px) of 3D points the About HUD pins its notes to */
-  anchors: [0, 1, 2].map(() => ({ x: 0, y: 0, visible: false })),
   /** the About globe on screen (px) and whether it can be grabbed */
   globe: { x: 0, y: 0, r: 0, grabbable: false },
   /** pointer drag on the globe, accumulated by the DOM and consumed by the scene each frame */
