@@ -41,6 +41,10 @@ export function makeBakedMaterial(side: THREE.Side = THREE.FrontSide) {
         uAccent: { value: palette.accent.clone() },
         uRim: { value: 0 },
         uFill: { value: 0 },
+        uTime: { value: 0 },
+        uHoverPos: { value: new THREE.Vector3(0, -100, 0) },
+        uHoverAmt: { value: 0 },
+        uRune: { value: new THREE.Color("#3d8bff") },
       },
     ]),
   });

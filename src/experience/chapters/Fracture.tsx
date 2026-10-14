@@ -102,6 +102,20 @@ export default function Fracture() {
     [mats],
   );
 
+  // hovering the intact arch wakes glowing runes under the cursor
+  const hover = useMemo(
+    () => ({
+      ray: new THREE.Raycaster(),
+      ndc: new THREE.Vector2(),
+      target: new THREE.Vector3(),
+      hit: false,
+      // any device with a real hover pointer, whatever its width
+      canHover: matchMedia("(hover: hover) and (pointer: fine)").matches,
+    }),
+    [],
+  );
+  const meshes = useMemo(() => shards.map((s) => s.mesh), [shards]);
+
   const tmp = useMemo(
     () => ({
       v: new THREE.Vector3(),
@@ -114,10 +128,27 @@ export default function Fracture() {
     [],
   );
 
-  useFrame(({ clock }, dt) => {
+  useFrame(({ clock, camera }, dt) => {
     const g = group.current;
     if (!g) return;
     const p = sceneState.p;
+    const u = mats.stone.uniforms;
+    u.uTime.value = clock.elapsedTime;
+    const intact = p < chapter("fracture").start + 0.002 && sceneState.intro > 0.9;
+    hover.hit = false;
+    if (intact && hover.canHover) {
+      hover.ndc.set(sceneState.mouse.x, sceneState.mouse.y);
+      hover.ray.setFromCamera(hover.ndc, camera);
+      const hit = hover.ray.intersectObjects(meshes, false)[0];
+      if (hit) {
+        hover.hit = true;
+        hover.target.copy(hit.point);
+      }
+    }
+    // the patch trails the cursor a little, and fades in / out
+    if (u.uHoverAmt.value < 0.01 && hover.hit) u.uHoverPos.value.copy(hover.target);
+    u.uHoverPos.value.lerp(hover.target, Math.min(1, dt * 10));
+    u.uHoverAmt.value += ((hover.hit ? 1 : 0) - u.uHoverAmt.value) * Math.min(1, dt * (hover.hit ? 5 : 2.5));
     const tu = chapter("tunnel");
     // the stones are the arch until the break, and live on until the tunnel covers the screen
     g.visible = p < tu.start + (tu.end - tu.start) * 0.55;
