@@ -9,8 +9,8 @@ import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { palette } from "../palette";
-import { coreFrag, coreVert, discFrag, discVert } from "../shaders/signal";
-import { MONOLITH_URL } from "./Monolith";
+import { discFrag, discVert } from "../shaders/signal";
+import { FOREST_URL, makeBakedMaterial } from "./Forest";
 
 export const RING_CENTER = new THREE.Vector3(0, 3.2, 0);
 const Z = new THREE.Vector3(0, 0, 1);
@@ -29,11 +29,12 @@ type Shard = {
 };
 
 /**
- * Chapter 2 — the monolith breaks into its Voronoi shards, they hang in the air,
- * then coil into a ring around a "signal" membrane. Fully scroll-driven.
+ * Chapters 1–2 — the arch's stones (with their ivy) stand as the ruin in the forest,
+ * then burst apart, hang in the air, and coil into a ring around a "signal"
+ * membrane. Fully scroll-driven.
  */
 export default function Fracture() {
-  const { nodes } = useGLTF(MONOLITH_URL, "/draco/") as unknown as {
+  const { nodes } = useGLTF(FOREST_URL, "/draco/") as unknown as {
     nodes: Record<string, THREE.Object3D>;
   };
   const isMobile = useApp((s) => s.isMobile);
@@ -41,23 +42,8 @@ export default function Fracture() {
 
   const mats = useMemo(
     () => ({
-      obsidian: new THREE.MeshStandardMaterial({
-        color: "#0b0b0d",
-        roughness: 0.22,
-        metalness: 0.85,
-        envMapIntensity: 1.2,
-      }),
-      // inner cut faces: dark glass, lime at grazing angles so the cracks glow
-      core: new THREE.ShaderMaterial({
-        vertexShader: coreVert,
-        fragmentShader: coreFrag,
-        toneMapped: false,
-        uniforms: {
-          uAccent: { value: palette.accent.clone() },
-          uRim: { value: 1 },
-          uFill: { value: 0 },
-        },
-      }),
+      // baked stone + ivy; a lime rim lights up as the arch breaks
+      stone: makeBakedMaterial(THREE.DoubleSide),
       disc: new THREE.ShaderMaterial({
         vertexShader: discVert,
         fragmentShader: discFrag,
@@ -79,20 +65,12 @@ export default function Fracture() {
   const shards = useMemo<Shard[]>(() => {
     const random = rng(23);
     const center = new THREE.Vector3(0, 2.2, 0);
-    // a two-material Blender mesh arrives as a Group of one mesh per material
     const list = Object.values(nodes)
-      .filter((n) => /^Shard_\d+$/.test(n.name))
-      .sort((a, b) => a.position.y - b.position.y);
-
-    const pick = (m: THREE.Material) => (m.name === "Core" ? mats.core : mats.obsidian);
-    const parts = (n: THREE.Object3D) =>
-      ((n as THREE.Mesh).isMesh ? [n as THREE.Mesh] : (n.children as THREE.Mesh[])).map(
-        (c) => new THREE.Mesh(c.geometry, pick(c.material as THREE.Material)),
-      );
+      .filter((n) => /^Stone_\d+$/.test(n.name) && (n as THREE.Mesh).isMesh)
+      .sort((a, b) => a.position.y - b.position.y) as THREE.Mesh[];
 
     return list.map((src, i) => {
-      const mesh = new THREE.Group();
-      mesh.add(...parts(src));
+      const mesh = new THREE.Mesh(src.geometry, mats.stone);
       const origin = src.position.clone();
 
       const dir = origin.clone().sub(center);
@@ -118,8 +96,7 @@ export default function Fracture() {
 
   useEffect(
     () => () => {
-      mats.obsidian.dispose();
-      mats.core.dispose();
+      mats.stone.dispose();
       mats.disc.dispose();
     },
     [mats],
@@ -142,8 +119,8 @@ export default function Fracture() {
     if (!g) return;
     const p = sceneState.p;
     const tu = chapter("tunnel");
-    // shards live from the break until the tunnel has fully covered the screen
-    g.visible = p > chapter("fracture").start && p < tu.start + (tu.end - tu.start) * 0.55;
+    // the stones are the arch until the break, and live on until the tunnel covers the screen
+    g.visible = p < tu.start + (tu.end - tu.start) * 0.55;
     if (!g.visible) return;
 
     const t = local(p, "fracture");
@@ -172,8 +149,9 @@ export default function Fracture() {
 
     // crack light flares on the break, then settles to a steady glow in the ring
     const flare = Math.exp(-Math.pow((t - 0.08) * 9, 2)) * 3.5;
-    mats.core.uniforms.uRim.value = 0.45 + burst * 0.55 + flare + gather * 0.8;
-    mats.core.uniforms.uFill.value = 0.02 + flare * 0.35 + gather * 0.04;
+    const broken = Math.min(1, t * 40);
+    mats.stone.uniforms.uRim.value = broken * (0.1 + burst * 0.22 + flare * 0.6 + gather * 0.3);
+    mats.stone.uniforms.uFill.value = broken * (flare * 0.04 + gather * 0.006);
 
     mats.disc.uniforms.uTime.value += dt;
     mats.disc.uniforms.uOpacity.value = seg(t, 0.68, 1.0);

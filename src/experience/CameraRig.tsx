@@ -24,7 +24,7 @@ export default function CameraRig() {
     const fr = chapter("fracture");
     const tu = chapter("tunnel");
     const at = (c: { start: number; end: number }, f: number) => c.start + (c.end - c.start) * f;
-    // mobile frames the tall monolith / ring from further back
+    // mobile frames the arch / ring from further back
     const z = isMobile ? 1.12 : 1;
     const ringZ = isMobile ? 9.5 : 7.4;
     const pr = chapter("projects");
@@ -40,8 +40,9 @@ export default function CameraRig() {
     const A = off(ABOUT_ORIGIN);
     const C = off(CONTACT_ORIGIN);
     return [
-      { p: 0, pos: [0, 1.3, 12.5 * z], look: [0, 2.9, 0] },
-      { p: hero.end, pos: [-1.1, 2.5, 6.4 * z], look: [0, 2.7, 0] },
+      // the forest arch, framed as in the Blender scene; scrolling walks up to it
+      { p: 0, pos: [0, 1.55, 10.5 * z], look: [0, 2.05, 0] },
+      { p: hero.end, pos: [-0.9, 2.3, 6.6 * z], look: [0, 2.6, 0] },
       // pull back to watch the burst
       { p: at(fr, 0.3), pos: [1.2, 3.1, 11 * z], look: [0, 3, 0] },
       { p: at(fr, 0.55), pos: [-0.6, 3.3, 10 * z], look: [0, 3.1, 0] },

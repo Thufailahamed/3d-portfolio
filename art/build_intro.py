@@ -653,15 +653,15 @@ def build_lighting(col, sun_dir):
     # the hero shaft: a warm beam on the same angle, below the canopy, landing on the arch top
     target = Vector((0.2, 0.0, 3.2))
     beam = bpy.data.lights.new("HeroBeam", "SPOT")
-    beam.energy = 2600
+    beam.energy = 5000
     beam.color = (1.0, 0.82, 0.5)
     beam.spot_size = math.radians(26)
     beam.spot_blend = 0.85
     beam.shadow_soft_size = 0.4
     bo = bpy.data.objects.new("HeroBeam", beam)
-    bo.location = target - sun_dir * 6.0
+    bo.location = target - sun_dir * 4.2
     link(bo, col)
-    look_at(bo, target + Vector((-0.4, -0.3, -1.2)))
+    look_at(bo, target + Vector((-0.2, 0.0, -0.6)))
 
     # dim cool moonlight fill so the stones read
     fill = bpy.data.lights.new("Fill", "AREA")
@@ -751,7 +751,7 @@ def build():
     build_ground(cols["Ground"], ground_material())
     build_roots(cols["Ground"], simple_material("Root", (0.03, 0.025, 0.018)))
     build_background(cols["Background"], stone, simple_material("Bark", (0.02, 0.018, 0.014)))
-    sun_dir = Vector((-0.38, -0.22, -1.0)).normalized()
+    sun_dir = Vector((-0.5, 0.1, -1.0)).normalized()
     build_canopy(cols["Background"], simple_material("CanopyLeaves", (0.01, 0.02, 0.008)), sun_dir)
     build_fireflies(cols["FX"])
     build_lighting(cols["Light"], sun_dir)

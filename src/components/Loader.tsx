@@ -135,12 +135,12 @@ function HudCards() {
           ))}
           <line x1="0" y1="86" x2="60" y2="86" stroke="currentColor" strokeWidth="0.4" />
         </svg>
-        <span>MONOLITH / 4.40M</span>
+        <span>ARCH / 3.90M</span>
       </div>
       <div className="hud-card w-40">
         <div className="flex justify-between">
           <span>SIGNAL</span>
-          <span>46 SHARDS</span>
+          <span>41 STONES</span>
         </div>
         <svg viewBox="0 0 80 80" className="mx-auto my-2 h-24 text-fg/40">
           {[36, 28, 20, 12].map((r) => (

@@ -4,9 +4,7 @@ import { Environment, Lightformer } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { Suspense, useEffect, useState } from "react";
 import * as THREE from "three";
-import { chapter } from "@/lib/chapters";
 import { useApp } from "@/store/useApp";
-import Atmosphere from "./Atmosphere";
 import CameraRig from "./CameraRig";
 import About from "./chapters/About";
 import Contact from "./chapters/Contact";
@@ -14,15 +12,12 @@ import Fades from "./chapters/Fades";
 import DetailBackdrop from "./chapters/DetailBackdrop";
 import Fracture from "./chapters/Fracture";
 import Projects from "./chapters/Projects";
-import Monolith from "./chapters/Monolith";
+import Forest from "./chapters/Forest";
 import Tunnel from "./chapters/Tunnel";
 import AdaptiveResolution from "./AdaptiveResolution";
 import { CompileGate, LoadProgress } from "./LoadTracker";
 import { palette } from "./palette";
 import PostFX from "./PostFX";
-
-const tunnel = chapter("tunnel");
-const monolithAtmosphereEnd = tunnel.start + (tunnel.end - tunnel.start) * 0.55;
 
 /** The single, persistent WebGL canvas behind every page. */
 export default function Experience() {
@@ -78,10 +73,9 @@ export default function Experience() {
 
         {/* the journey stays mounted (and cached) while a detail page is open */}
         <group visible={mode === "journey"}>
-          <Monolith />
+          <Forest />
           <Fracture />
           <Tunnel />
-          <Atmosphere dustCount={isMobile ? 700 : 1800} range={[-1, monolithAtmosphereEnd]} />
           <Projects />
           <About />
           <Contact />
