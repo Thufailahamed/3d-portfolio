@@ -30,10 +30,10 @@ export default function Hero() {
 
   useGSAP(
     () => {
-      // Scrubbed exit: plays identically backward and forward.
+      // Scrubbed exit: holds steady during 0..0.35, then smoothly eases out.
       gsap
         .timeline({
-          scrollTrigger: { ...chapterScroll("hero", 0, 0.8), scrub: true },
+          scrollTrigger: { ...chapterScroll("hero", 0.35, 0.9), scrub: true },
         })
         .to(".hero-name", { yPercent: -35, opacity: 0, ease: "none" }, 0)
         .to(".hero-meta", { y: -40, opacity: 0, ease: "none" }, 0)

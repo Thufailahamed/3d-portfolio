@@ -483,23 +483,29 @@ export default function Board() {
     art.focus.value = THREE.MathUtils.damp(art.focus.value, focus === null ? 0 : 1, 4, dt);
 
     // cards lift toward the lamp under the pointer (or when open); their thread warms
+    const focusDim = 1 - art.focus.value * 0.72;
+    art.leftSheetMat.opacity = focusDim;
+    art.rightSheetMat.opacity = focusDim;
+    art.leftSheetMat.transparent = true;
+    art.rightSheetMat.transparent = true;
+
     art.cards.forEach((c, i) => {
       const target = lit === i || focus === i ? 1 : 0;
       c.lift = THREE.MathUtils.damp(c.lift, target, target ? 9 : 5, dt);
       const ref = cardRefs.current[i];
       if (ref) {
-        ref.position.z = FACE + 0.004 + c.lift * 0.035;
-        ref.rotation.z = c.slot.r * (1 - c.lift * 0.6);
-        ref.scale.setScalar(1 + c.lift * 0.06);
+        ref.position.z = FACE + 0.004 + c.lift * 0.038;
+        ref.rotation.z = c.slot.r * (1 - c.lift * 0.72);
+        ref.scale.setScalar(1 + c.lift * 0.065);
       }
       const idx = c.thread.index!;
       c.thread.setDrawRange(0, Math.floor((idx.count / 6) * c.draw) * 6);
-      const dim = focus !== null && focus !== i ? 0.5 : 1;
+      const dim = focus !== null && focus !== i ? 0.38 : 1;
       c.threadMat.emissiveIntensity = (0.12 + c.lift * 1.6) * dim;
       // (the room's fill and the cards' glow go with the lamp: a dark lamp is a dark room)
-      art.cardMats[i].emissiveIntensity = (0.14 + c.lift * 0.16) * dim * art.lampU.uLampOn.value;
-      art.cardShadows[i].uniforms.uOpacity.value = 0.5 - c.lift * 0.12;
-      art.cardShadows[i].uniforms.uBlur.value = 0.018 + c.lift * 0.03;
+      art.cardMats[i].emissiveIntensity = (0.15 + c.lift * 0.16) * dim * art.lampU.uLampOn.value;
+      art.cardShadows[i].uniforms.uOpacity.value = 0.54 - c.lift * 0.14;
+      art.cardShadows[i].uniforms.uBlur.value = 0.02 + c.lift * 0.032;
     });
 
     // where the camera wants to be: the whole board, or the open card

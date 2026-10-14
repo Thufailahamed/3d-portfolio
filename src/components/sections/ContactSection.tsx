@@ -15,7 +15,7 @@ export default function ContactSection() {
   const root = useRef<HTMLElement>(null);
   const clock = useRef<HTMLSpanElement>(null);
   // the end lies past the bottom of the page, so it stays active at the very end
-  const active = useChapterActive("contact", 0.3, 1.05);
+  const active = useChapterActive("contact", 0.25, 1.05);
 
   useGSAP(
     () => {

@@ -75,186 +75,226 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.roundRect(x, y, w, h, r);
 }
 
-export const CARD_PX = { w: 680, h: 720 };
+export const CARD_PX = { w: 1024, h: 1120 };
 
 /**
- * An archival dossier Polaroid of the project:
- * - Top evidence strip with file code + live status
- * - Full 16:10 screenshot viewport so hero typography & dashboards are never cropped off
- * - Red marker index, project title, category, stack pills, and metric stamp below
+ * A high-resolution (1024×1120) archival dossier Polaroid of the project:
+ * - Top archival classification header with file code & origin
+ * - True 16:10 photographic print frame (928×580) with corner registration marks
+ * - Properly spaced #01 index + display title, two-column sector/role spec (no truncation),
+ *   stack pills, and serial barcode below
  */
 export function cardTexture(p: Project, i: number) {
   const { w, h } = CARD_PX;
   const { ctx, tex } = canvasTexture(w, h);
-  const barH = 26;
-  const photo = { x: 28, y: 54 + barH, w: w - 56, h: 382 };
+  tex.anisotropy = 16;
+  const padX = 48;
+  const photo = { x: padX, y: 82, w: w - padX * 2, h: 580 };
 
   const draw = (img: HTMLImageElement | null, f: ReturnType<typeof fonts>) => {
-    paper(ctx, w, h, "#f1ece0", i + 1);
+    paper(ctx, w, h, "#f3eee3", i + 1);
 
-    // Top archival metadata strip above the print
+    // Subtle inner archival border
+    ctx.strokeStyle = "rgba(24,22,18,0.12)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(20, 20, w - 40, h - 40);
+
+    // Top archival metadata strip
     ctx.textBaseline = "middle";
     ctx.fillStyle = RED;
-    ctx.font = `600 16px ${f.mono}`;
+    ctx.font = `700 21px ${f.mono}`;
     ctx.textAlign = "left";
-    ctx.fillText(`EVIDENCE // FILE #${pad(i + 1)}`, 30, 31);
+    ctx.fillText(`EVIDENCE // FILE #${pad(i + 1)}`, padX, 50);
 
-    ctx.fillStyle = "rgba(23,24,27,0.52)";
-    ctx.font = `500 15px ${f.mono}`;
+    ctx.fillStyle = "rgba(20,22,26,0.48)";
+    ctx.font = `500 19px ${f.mono}`;
     ctx.textAlign = "right";
-    ctx.fillText(`CMB-0${i + 1} · ${p.year}`, w - 30, 31);
+    const host = p.link ? p.link.replace(/^https?:\/\//, "").replace(/\/$/, "") : `${p.slug}.synapx.lk`;
+    ctx.fillText(`${host.toUpperCase()}  ·  CMB-${pad(i + 1)}`, w - padX, 50);
     ctx.textAlign = "left";
 
-    // Dark browser chrome bar above the 16:10 screenshot so light UIs frame cleanly
-    ctx.fillStyle = "#14161b";
-    roundRect(ctx, photo.x, photo.y - barH, photo.w, barH + photo.h, 8);
-    ctx.fill();
-
-    // Window traffic-light dots + URL bar in the dark frame header
-    const dotY = photo.y - barH / 2;
-    ["#ff5f56", "#ffbd2e", "#27c93f"].forEach((col, d) => {
-      ctx.fillStyle = col;
+    // Corner registration crop ticks around the 16:10 print
+    ctx.strokeStyle = "rgba(20,22,26,0.38)";
+    ctx.lineWidth = 2;
+    const tk = 12;
+    const off = 6;
+    [
+      [photo.x - off, photo.y - off, 1, 1],
+      [photo.x + photo.w + off, photo.y - off, -1, 1],
+      [photo.x - off, photo.y + photo.h + off, 1, -1],
+      [photo.x + photo.w + off, photo.y + photo.h + off, -1, -1],
+    ].forEach(([cx, cy, dx, dy]) => {
       ctx.beginPath();
-      ctx.arc(photo.x + 16 + d * 13, dotY, 4, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(cx, cy + dy * tk);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx + dx * tk, cy);
+      ctx.stroke();
     });
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
-    ctx.font = `500 12px ${f.mono}`;
-    const host = p.link ? p.link.replace(/^https?:\/\//, "").replace(/\/$/, "") : `${p.slug}.synapx.lk`;
-    ctx.fillText(host, photo.x + 64, dotY + 1);
 
-    // Live indicator pill in browser bar
-    ctx.fillStyle = p.tint;
-    ctx.beginPath();
-    ctx.arc(photo.x + photo.w - 58, dotY, 3.8, 0, Math.PI * 2);
+    // Dark matte backing for the 16:10 print
+    ctx.fillStyle = "#0d0f14";
+    roundRect(ctx, photo.x, photo.y, photo.w, photo.h, 8);
     ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.font = `600 11px ${f.mono}`;
-    ctx.fillText("LIVE", photo.x + photo.w - 48, dotY + 1);
-
-    // Screenshot area
-    ctx.fillStyle = "#0e1014";
-    ctx.fillRect(photo.x, photo.y, photo.w, photo.h);
 
     if (img) {
-      // 624x382 is ~1.63:1, matching the 16:10 cover screenshots almost 1:1 without cropping sides
       const k = Math.max(photo.w / img.width, photo.h / img.height);
       const sw = photo.w / k;
       const sh = photo.h / k;
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(photo.x, photo.y, photo.w, photo.h);
+      roundRect(ctx, photo.x, photo.y, photo.w, photo.h, 8);
       ctx.clip();
-      ctx.filter = "contrast(1.05) saturate(0.96)";
+      ctx.filter = "contrast(1.04) saturate(0.98)";
       ctx.drawImage(img, (img.width - sw) / 2, 0, sw, sh, photo.x, photo.y, photo.w, photo.h);
       ctx.filter = "none";
 
-      // Subtle glossy photo sheen across top-left to bottom-right
-      const sheen = ctx.createLinearGradient(photo.x, photo.y, photo.x + photo.w * 0.7, photo.y + photo.h);
-      sheen.addColorStop(0, "rgba(255,255,255,0.09)");
-      sheen.addColorStop(0.35, "rgba(255,255,255,0.0)");
-      sheen.addColorStop(1, "rgba(0,0,0,0.22)");
+      // Soft photographic print luster
+      const sheen = ctx.createLinearGradient(photo.x, photo.y, photo.x + photo.w * 0.65, photo.y + photo.h);
+      sheen.addColorStop(0, "rgba(255,255,255,0.08)");
+      sheen.addColorStop(0.35, "rgba(255,255,255,0)");
+      sheen.addColorStop(1, "rgba(0,0,0,0.18)");
       ctx.fillStyle = sheen;
       ctx.fillRect(photo.x, photo.y, photo.w, photo.h);
 
-      // Bottom edge gradient for metric badge legibility
-      const botGrad = ctx.createLinearGradient(0, photo.y + photo.h - 68, 0, photo.y + photo.h);
+      // Subtle bottom gradient for badge legibility
+      const botGrad = ctx.createLinearGradient(0, photo.y + photo.h - 96, 0, photo.y + photo.h);
       botGrad.addColorStop(0, "rgba(10,12,16,0)");
-      botGrad.addColorStop(1, "rgba(10,12,16,0.68)");
+      botGrad.addColorStop(1, "rgba(10,12,16,0.72)");
       ctx.fillStyle = botGrad;
-      ctx.fillRect(photo.x, photo.y + photo.h - 68, photo.w, 68);
+      ctx.fillRect(photo.x, photo.y + photo.h - 96, photo.w, 96);
 
-      // Headline metric badge overlaid inside bottom-right of the photo
+      // Sleek telemetry metric pill in bottom-right of print
       const m0 = p.metrics?.[0];
       if (m0) {
-        const badgeText = `${m0.value} ${m0.label}`.toUpperCase();
-        ctx.font = `600 14px ${f.mono}`;
+        const badgeText = `${m0.value}  ${m0.label}`.toUpperCase();
+        ctx.font = `600 19px ${f.mono}`;
         const tw = ctx.measureText(badgeText).width;
-        const bx = photo.x + photo.w - tw - 34;
-        const by = photo.y + photo.h - 38;
-        ctx.fillStyle = "rgba(12,13,16,0.86)";
-        roundRect(ctx, bx, by, tw + 24, 28, 6);
+        const bw = tw + 42;
+        const bh = 42;
+        const bx = photo.x + photo.w - bw - 18;
+        const by = photo.y + photo.h - bh - 16;
+
+        ctx.fillStyle = "rgba(11,12,15,0.9)";
+        roundRect(ctx, bx, by, bw, bh, 8);
         ctx.fill();
-        ctx.strokeStyle = p.tint;
+        ctx.strokeStyle = "rgba(255,255,255,0.16)";
         ctx.lineWidth = 1.5;
         ctx.stroke();
+
+        // Glowing tint dot inside badge
         ctx.fillStyle = p.tint;
+        ctx.beginPath();
+        ctx.arc(bx + 18, by + bh / 2, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#f4f1ea";
         ctx.textBaseline = "middle";
-        ctx.fillText(badgeText, bx + 12, by + 14.5);
+        ctx.fillText(badgeText, bx + 32, by + bh / 2 + 1);
       }
 
       ctx.restore();
     }
 
-    // Crisp dark border around viewport
-    ctx.strokeStyle = "rgba(16,18,22,0.55)";
+    // Crisp dark keyline around the print
+    ctx.strokeStyle = "rgba(16,18,22,0.65)";
     ctx.lineWidth = 2.5;
-    roundRect(ctx, photo.x, photo.y - barH, photo.w, barH + photo.h, 8);
+    roundRect(ctx, photo.x, photo.y, photo.w, photo.h, 8);
     ctx.stroke();
 
-    // Lower caption block on the Polaroid paper
+    // Lower editorial typography block
     const top = photo.y + photo.h;
     ctx.textBaseline = "alphabetic";
 
-    // Red marker number #01
+    // 1. Index number #03 + vertical separator + Display Title (with generous spacing!)
+    const numStr = `#${pad(i + 1)}`;
     ctx.fillStyle = RED;
-    ctx.font = `italic 700 54px ${f.display}`;
-    ctx.fillText(`#${pad(i + 1)}`, 28, top + 64);
+    ctx.font = `italic 700 74px ${f.display}`;
+    ctx.fillText(numStr, padX, top + 92);
+    const numW = ctx.measureText(numStr).width;
 
-    // Project title beside or below marker
-    ctx.fillStyle = "#121316";
-    ctx.font = `700 38px ${f.display}`;
-    ctx.fillText(fitText(ctx, p.title.toUpperCase(), w - 210), 134, top + 62);
-
-    // Accent tint seal on the right
-    ctx.fillStyle = "#16181d";
+    // Vertical hairline between #03 and Title
+    const sepX = padX + numW + 26;
+    ctx.strokeStyle = "rgba(20,22,26,0.2)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(w - 50, top + 46, 20, 0, Math.PI * 2);
+    ctx.moveTo(sepX, top + 36);
+    ctx.lineTo(sepX, top + 96);
+    ctx.stroke();
+
+    // Project Title
+    const titleX = sepX + 24;
+    ctx.fillStyle = "#111216";
+    ctx.font = `700 62px ${f.display}`;
+    ctx.fillText(fitText(ctx, p.title.toUpperCase(), w - titleX - 180), titleX, top + 90);
+
+    // Refined archival status & tint badge on the right (replaces the old black circle)
+    const pillW = 138;
+    const pillH = 44;
+    const pillX = w - padX - pillW;
+    const pillY = top + 46;
+    ctx.fillStyle = "#15171c";
+    roundRect(ctx, pillX, pillY, pillW, pillH, 22);
     ctx.fill();
     ctx.fillStyle = p.tint;
     ctx.beginPath();
-    ctx.arc(w - 50, top + 46, 11, 0, Math.PI * 2);
+    ctx.arc(pillX + 24, pillY + pillH / 2, 7, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = "#f3efe6";
+    ctx.font = `600 18px ${f.mono}`;
+    ctx.textBaseline = "middle";
+    ctx.fillText(`LIVE '${String(p.year).slice(-2)}`, pillX + 42, pillY + pillH / 2 + 1);
 
-    // Divider line
-    ctx.strokeStyle = "rgba(20,22,26,0.14)";
-    ctx.lineWidth = 1.5;
+    // 2. Horizontal divider rule with accent bar
+    const ruleY = top + 124;
+    ctx.strokeStyle = "rgba(20,22,26,0.15)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(28, top + 82);
-    ctx.lineTo(w - 28, top + 82);
+    ctx.moveTo(padX, ruleY);
+    ctx.lineTo(w - padX, ruleY);
     ctx.stroke();
 
-    // Category + Role
-    ctx.fillStyle = "rgba(18,19,22,0.78)";
-    ctx.font = `600 20px ${f.mono}`;
-    ctx.fillText(fitText(ctx, `${p.category.toUpperCase()} — ${p.role.toUpperCase()}`, w - 56), 28, top + 114);
+    ctx.fillStyle = RED;
+    ctx.fillRect(padX, ruleY - 1.5, 84, 3);
 
-    // Stack chips row at the bottom of the card
-    let cx = 28;
-    const cy = top + 132;
-    ctx.font = `600 15px ${f.mono}`;
+    // 3. Two-column Sector & Role specification (never truncates!)
+    ctx.textBaseline = "alphabetic";
+    const col2X = Math.round(w * 0.54);
+
+    ctx.fillStyle = "rgba(20,22,26,0.48)";
+    ctx.font = `600 16px ${f.mono}`;
+    ctx.fillText("SECTOR // CLASSIFICATION", padX, ruleY + 38);
+    ctx.fillText("ROLE // OWNERSHIP", col2X, ruleY + 38);
+
+    ctx.fillStyle = "#14161a";
+    ctx.font = `600 25px ${f.mono}`;
+    ctx.fillText(fitText(ctx, p.category.toUpperCase(), col2X - padX - 24), padX, ruleY + 74);
+    ctx.fillText(fitText(ctx, p.role.toUpperCase(), w - col2X - padX), col2X, ruleY + 74);
+
+    // 4. Bottom stack chips + archival barcode
+    let cx = padX;
+    const cy = ruleY + 104;
+    ctx.font = `600 19px ${f.mono}`;
     ctx.textBaseline = "middle";
     p.stack.slice(0, 3).forEach((tech) => {
       const label = tech.toUpperCase();
-      const tw = ctx.measureText(label).width + 20;
-      if (cx + tw > w - 120) return;
-      ctx.fillStyle = "rgba(20,22,27,0.08)";
-      roundRect(ctx, cx, cy, tw, 28, 5);
+      const tw = ctx.measureText(label).width + 28;
+      if (cx + tw > w - 185) return;
+      ctx.fillStyle = "rgba(20,22,27,0.07)";
+      roundRect(ctx, cx, cy, tw, 38, 7);
       ctx.fill();
-      ctx.strokeStyle = "rgba(20,22,27,0.2)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(20,22,27,0.22)";
+      ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.fillStyle = "#1c1e24";
-      ctx.fillText(label, cx + 10, cy + 14.5);
-      cx += tw + 8;
+      ctx.fillStyle = "#181a20";
+      ctx.fillText(label, cx + 14, cy + 20);
+      cx += tw + 12;
     });
 
-    // Mini barcode stamp at bottom-right
-    const bx0 = w - 102;
-    for (let b = 0; b < 18; b++) {
-      const bw = b % 3 === 0 ? 3 : 1.5;
-      ctx.fillStyle = "rgba(20,22,27,0.45)";
-      ctx.fillRect(bx0 + b * 4.2, cy + 2, bw, 24);
+    // Archival barcode at bottom-right
+    const bx0 = w - padX - 118;
+    for (let b = 0; b < 20; b++) {
+      const bw = b % 3 === 0 ? 4 : b % 2 === 0 ? 2 : 1.5;
+      ctx.fillStyle = "rgba(20,22,27,0.55)";
+      ctx.fillRect(bx0 + b * 6, cy + 3, bw, 32);
     }
 
     tex.needsUpdate = true;

@@ -40,8 +40,9 @@ export default function CameraRig() {
     const A = off(ABOUT_ORIGIN);
     const C = off(CONTACT_ORIGIN);
     return [
-      // the forest arch, framed as in the Blender scene; scrolling walks up to it
+      // the forest arch: hold/pause at opening, then walk up to it
       { p: 0, pos: [0, 1.55, 10.5 * z], look: [0, 2.05, 0] },
+      { p: at(hero, 0.35), pos: [0, 1.55, 10.5 * z], look: [0, 2.05, 0] },
       { p: hero.end, pos: [-0.9, 2.3, 6.6 * z], look: [0, 2.6, 0] },
       // pull back to watch the burst
       { p: at(fr, 0.3), pos: [1.2, 3.1, 11 * z], look: [0, 3, 0] },
@@ -53,30 +54,33 @@ export default function CameraRig() {
       { p: tu.end, pos: [0, 3.2, -4], look: [0, 3.2, -10] },
       // hidden cut (the tunnel is opaque): land high above the dune and descend
       { p: tu.end + 0.0005, pos: P(0, 5.5, 13 * pz), look: P(0, 1.2, 0) },
-      { p: at(pr, 0.22), pos: P(0, 2.1, 6.4 * pz), look: P(0, 1.65, 0) },
-      { p: at(pr, 0.8), pos: P(1.1, 1.8, 5.8 * pz), look: P(0, 1.65, 0) },
+      { p: at(pr, 0.18), pos: P(0, 2.1, 6.4 * pz), look: P(0, 1.65, 0) },
+      // holds calmly on the project crystal for steady showcase browsing
+      { p: at(pr, 0.78), pos: P(0.25, 2.05, 6.2 * pz), look: P(0, 1.65, 0) },
       { p: pr.end, pos: P(0.4, 4.5, 4.5 * pz), look: P(0, 6, -8) },
       // dip to black → about: drift through the ribbons toward the bloom
       { p: atP("about", 0.012), pos: A(0, 3, 17 * az), look: A(0, 2.6, 0) },
-      { p: atP("about", 0.45), pos: A(-1.4, 2.6, 12 * az), look: A(0, 2.4, 0) },
-      { p: atP("about", 0.7), pos: A(1, 2.2, 9.5 * az), look: A(0, 2, 0) },
-      // desktop frames the bloom on the right, leaving room for the copy
+      { p: atP("about", 0.28), pos: A(-1.4, 2.6, 12 * az), look: A(0, 2.4, 0) },
+      { p: atP("about", 0.48), pos: A(1, 2.2, 9.5 * az), look: A(0, 2, 0) },
+      // desktop frames the globe on the right, leaving room for the copy; holds paused across the section
       isMobile
-        ? { p: atP("about", 0.86), pos: A(0, 3.1, 8.6), look: A(0, 1.55, 0) }
-        : { p: atP("about", 0.86), pos: A(-0.2, 3.1, 6.4), look: A(-1, 2.8, 0) },
+        ? { p: atP("about", 0.54), pos: A(0, 3.1, 8.6), look: A(0, 1.55, 0) }
+        : { p: atP("about", 0.54), pos: A(-0.2, 3.1, 6.4), look: A(-1, 2.8, 0) },
+      isMobile
+        ? { p: atP("about", 0.92), pos: A(0.15, 3.15, 8.3), look: A(0, 1.58, 0) }
+        : { p: atP("about", 0.92), pos: A(0.05, 3.15, 6.2), look: A(-0.95, 2.82, 0) },
       isMobile
         ? { p: atP("about", 0.99), pos: A(0.3, 3.2, 8.2), look: A(0, 1.6, 0) }
         : { p: atP("about", 0.99), pos: A(0.4, 3.3, 5.8), look: A(-0.95, 2.85, 0) },
-      // dip to black → contact: the clearing, years later. Phones look down on it, so the
-      // arch sits in the top half above the copy
+      // dip to black → contact: the clearing, years later
       { p: atP("contact", 0.012), pos: C(0, 4, 12 * az), look: C(0, 1.8, 0) },
       ...(isMobile
         ? [
-            { p: atP("contact", 0.6), pos: C(-0.3, 2.9, 9.6), look: C(0, -0.2, 0) },
+            { p: atP("contact", 0.35), pos: C(-0.3, 2.9, 9.6), look: C(0, -0.2, 0) },
             { p: 1, pos: C(0, 2.6, 9), look: C(0, -0.6, 0) },
           ]
         : [
-            { p: atP("contact", 0.6), pos: C(-0.5, 2, 7.5), look: C(0, 1.9, 0) },
+            { p: atP("contact", 0.35), pos: C(-0.5, 2, 7.5), look: C(0, 1.9, 0) },
             { p: 1, pos: C(0.2, 1.9, 6.6), look: C(0, 2.1, 0) },
           ]),
     ];

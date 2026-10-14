@@ -56,7 +56,7 @@ export default function BoardView() {
       gsap.fromTo(
         ".bd-file-in",
         { autoAlpha: 0, y: 12 },
-        { autoAlpha: 1, y: 0, duration: 0.65, stagger: 0.035, ease: "power3.out", delay: 0.12 },
+        { autoAlpha: 1, y: 0, duration: 0.6, stagger: 0.035, ease: "power3.out", delay: 0.1 },
       );
     },
     { scope: panel, dependencies: [focus] },
@@ -122,35 +122,6 @@ export default function BoardView() {
     };
   }, []);
 
-  // Esc closes the file; arrows walk the cards (even starting from overview); 1..6 jump directly
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const f = useApp.getState().boardFocus;
-      if (e.key === "Escape") {
-        open(null);
-        return;
-      }
-      if (e.key === "ArrowRight") {
-        e.preventDefault();
-        open(f === null ? 0 : (f + 1) % projects.length);
-        return;
-      }
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        open(f === null ? projects.length - 1 : (f - 1 + projects.length) % projects.length);
-        return;
-      }
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key >= "1" && e.key <= "6") {
-        const idx = Number(e.key) - 1;
-        if (idx < projects.length) open(f === idx ? null : idx);
-      }
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, []);
-
-  // leaving: the curtain closes from the centre of the screen
   /**
    * Back to the globe: the arrival in reverse. The camera pushes back in onto the map as the
    * room dims and the threads rewind (Board keys all of that to `arrive`); then, under the
@@ -182,16 +153,56 @@ export default function BoardView() {
     });
   }
 
+  // Esc closes the file; arrows walk the cards (even starting from overview); 1..6 jump directly
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const f = useApp.getState().boardFocus;
+      if (e.key === "Escape") {
+        if (f !== null) {
+          open(null);
+        } else {
+          backToGlobe();
+        }
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        open(f === null ? 0 : (f + 1) % projects.length);
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        open(f === null ? projects.length - 1 : (f - 1 + projects.length) % projects.length);
+        return;
+      }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key >= "1" && e.key <= "6") {
+        const idx = Number(e.key) - 1;
+        if (idx < projects.length) open(f === idx ? null : idx);
+      }
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
+
+  // leaving: the curtain closes from the centre of the screen
   const leave = (href: string, tint: string, image: string) => (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey) return;
     e.preventDefault();
     if (reduced()) return router.push(href, { scroll: href !== "/about" });
     router.prefetch(href);
+    // back to the globe: transition immediately to the globe with the rolling animation only
     if (href === "/about") return backToGlobe();
     const x = e.clientX || innerWidth / 2;
     const y = e.clientY || innerHeight / 2;
     curtain.cover({ x, y, tint, image }).then(() => router.push(href));
   };
+
+  const hostLabel = project
+    ? project.link
+      ? project.link.replace(/^https?:\/\//, "").replace(/\/$/, "")
+      : `${project.slug}.synapx.lk`
+    : "";
 
   return (
     <div ref={root} data-board-overlay className="fixed inset-0 z-20">
@@ -200,12 +211,12 @@ export default function BoardView() {
       {/* top HUD header */}
       <div className="pointer-events-none absolute left-gutter right-gutter top-[68px] md:top-[76px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="bd-in flex flex-wrap items-center gap-2.5">
+          <div className="bd-in flex flex-wrap items-center gap-2">
             <Link
               href="/about"
               scroll={false}
               onClick={leave("/about", "#5c9dff", "/earth/night.webp")}
-              className="pd-back label pointer-events-auto rounded-full border border-fg/15 bg-bg/65 px-3.5 py-1.5 !text-fg backdrop-blur-md transition-colors hover:border-fg/40"
+              className="pd-back label pointer-events-auto rounded-full border border-fg/15 bg-bg/70 px-3.5 py-1.5 !text-fg backdrop-blur-md transition-colors hover:border-fg/40"
               data-cursor="view"
             >
               <span aria-hidden className="pd-back-arrow text-accent">
@@ -213,21 +224,23 @@ export default function BoardView() {
               </span>{" "}
               Back to the globe
             </Link>
-            <span className="label hidden items-center gap-2 rounded-full border border-fg/10 bg-bg/45 px-3 py-1.5 !text-[10px] !text-fg/65 backdrop-blur-md sm:inline-flex">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_#c8ff3d]" />
-              Origin · 06.93°N 79.85°E · Colombo
-            </span>
-          </div>
 
-          {project && (
-            <button
-              type="button"
-              onClick={() => open(null)}
-              className="bd-in label pointer-events-auto inline-flex items-center gap-2 rounded-full border border-fg/20 bg-bg/75 px-3.5 py-1.5 !text-fg backdrop-blur-md transition-colors hover:border-accent hover:!text-accent"
-            >
-              <span aria-hidden>↖</span> Step back to full board
-            </button>
-          )}
+            {project ? (
+              <button
+                type="button"
+                onClick={() => open(null)}
+                className="label pointer-events-auto inline-flex items-center gap-2 rounded-full border border-fg/20 bg-bg/75 px-3.5 py-1.5 !text-fg backdrop-blur-md transition-colors hover:border-accent hover:!text-accent"
+              >
+                <span aria-hidden>↖</span> Full board{" "}
+                <span className="rounded border border-fg/20 px-1.5 py-0.2 text-[9px] text-fg/55">ESC</span>
+              </button>
+            ) : (
+              <span className="label hidden items-center gap-2 rounded-full border border-fg/10 bg-bg/45 px-3 py-1.5 !text-[10px] !text-fg/65 backdrop-blur-md sm:inline-flex">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_#c8ff3d]" />
+                Origin · 06.93°N 79.85°E · Colombo
+              </span>
+            )}
+          </div>
         </div>
 
         <div
@@ -303,7 +316,11 @@ export default function BoardView() {
             })}
           </ol>
 
-          <div className="pointer-events-auto hidden shrink-0 items-center justify-end gap-4 md:flex">
+          <div
+            className={`pointer-events-auto hidden shrink-0 items-center justify-end gap-4 transition-opacity duration-300 md:flex ${
+              project ? "pointer-events-none opacity-0" : "opacity-100"
+            }`}
+          >
             <p className="label !text-[10px]">
               <span className="text-fg/80">[Click]</span> Open · <span className="text-fg/80">[1–6 / ← →]</span> Walk ·{" "}
               <span className="text-fg/80">[Esc]</span> Back
@@ -321,25 +338,29 @@ export default function BoardView() {
         ref={panel}
         aria-live="polite"
         aria-label={project ? `${project.title} — file` : undefined}
-        className={`bd-file ${project ? "is-open" : ""}`}
+        className={`bd-file no-scrollbar ${project ? "is-open" : ""}`}
         style={{ "--tint": project?.tint ?? "#ece9e2" } as React.CSSProperties}
       >
         {project && focus !== null && (
-          <div className="flex h-full flex-col">
-            {/* Dossier header bar */}
-            <div className="bd-file-in flex items-center justify-between gap-2">
+          <div className="flex min-h-full flex-col">
+            {/* Top dossier navigation bar */}
+            <div className="bd-file-in flex shrink-0 items-center justify-between gap-2 border-b border-fg/10 pb-3.5">
               <div className="flex items-center gap-2.5">
                 <span
                   aria-hidden
                   className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: project.tint, boxShadow: `0 0 10px ${project.tint}` }}
+                  style={{ backgroundColor: project.tint, boxShadow: `0 0 12px ${project.tint}` }}
                 />
-                <p className="label tabular-nums !text-fg/85">
-                  Case File <span className="font-bold text-[color:var(--tint)]">#{pad(focus + 1)}</span>
+                <p className="label tabular-nums !text-[10px] !text-fg/90">
+                  CASE FILE <span className="font-bold text-[color:var(--tint)]">#{pad(focus + 1)}</span>
                   <span className="text-fg/35"> / {pad(projects.length)}</span>
                 </p>
+                <span className="hidden rounded-full border border-fg/12 bg-fg/[0.04] px-2 py-0.5 font-mono text-[9px] uppercase tracking-widest text-fg/55 sm:inline-block">
+                  CMB · {project.year}
+                </span>
               </div>
-              <div className="flex gap-1.5">
+
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   className="bd-icon"
@@ -362,102 +383,129 @@ export default function BoardView() {
               </div>
             </div>
 
-            {/* Visual screenshot preview card inside the dossier */}
-            <div className="bd-file-in relative mt-4 overflow-hidden rounded-xl border border-fg/15 bg-black/60 shadow-lg">
-              <div className="flex items-center justify-between border-b border-fg/10 bg-white/[0.03] px-3 py-1.5">
+            {/* Crisp 16:10 screenshot preview window (shrink-0 prevents flex collapse) */}
+            <div className="bd-file-in bd-preview mt-4 shrink-0">
+              <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-3.5 py-2">
                 <div className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-fg/20" />
-                  <span className="h-2 w-2 rounded-full bg-fg/20" />
-                  <span className="h-2 w-2 rounded-full bg-fg/20" />
+                  <span className="h-2 w-2 rounded-full bg-[#ff5f56]/75" />
+                  <span className="h-2 w-2 rounded-full bg-[#ffbd2e]/75" />
+                  <span className="h-2 w-2 rounded-full bg-[#27c93f]/75" />
                 </div>
-                <span className="font-mono text-[10px] tracking-wider text-fg/50">
-                  {project.link ? project.link.replace(/^https?:\/\//, "").replace(/\/$/, "") : `${project.slug}.synapx.lk`}
-                </span>
-                <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[color:var(--tint)]">
-                  ● Live
+                <span className="font-mono text-[10px] tracking-wider text-fg/60">{hostLabel}</span>
+                <span className="inline-flex items-center gap-1.5 font-mono text-[9px] font-semibold uppercase tracking-widest text-[color:var(--tint)]">
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: project.tint, boxShadow: `0 0 8px ${project.tint}` }}
+                  />
+                  Live
                 </span>
               </div>
-              <div className="relative aspect-[16/9] w-full overflow-hidden">
+
+              <div className="relative aspect-[16/10] w-full overflow-hidden bg-black">
                 <Image
                   src={project.cover}
                   alt={project.title}
                   fill
-                  sizes="(min-width: 768px) 420px, 92vw"
-                  className="object-cover object-top"
+                  sizes="(min-width: 768px) 440px, 92vw"
+                  className="object-cover object-top transition-transform duration-700 hover:scale-[1.03]"
                 />
                 <div
                   className="pointer-events-none absolute inset-0"
                   style={{
-                    background: "linear-gradient(to top, rgba(11,11,12,0.75) 0%, transparent 50%)",
+                    background:
+                      "linear-gradient(to top, rgba(10,11,14,0.88) 0%, rgba(10,11,14,0.18) 42%, transparent 100%)",
                   }}
                 />
-                <span className="pd-tag absolute bottom-2.5 left-3 rounded-md bg-bg/80 px-2 py-0.5 !text-[10px] backdrop-blur-md">
-                  [ {project.category} ]
-                </span>
+                <div className="pointer-events-none absolute inset-x-3 bottom-2.5 flex items-end justify-between gap-2">
+                  <span className="rounded-md border border-white/12 bg-black/75 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[color:var(--tint)] backdrop-blur-md">
+                    {project.category}
+                  </span>
+                  <span className="rounded-md border border-white/10 bg-black/70 px-2 py-0.5 font-mono text-[10px] text-fg/75 backdrop-blur-md">
+                    {project.role}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <h2 className="bd-file-in display mt-4 text-[8.5vw] md:text-[clamp(28px,2.3vw,40px)]">{project.title}</h2>
-            <p className="bd-file-in mt-2.5 text-sm leading-relaxed text-fg/75 md:text-[15px]">{project.tagline}</p>
+            {/* Title & Tagline */}
+            <div className="bd-file-in mt-4 shrink-0">
+              <h2 className="display text-[8vw] md:text-[clamp(28px,2.2vw,38px)]">{project.title}</h2>
+              <p className="mt-2 text-[14px] leading-relaxed text-fg/75">{project.tagline}</p>
+            </div>
 
+            {/* 3-Column Headline Telemetry Metrics */}
             {project.metrics && (
-              <dl className="bd-file-in mt-4 grid grid-cols-3 gap-2">
+              <dl className="bd-file-in mt-4 grid shrink-0 grid-cols-3 gap-2">
                 {project.metrics.map((m) => (
                   <div key={m.label} className="bd-metric">
+                    <div className="bd-metric-bar" />
                     <dt className="sr-only">{m.label}</dt>
-                    <dd className="display text-xl text-[color:var(--tint)] md:text-2xl">{m.value}</dd>
-                    <dd className="mt-1 text-[11px] leading-snug text-fg/60">{m.label}</dd>
+                    <dd className="display mt-1.5 text-xl text-[color:var(--tint)] md:text-[23px]">{m.value}</dd>
+                    <dd className="mt-1 text-[10.5px] leading-snug text-fg/65">{m.label}</dd>
                   </div>
                 ))}
               </dl>
             )}
 
+            {/* 2x2 Key Facts */}
             {project.facts && (
-              <dl className="bd-file-in mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-fg/10 pt-3.5">
+              <dl className="bd-file-in mt-4 grid shrink-0 grid-cols-2 gap-x-4 gap-y-2.5 rounded-xl border border-fg/10 bg-white/[0.02] p-3.5">
                 {project.facts.map((f) => (
                   <div key={f.label}>
-                    <dt className="label !text-[10px]">{f.label}</dt>
-                    <dd className="mt-0.5 text-[13px] font-medium text-fg/90">{f.value}</dd>
+                    <dt className="label !text-[9.5px] !text-fg/45">{f.label}</dt>
+                    <dd className="mt-0.5 text-[12.5px] font-medium text-fg/92">{f.value}</dd>
                   </div>
                 ))}
               </dl>
             )}
 
+            {/* Verdict Statement */}
             {project.verdict && (
-              <div className="bd-file-in mt-4 rounded-xl border border-fg/10 bg-fg/[0.03] px-3.5 py-2.5">
-                <p className="font-mono text-[10px] uppercase tracking-widest text-[color:var(--tint)]">
+              <div className="bd-file-in bd-verdict mt-3.5 shrink-0">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--tint)]">
                   Verdict — {project.verdict.title}
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-fg/70">{project.verdict.statement}</p>
+                <p className="mt-1 text-[12px] leading-relaxed text-fg/72">{project.verdict.statement}</p>
               </div>
             )}
 
-            <ul className="bd-file-in mt-4 flex flex-wrap gap-1.5" aria-label="Stack">
+            {/* Stack Chips */}
+            <ul className="bd-file-in mt-3.5 flex shrink-0 flex-wrap gap-1.5" aria-label="Stack">
               {project.stack.map((s) => (
-                <li key={s} className="pd-chip !px-3 !py-1 !text-[10px]">
+                <li
+                  key={s}
+                  className="rounded-full border border-fg/12 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-fg/80"
+                >
                   {s}
                 </li>
               ))}
             </ul>
 
-            <div className="bd-file-in mt-auto flex flex-wrap gap-2 pt-5">
+            {/* Side-by-Side Primary & Secondary CTAs */}
+            <div
+              className={`bd-file-in mt-auto grid shrink-0 gap-2 pt-4 ${
+                project.link ? "grid-cols-2" : "grid-cols-1"
+              }`}
+            >
               <Link
                 href={`/projects/${project.slug}`}
                 onClick={leave(`/projects/${project.slug}`, project.tint, project.cover)}
-                className="contact-btn contact-btn--solid flex-1 justify-center"
+                className="bd-cta bd-cta--primary"
                 data-cursor="view"
               >
-                Open case study <span aria-hidden>↘</span>
+                <span>Case study</span>
+                <span aria-hidden>↘</span>
               </Link>
               {project.link && (
                 <a
                   href={project.link}
                   target="_blank"
                   rel="noreferrer"
-                  className="contact-btn justify-center"
+                  className="bd-cta bd-cta--secondary"
                   data-cursor="view"
                 >
-                  {project.liveLabel ?? "Live site"} <span aria-hidden>↗</span>
+                  <span className="truncate">{project.liveLabel ?? "Live site"}</span>
+                  <span aria-hidden>↗</span>
                 </a>
               )}
             </div>

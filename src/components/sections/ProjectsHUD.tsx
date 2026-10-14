@@ -41,7 +41,7 @@ export default function ProjectsHUD() {
     gsap.set(root.current, { clearProps: "opacity,visibility" });
     entering.current = false;
     const st = ScrollTrigger.create({
-      ...chapterScroll("projects", 0.16, 0.88),
+      ...chapterScroll("projects", 0.12, 0.88),
       onToggle: (self) => setActive(self.isActive),
     });
     return () => st.kill();

@@ -15,7 +15,7 @@ const home = about.places[0];
 export default function AboutHUD() {
   const root = useRef<HTMLElement>(null);
   const clock = useRef<HTMLSpanElement>(null);
-  const active = useChapterActive("about", 0.8, 0.95);
+  const active = useChapterActive("about", 0.52, 0.94);
 
   // reveal once the globe has formed
   useGSAP(

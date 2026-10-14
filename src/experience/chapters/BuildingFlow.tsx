@@ -8,6 +8,7 @@ import { FLOW_ORIGIN } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { palette } from "../palette";
+import CosmicSky from "../CosmicSky";
 
 export const BUILDING_URL = "/models/building.glb";
 
@@ -525,6 +526,9 @@ export default function BuildingFlow() {
 
       {/* The Exported Architecture & Gallery Model */}
       <primitive object={scene} />
+
+      {/* Stars & Galaxies Cosmic Sky */}
+      <CosmicSky />
     </group>
   );
 }

@@ -4,7 +4,7 @@
  * the chapter's local progress (0..1), so the HUD hand-off at 12s lands at t ≈ 0.8.
  */
 const START = 0.06; // after the dip from black
-const PER_SECOND = 0.062;
+const PER_SECOND = 0.035; // re-timed so the ribbon sequence transitions to the globe by t ≈ 0.52, leaving 0.52..0.94 as a generous pause/hold on the assembled globe & HUD
 
 /** Reference second → about-chapter progress. */
 export const atSec = (s: number) => START + s * PER_SECOND;

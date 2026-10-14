@@ -7,12 +7,12 @@ export type ChapterId = "hero" | "fracture" | "tunnel" | "projects" | "about" | 
 type ChapterDef = { id: ChapterId; span: number; path: string; title: string };
 
 const defs: ChapterDef[] = [
-  { id: "hero", span: 2.5, path: "/", title: "Home" },
+  { id: "hero", span: 3.5, path: "/", title: "Home" },
   { id: "fracture", span: 5, path: "/", title: "Home" },
-  { id: "tunnel", span: 2, path: "/", title: "Home" },
-  { id: "projects", span: 5, path: "/projects", title: "Projects" },
-  { id: "about", span: 8, path: "/about", title: "About" },
-  { id: "contact", span: 3, path: "/contact", title: "Contact" },
+  { id: "tunnel", span: 2.5, path: "/", title: "Home" },
+  { id: "projects", span: 9, path: "/projects", title: "Projects" },
+  { id: "about", span: 13, path: "/about", title: "About" },
+  { id: "contact", span: 4, path: "/contact", title: "Contact" },
 ];
 
 const total = defs.reduce((s, c) => s + c.span, 0);
@@ -42,7 +42,7 @@ export const BOARD_ORIGIN: [number, number, number] = [0, 0, -360];
 export const FLOW_ORIGIN: [number, number, number] = [0, 0, -480];
 
 /** Where in each chapter a deep link or menu jump lands (fraction of the chapter). */
-const LANDING: Record<ChapterId, number> = { hero: 0, fracture: 0.1, tunnel: 0, projects: 0.3, about: 0.9, contact: 1 };
+const LANDING: Record<ChapterId, number> = { hero: 0, fracture: 0.1, tunnel: 0, projects: 0.4, about: 0.72, contact: 0.95 };
 
 /** Master progress of a chapter's landing spot. */
 export const landing = (id: ChapterId) => at(id, LANDING[id]);
