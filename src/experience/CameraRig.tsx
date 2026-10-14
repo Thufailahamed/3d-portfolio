@@ -152,7 +152,8 @@ export default function CameraRig() {
     tmp.look.lerpVectors(tmp.a.fromArray(k0.look), tmp.b.fromArray(k1.look), t);
 
     // eased pointer parallax
-    const f = isMobile ? 0 : 1;
+    // (it eases out while the globe opens into the map, so the map lands square)
+    const f = (isMobile ? 0 : 1) * (1 - sceneState.unfold.t);
     tmp.m.x += (sceneState.mouse.x * f - tmp.m.x) * Math.min(1, dt * 2.5);
     tmp.m.y += (sceneState.mouse.y * f - tmp.m.y) * Math.min(1, dt * 2.5);
     tmp.pos.x += tmp.m.x * 0.45;

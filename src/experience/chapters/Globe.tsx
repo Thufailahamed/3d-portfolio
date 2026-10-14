@@ -7,6 +7,8 @@ import * as THREE from "three";
 import { about } from "@/content/site";
 import { sceneState } from "@/lib/sceneState";
 import { damp, LINES_OUT, POWER, span } from "../aboutTimeline";
+import { BOARD_FRAME, sharedInk, UNFOLD_FILL } from "../boardArt";
+import { unfoldFrag, unfoldVert } from "../shaders/unfold";
 import {
   arcFrag,
   arcVert,
@@ -246,6 +248,150 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
   );
   const group = useRef<THREE.Group>(null);
   const pitchGroup = useRef<THREE.Group>(null);
+  const earth = useRef<THREE.Mesh>(null);
+  const lines = useRef<THREE.Group>(null);
+  const sheet = useRef<THREE.Mesh>(null);
+
+  // the globe opening into the board's map (see shaders/unfold): one (lon, lat) grid, its
+  // seam at the back so the sheet splits there and unrolls from the front outward
+  const unfold = useMemo(() => {
+    const NX = 160;
+    const NY = 80;
+    const n = (NX + 1) * (NY + 1);
+    const theta = new Float32Array(n);
+    const lat = new Float32Array(n);
+    for (let iy = 0; iy <= NY; iy++)
+      for (let ix = 0; ix <= NX; ix++) {
+        const k = iy * (NX + 1) + ix;
+        theta[k] = -Math.PI + (2 * Math.PI * ix) / NX;
+        lat[k] = 90 - (180 * iy) / NY;
+      }
+    const index: number[] = [];
+    for (let iy = 0; iy < NY; iy++)
+      for (let ix = 0; ix < NX; ix++) {
+        const a = iy * (NX + 1) + ix;
+        const b = a + NX + 1;
+        index.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    geometry.setAttribute("aTheta", new THREE.BufferAttribute(theta, 1));
+    geometry.setAttribute("aLat", new THREE.BufferAttribute(lat, 1));
+    geometry.setIndex(index);
+    const F = BOARD_FRAME;
+    const material = new THREE.ShaderMaterial({
+      vertexShader: unfoldVert,
+      fragmentShader: unfoldFrag,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+      uniforms: {
+        uMap: { value: map },
+        uInk: { value: sharedInk() },
+        uMoon: { value: MOON },
+        uAtmo: { value: ATMO },
+        uM: { value: new THREE.Matrix3() },
+        uO: { value: new THREE.Vector3() },
+        uCr: { value: new THREE.Vector3() },
+        uCu: { value: new THREE.Vector3() },
+        uCd: { value: new THREE.Vector3() },
+        uR: { value: GLOBE_R },
+        uRc: { value: 1 },
+        uH: { value: 1 },
+        uLat0: { value: F.lat0 },
+        uLat1: { value: F.lat1 },
+        uLonC: { value: F.lonC },
+        uK1: { value: 0 },
+        uK2: { value: 0 },
+        uTime: { value: 0 },
+      },
+    });
+    // canonical sphere (front = the map's centre meridian, north up) → the globe's own frame
+    const front = lonLat(F.lonC, 0, 1);
+    const right = lonLat(F.lonC + 90, 0, 1);
+    const toSphere = new THREE.Matrix4().makeBasis(right, new THREE.Vector3(0, 1, 0), front);
+    return {
+      geometry,
+      material,
+      toSphere,
+      fromSphere: toSphere.clone().transpose(),
+      q0: new THREE.Quaternion(),
+      q1: new THREE.Quaternion(),
+      q: new THREE.Quaternion(),
+      captured: false,
+      m4: new THREE.Matrix4(),
+      cr: new THREE.Vector3(),
+      cu: new THREE.Vector3(),
+      cd: new THREE.Vector3(),
+      cam: new THREE.Vector3(),
+      at: new THREE.Vector3(),
+    };
+  }, [map]);
+  useEffect(
+    () => () => {
+      unfold.geometry.dispose();
+      unfold.material.dispose();
+    },
+    [unfold],
+  );
+
+  /**
+   * Opening into the map: the globe turns its centre meridian to us (align), latitudes
+   * straighten into a cylinder (k1), and the cylinder unrolls flat and square on the screen,
+   * at the size the board's camera will start from (k2).
+   */
+  const openInto = (t: number, time: number) => {
+    const u = unfold;
+    const opening = t > 0;
+    if (earth.current) earth.current.visible = !opening;
+    if (lines.current) lines.current.visible = !opening;
+    if (sheet.current) sheet.current.visible = opening;
+    if (!opening || !group.current) {
+      u.captured = false;
+      return;
+    }
+    const ease = (x: number) => {
+      const c = THREE.MathUtils.clamp(x, 0, 1);
+      return c * c * (3 - 2 * c);
+    };
+    const align = ease(t / 0.32);
+    const k1 = ease((t - 0.22) / 0.38);
+    const k2 = ease((t - 0.42) / 0.58);
+    // the atmosphere thins away as it starts to open
+    atmoMat.uniforms.uBody.value *= 1 - ease(t / 0.3);
+
+    if (!u.captured && spin.current) {
+      spin.current.getWorldQuaternion(u.q0);
+      u.captured = true;
+    }
+    // the camera's frame, in the globe's (the globe's parents only translate it)
+    u.cr.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    u.cu.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    u.cd.set(0, 0, 1).applyQuaternion(camera.quaternion);
+    group.current.getWorldPosition(u.at);
+    u.cam.copy(camera.position).sub(u.at);
+    // facing us squarely: canonical axes onto the camera's
+    u.m4.makeBasis(u.cr, u.cu, u.cd).multiply(u.fromSphere);
+    u.q1.setFromRotationMatrix(u.m4);
+    u.q.copy(u.q0).slerp(u.q1, align);
+    u.m4.makeRotationFromQuaternion(u.q).multiply(u.toSphere);
+    const U = u.material.uniforms;
+    U.uM.value.setFromMatrix4(u.m4);
+
+    // the sheet: as deep as the globe's centre, UNFOLD_FILL of the screen's width
+    const depth = u.cam.dot(u.cd);
+    const tan = Math.tan(THREE.MathUtils.degToRad((camera as THREE.PerspectiveCamera).fov) / 2);
+    const W = UNFOLD_FILL * 2 * depth * tan * (size.width / size.height);
+    const rc = W / (2 * Math.PI);
+    U.uRc.value = rc;
+    U.uH.value = (W * (BOARD_FRAME.lat1 - BOARD_FRAME.lat0)) / 360;
+    U.uO.value.copy(u.cam).addScaledVector(u.cd, -(depth + rc)).multiplyScalar(k1);
+    U.uCr.value.copy(u.cr);
+    U.uCu.value.copy(u.cu);
+    U.uCd.value.copy(u.cd);
+    U.uK1.value = k1;
+    U.uK2.value = k2;
+    U.uTime.value = time;
+  };
   const motion = useRef({ yaw: 0, pitch: 0, vel: 0 });
   const places = useMemo(() => about.places.map((p) => lonLat(p.lon, p.lat, GLOBE_R * 1.008)), []);
 
@@ -268,7 +414,8 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     // grab and spin: dragging turns it on its axis (yaw) and tips it toward you (pitch),
     // with momentum on release; it drifts on its own when left alone
     const live = !!group.current?.parent?.visible;
-    const grabbable = live && sec >= GRAB_FROM;
+    const opening = sceneState.unfold.t;
+    const grabbable = live && sec >= GRAB_FROM && opening === 0;
     const m = motion.current;
     const drag = sceneState.globeDrag;
     const rPx = Math.max(40, sceneState.globe.r);
@@ -289,6 +436,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     if (spin.current) spin.current.rotation.y = START_TURN + m.yaw + sceneState.mouse.x * 0.08;
     if (pitchGroup.current) pitchGroup.current.rotation.x = m.pitch;
 
+    openInto(opening, time);
     if (!group.current) return;
     const parent = group.current.parent!;
     // the globe on screen, for the DOM drag target
@@ -307,7 +455,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     sceneState.markers.length = places.length;
     places.forEach((p, i) => {
       const out = (sceneState.markers[i] ??= { x: 0, y: 0, facing: 0 });
-      if (!live || !spin.current || markersOn <= 0) {
+      if (!live || !spin.current || markersOn <= 0 || opening > 0) {
         out.facing = 0;
         return;
       }
@@ -326,19 +474,22 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
       <group ref={pitchGroup}>
         <group rotation-z={TILT}>
           <group ref={spin}>
-            <mesh material={earthMat} renderOrder={10}>
+            <mesh ref={earth} material={earthMat} renderOrder={10}>
               <sphereGeometry args={[GLOBE_R, 160, 80]} />
             </mesh>
-            <lineSegments geometry={gridGeo} material={gridMat} renderOrder={11} />
-            <lineSegments geometry={borderGeo} material={borderMat} renderOrder={11} />
-            <lineSegments geometry={arcGeo} material={arcMat} renderOrder={12} frustumCulled={false} />
-            <points geometry={markerGeo} material={markerMat} renderOrder={13} frustumCulled={false} />
+            <group ref={lines}>
+              <lineSegments geometry={gridGeo} material={gridMat} renderOrder={11} />
+              <lineSegments geometry={borderGeo} material={borderMat} renderOrder={11} />
+              <lineSegments geometry={arcGeo} material={arcMat} renderOrder={12} frustumCulled={false} />
+              <points geometry={markerGeo} material={markerMat} renderOrder={13} frustumCulled={false} />
+            </group>
           </group>
           <mesh material={atmoMat} scale={1.14} renderOrder={9}>
             <sphereGeometry args={[GLOBE_R, 64, 32]} />
           </mesh>
         </group>
       </group>
+      <mesh ref={sheet} geometry={unfold.geometry} material={unfold.material} renderOrder={10} frustumCulled={false} visible={false} />
     </group>
   );
 }

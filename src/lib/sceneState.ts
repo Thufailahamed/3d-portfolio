@@ -26,6 +26,8 @@ export const sceneState = {
   globeDrag: { dx: 0, dy: 0, dragging: false },
   /** city markers on the globe, projected to screen (px); facing 0 = edge-on/hidden … 1 = facing us */
   markers: [] as { x: number; y: number; facing: number }[],
+  /** the globe opening into the board's map, 0 (a globe) → 1 (flat on the screen) */
+  unfold: { t: 0 },
   /**
    * The investigation board: whether it owns the camera, where the camera wants to be,
    * the card under the pointer, and a picker for clicks (normalised device coords → card or -1).
@@ -39,6 +41,10 @@ export const sceneState = {
     hint: -1,
     /** phones: how far along the board the visitor has swiped, -1 (left edge) … 1 (right edge) */
     pan: 0,
+    /** arriving from the globe: the camera starts on the map (0) and pulls back to the board (1) */
+    arrive: 1,
+    /** set by the globe as it opens; the board picks the hand-off up on arrival */
+    fromGlobe: false,
     pick: (() => -1) as (x: number, y: number) => number,
   },
   /**

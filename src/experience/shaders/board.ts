@@ -7,12 +7,13 @@
 const lamp = /* glsl */ `
 uniform vec3 uLampPos;
 uniform vec3 uLampDir;
+uniform float uLampOn;  // the lamp's dimmer, 0 → 1 as it warms up
 float lampLight(vec3 world, vec3 n){
   vec3 L = normalize(uLampPos - world);
   float c = dot(-L, uLampDir);
   float cone = smoothstep(0.55, 0.98, c) * 0.8 + smoothstep(0.35, 0.75, c) * 0.2;
   float d = distance(uLampPos, world);
-  return max(dot(n, L), 0.0) * cone * 1.95 / (0.4 + d * d * 0.25);
+  return max(dot(n, L), 0.0) * cone * 1.95 / (0.4 + d * d * 0.25) * uLampOn;
 }`;
 
 export const mapVert = /* glsl */ `

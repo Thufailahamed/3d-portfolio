@@ -13,14 +13,15 @@ import {
   CARD_PX,
   caseNote,
   cardTexture,
-  inkTexture,
+  BOARD_FRAME,
   mapUv,
+  sharedInk,
+  UNFOLD_FILL,
   NOTE_PX,
   telemetryNote,
   WALL_SHEET_PX,
   wallBlueprintLeft,
   wallBlueprintRight,
-  type MapFrame,
 } from "../boardArt";
 import {
   corkFrag,
@@ -40,7 +41,7 @@ export const BOARD_URL = "/models/board.glb";
 const PAPER_URL = "/board/paper-normal.webp";
 
 /** The printed map: centred on 10°E, from the Southern Ocean to the Arctic, enlarged on the board. */
-const FRAME: MapFrame = { lonC: 10, lat0: -58, lat1: 78 };
+const FRAME = BOARD_FRAME;
 const MAP_W = 1.72;
 const MAP_H = (MAP_W * (FRAME.lat1 - FRAME.lat0)) / 360;
 const MAP_C: [number, number] = [0.02, -0.005];
@@ -195,7 +196,12 @@ export default function Board() {
     const on = { value: 1 };
     const time = { value: 0 };
     const focus = { value: 0 };
-    const lampU = { uLampPos: { value: new THREE.Vector3() }, uLampDir: { value: new THREE.Vector3() } };
+    const lampU = {
+      uLampPos: { value: new THREE.Vector3() },
+      uLampDir: { value: new THREE.Vector3() },
+      uLampOn: { value: 1 },
+    };
+    const reachDraw = { value: 1 };
     const [hu, hv] = mapUv(home.lon, home.lat, FRAME);
     const map = new THREE.ShaderMaterial({
       vertexShader: mapVert,
@@ -204,7 +210,7 @@ export default function Board() {
       uniforms: {
         uNight: { value: night },
         uPaper: { value: paper },
-        uInk: { value: inkTexture(FRAME, HOME) },
+        uInk: { value: sharedInk() },
         uRect: {
           value: new THREE.Vector4(
             (FRAME.lonC - 180 + 180) / 360,
@@ -237,7 +243,7 @@ export default function Board() {
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       toneMapped: false,
-      uniforms: { uColor: { value: new THREE.Color("#9fd0ff") }, uDraw: on, uTime: time, uFocus: focus },
+      uniforms: { uColor: { value: new THREE.Color("#9fd0ff") }, uDraw: reachDraw, uTime: time, uFocus: focus },
     });
     const dots = new THREE.ShaderMaterial({
       vertexShader: dotVert,
@@ -300,6 +306,7 @@ export default function Board() {
 
     return {
       on,
+      reachDraw,
       time,
       focus,
       lampU,
@@ -382,11 +389,29 @@ export default function Board() {
   // arriving: the lamp warms up, the cities switch on east to west, the threads run home
   useEffect(() => {
     if (mode !== "board" || !entered) return;
+    const b = sceneState.board;
     const tl = gsap.timeline();
-    if (isMobile) tl.fromTo(sceneState.board, { pan: -1 }, { pan: 0.35, duration: 3.6, ease: "power2.inOut" }, 0.2);
-    tl.fromTo(lamp, { intensity: 0 }, { intensity: 6, duration: 1.4, ease: "power2.out" }, 0.1)
-      .fromTo(art.on, { value: 0 }, { value: 1, duration: 2.6, ease: "power2.inOut" }, 0.5)
-      .fromTo(art.cards, { draw: 0 }, { draw: 1, duration: 1.4, stagger: 0.12, ease: "power2.inOut" }, 0.9);
+    const lampOn = art.lampU.uLampOn;
+    if (b.fromGlobe) {
+      // through the globe: the map is already lit and filling the screen. The camera pulls
+      // back off it as the lamp warms the board around it; then the threads run home
+      b.fromGlobe = false;
+      art.on.value = 1;
+      if (isMobile) b.pan = 0.35; // phones pull back onto the Colombo end of the board
+      tl.fromTo(b, { arrive: 0 }, { arrive: 1, duration: 3, ease: "power2.inOut" }, 0.25)
+        .fromTo(lampOn, { value: 0 }, { value: 1, duration: 1.8, ease: "power1.inOut" }, 0.35)
+        .fromTo(lamp, { intensity: 0 }, { intensity: 6, duration: 1.8, ease: "power1.inOut" }, 0.35)
+        .fromTo(art.reachDraw, { value: 0 }, { value: 1, duration: 2.2, ease: "power2.out" }, 1.2)
+        .fromTo(art.cards, { draw: 0 }, { draw: 1, duration: 1.4, stagger: 0.12, ease: "power2.inOut" }, 1.6);
+    } else {
+      b.arrive = 1;
+      if (isMobile) tl.fromTo(b, { pan: -1 }, { pan: 0.35, duration: 3.6, ease: "power2.inOut" }, 0.2);
+      tl.fromTo(lamp, { intensity: 0 }, { intensity: 6, duration: 1.4, ease: "power2.out" }, 0.1)
+        .fromTo(lampOn, { value: 0 }, { value: 1, duration: 1.4, ease: "power2.out" }, 0.1)
+        .fromTo(art.on, { value: 0 }, { value: 1, duration: 2.6, ease: "power2.inOut" }, 0.5)
+        .fromTo(art.reachDraw, { value: 0 }, { value: 1, duration: 2.6, ease: "power2.inOut" }, 0.5)
+        .fromTo(art.cards, { draw: 0 }, { draw: 1, duration: 1.4, stagger: 0.12, ease: "power2.inOut" }, 0.9);
+    }
     return () => {
       tl.progress(1).kill();
     };
@@ -428,6 +453,13 @@ export default function Board() {
     if (!live) return;
     const dt = Math.min(delta, 0.1);
     art.time.value += dt;
+    // a globe hand-off keeps the room dark until the arrival timeline takes over
+    if (b.fromGlobe) {
+      art.lampU.uLampOn.value = 0;
+      lamp.intensity = 0;
+      art.reachDraw.value = 0;
+      for (const c of art.cards) c.draw = 0;
+    }
 
     // the lamp, for the hand-lit map
     g.updateWorldMatrix(true, true);
@@ -475,6 +507,15 @@ export default function Board() {
       const pan = Math.max(0, (2.108 * 1.03 - visW) / 2) * THREE.MathUtils.clamp(b.pan, -1, 1);
       b.look = [o.x + pan, o.y + lift, o.z];
       b.pos = [o.x + pan + sceneState.mouse.x * 0.06, o.y + lift + sceneState.mouse.y * 0.04, o.z + d];
+      // arriving from the globe: start square on the map, at the size the unfolded globe had
+      if (b.arrive < 1) {
+        const k = b.arrive;
+        const mx = o.x + MAP_C[0];
+        const my = o.y + MAP_C[1];
+        const d0 = FACE + MAP_W / (UNFOLD_FILL * 2 * tan * aspect);
+        b.look = [mx + (b.look[0] - mx) * k, my + (b.look[1] - my) * k, o.z];
+        b.pos = [mx + (b.pos[0] - mx) * k, my + (b.pos[1] - my) * k, o.z + d0 + (b.pos[2] - o.z - d0) * k];
+      }
     } else {
       const c = art.cards[focus];
       const d = (CARD_H / (isMobile ? 0.24 : 0.44)) / 2 / tan;

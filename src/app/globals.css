@@ -698,3 +698,10 @@ html.has-cursor * {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* the globe opening into the board: the About copy steps aside */
+html[data-unfold] #ch-about {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}

@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { about } from "@/content/site";
-import { curtain } from "../Curtain";
 import { gsap } from "@/lib/gsap";
 import { sceneState } from "@/lib/sceneState";
 
@@ -53,13 +52,22 @@ export default function GlobeLayer() {
       last = null;
       drag.dragging = false;
       if (!clicked || leaving) return;
-      // a click (not a spin) opens the board: the night closes over the screen from the globe
+      // a click (not a spin) opens the board: the globe turns, opens like a mat and lies flat
+      // as the board's map; the board's camera picks up on that map and pulls back
       leaving = true;
       if (matchMedia("(prefers-reduced-motion: reduce)").matches) return router.push("/board");
-      const g = sceneState.globe;
-      curtain
-        .cover({ x: g.x, y: g.y, tint: "#5c9dff", image: "/earth/night.webp" })
-        .then(() => router.push("/board"));
+      router.prefetch("/board");
+      document.documentElement.dataset.unfold = "";
+      gsap.to(sceneState.unfold, {
+        t: 1,
+        duration: 2.6,
+        ease: "power1.inOut",
+        onComplete: () => {
+          sceneState.board.fromGlobe = true;
+          sceneState.board.arrive = 0;
+          router.push("/board");
+        },
+      });
     };
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);

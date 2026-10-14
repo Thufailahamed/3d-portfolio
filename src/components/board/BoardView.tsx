@@ -32,6 +32,8 @@ export default function BoardView() {
   // arriving through the globe: the curtain lifts over the board
   useGSAP(
     () => {
+      // (or through the globe opening: the camera is still on the map, pulling back)
+      const unfolded = sceneState.board.arrive < 1;
       const through = curtain.reveal();
       if (reduced()) return;
       gsap.from(".bd-in", {
@@ -40,7 +42,7 @@ export default function BoardView() {
         duration: 0.85,
         stagger: 0.055,
         ease: "power3.out",
-        delay: through ? 1.05 : 0.35,
+        delay: unfolded ? 2.2 : through ? 1.05 : 0.35,
       });
     },
     { scope: root },

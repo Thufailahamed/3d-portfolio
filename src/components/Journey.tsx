@@ -28,6 +28,9 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
       sceneState.dive = 0;
       // coming back from the board through the curtain: it lifts over the globe
       curtain.reveal();
+      // back from the board: the globe is whole again, and the About copy returns
+      sceneState.unfold.t = 0;
+      delete document.documentElement.dataset.unfold;
 
       let historyTimer: ReturnType<typeof setTimeout> | undefined;
       const st = ScrollTrigger.create({

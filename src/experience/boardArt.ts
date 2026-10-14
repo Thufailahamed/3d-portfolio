@@ -736,3 +736,15 @@ export function wallBlueprintRight() {
   return tex;
 }
 
+
+/** The board's printed map: centred on 10°E, from the Southern Ocean to the Arctic. */
+export const BOARD_FRAME: MapFrame = { lonC: 10, lat0: -58, lat1: 78 };
+/**
+ * How much of the screen's width the map fills where the globe's unfolding ends — and where
+ * the board's camera starts, so the cut between the two scenes doesn't show.
+ */
+export const UNFOLD_FILL = 0.9;
+
+let ink: THREE.CanvasTexture | null = null;
+/** One ink texture for the board's map and the unfolding globe (same print, same pixels). */
+export const sharedInk = () => (ink ??= inkTexture(BOARD_FRAME, 0));
