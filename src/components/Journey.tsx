@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { ScrollTrigger, useGSAP } from "@/lib/gsap";
+import { curtain } from "./Curtain";
 import { lenis } from "./SmoothScroll";
 import { chapters, chapterAt, landing, TRACK_VH, type ChapterId } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
@@ -25,6 +26,8 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
   useGSAP(
     () => {
       sceneState.dive = 0;
+      // coming back from the board through the curtain: it lifts over the globe
+      curtain.reveal();
 
       const st = ScrollTrigger.create({
         trigger: track.current,

@@ -26,4 +26,19 @@ export const sceneState = {
   globeDrag: { dx: 0, dy: 0, dragging: false },
   /** city markers on the globe, projected to screen (px); facing 0 = edge-on/hidden … 1 = facing us */
   markers: [] as { x: number; y: number; facing: number }[],
+  /**
+   * The investigation board: whether it owns the camera, where the camera wants to be,
+   * the card under the pointer, and a picker for clicks (normalised device coords → card or -1).
+   */
+  board: {
+    active: false,
+    pos: [0, 0, 0] as [number, number, number],
+    look: [0, 0, 0] as [number, number, number],
+    hover: -1,
+    /** a card named from the DOM index (hovered or focused there) */
+    hint: -1,
+    /** phones: how far along the board the visitor has swiped, -1 (left edge) … 1 (right edge) */
+    pan: 0,
+    pick: (() => -1) as (x: number, y: number) => number,
+  },
 };

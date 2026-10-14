@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { useApp } from "@/store/useApp";
 import CameraRig from "./CameraRig";
 import About from "./chapters/About";
+import Board from "./chapters/Board";
 import Contact from "./chapters/Contact";
 import Fades from "./chapters/Fades";
 import DetailBackdrop from "./chapters/DetailBackdrop";
@@ -81,6 +82,7 @@ export default function Experience() {
           <Contact />
           <Fades />
         </group>
+        <Board />
         <DetailBackdrop />
         <CameraRig />
         <PostFX />

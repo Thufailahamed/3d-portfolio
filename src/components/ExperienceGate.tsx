@@ -9,7 +9,7 @@ import PerfBanner from "./PerfBanner";
 import SizeGate from "./SizeGate";
 import { lenis } from "./SmoothScroll";
 
-const LITE_HASH: Record<string, string> = { "/": "", "/projects": "#work", "/about": "#about", "/contact": "#contact" };
+const LITE_HASH: Record<string, string> = { "/": "", "/projects": "#work", "/about": "#about", "/contact": "#contact", "/board": "#work" };
 
 const hasWebGL2 = () => {
   try {

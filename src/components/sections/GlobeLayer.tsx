@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { about } from "@/content/site";
+import { curtain } from "../Curtain";
 import { gsap } from "@/lib/gsap";
 import { sceneState } from "@/lib/sceneState";
 
@@ -12,7 +14,7 @@ const copyEdge = () => Math.min(innerWidth * 0.44, 640) + 56;
 /**
  * DOM side of the About globe:
  *  - an invisible circle that tracks the globe on screen, so it can be grabbed and spun
- *    (the scene reads the drag from sceneState.globeDrag)
+ *    (the scene reads the drag from sceneState.globeDrag); a click opens the board
  *  - arrows pointing at the marked cities, each labelled with its live local time
  * Positions come from the scene every frame (sceneState.globe / .markers).
  */
@@ -21,6 +23,7 @@ export default function GlobeLayer() {
   const labels = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const hint = useRef<HTMLParagraphElement>(null);
+  const router = useRouter();
 
   // drag → accumulated deltas; the scene consumes and resets them each frame
   useEffect(() => {
@@ -28,21 +31,35 @@ export default function GlobeLayer() {
     if (!el) return;
     const drag = sceneState.globeDrag;
     let last: { x: number; y: number } | null = null;
+    let travel = 0;
+    let leaving = false;
     const down = (e: PointerEvent) => {
       if (!sceneState.globe.grabbable) return;
       el.setPointerCapture(e.pointerId);
       last = { x: e.clientX, y: e.clientY };
+      travel = 0;
       drag.dragging = true;
+      router.prefetch("/board");
     };
     const move = (e: PointerEvent) => {
       if (!last) return;
       drag.dx += e.clientX - last.x;
       drag.dy += e.clientY - last.y;
+      travel += Math.hypot(e.clientX - last.x, e.clientY - last.y);
       last = { x: e.clientX, y: e.clientY };
     };
-    const up = () => {
+    const up = (e?: PointerEvent) => {
+      const clicked = !!last && e?.type === "pointerup" && travel < 6;
       last = null;
       drag.dragging = false;
+      if (!clicked || leaving) return;
+      // a click (not a spin) opens the board: the night closes over the screen from the globe
+      leaving = true;
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return router.push("/board");
+      const g = sceneState.globe;
+      curtain
+        .cover({ x: g.x, y: g.y, tint: "#5c9dff", image: "/earth/night.webp" })
+        .then(() => router.push("/board"));
     };
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
@@ -55,7 +72,7 @@ export default function GlobeLayer() {
       el.removeEventListener("pointercancel", up);
       up();
     };
-  }, []);
+  }, [router]);
 
   // follow the globe and the markers every frame
   useEffect(() => {
@@ -132,7 +149,7 @@ export default function GlobeLayer() {
     <div className="pointer-events-none fixed inset-0 z-[25]">
       <div
         ref={hit}
-        data-cursor="drag"
+        data-cursor="open"
         aria-hidden
         className="pointer-events-auto absolute left-0 top-0 hidden cursor-grab touch-pan-y rounded-full active:cursor-grabbing"
       />
@@ -161,9 +178,10 @@ export default function GlobeLayer() {
       <p
         ref={hint}
         aria-hidden
-        className="label absolute left-0 top-0 hidden whitespace-nowrap opacity-0 transition-opacity duration-700 md:block"
+        className="label absolute left-0 top-0 whitespace-nowrap opacity-0 transition-opacity duration-700"
       >
-        ← Drag to spin the globe →
+        <span className="md:hidden">Tap the globe to open the board</span>
+        <span className="hidden md:inline">← Drag to spin · click to open the board →</span>
       </p>
     </div>
   );

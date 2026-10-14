@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { gsap } from "@/lib/gsap";
 
-const LABELS: Record<string, string> = { drag: "Drag", view: "View", enter: "Enter", copy: "Copy" };
+const LABELS: Record<string, string> = { drag: "Drag", view: "View", enter: "Enter", copy: "Copy", open: "Open" };
 
 /** Dot + ring cursor with contextual labels (fine pointers only). */
 export default function Cursor() {

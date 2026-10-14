@@ -96,6 +96,18 @@ export const about = {
   ],
 };
 
+/** The investigation board behind the About globe (click the globe to open it). */
+export const board = {
+  label: "The board",
+  heading: "Every thread runs back to Colombo.",
+  note: "Six systems, one desk. Pick a card to open its file.",
+  /** Sketchfab "Investigation Board" by Mkky, CC BY 4.0 — the credit is required */
+  credit: {
+    label: "Board model by Mkky · CC BY 4.0",
+    href: "https://sketchfab.com/3d-models/investigation-board-04eca574acd34c68b0aa6db00e77583e",
+  },
+};
+
 export const contact = {
   label: "Reach out",
   heading: "Let's build something that runs.",

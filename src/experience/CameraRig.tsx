@@ -84,11 +84,40 @@ export default function CameraRig() {
 
   const [ox, oy, oz] = PROJECTS_ORIGIN;
   const tmp = useMemo(
-    () => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), m: new THREE.Vector2() }),
+    () => ({
+      pos: new THREE.Vector3(),
+      look: new THREE.Vector3(),
+      a: new THREE.Vector3(),
+      b: new THREE.Vector3(),
+      m: new THREE.Vector2(),
+      // the board's camera, eased toward where the board asks for it
+      bPos: new THREE.Vector3(),
+      bLook: new THREE.Vector3(),
+      inBoard: false,
+    }),
     [],
   );
 
   useFrame((_, dt) => {
+    // /board owns the camera; it cuts there under the curtain, then glides between cards
+    const board = sceneState.board;
+    if (board.active) {
+      tmp.a.fromArray(board.pos);
+      tmp.b.fromArray(board.look);
+      if (!tmp.inBoard) {
+        tmp.bPos.copy(tmp.a);
+        tmp.bLook.copy(tmp.b);
+        tmp.inBoard = true;
+      }
+      const k = 1 - Math.exp(-Math.min(dt, 0.1) * 3.4);
+      tmp.bPos.lerp(tmp.a, k);
+      tmp.bLook.lerp(tmp.b, k);
+      camera.position.copy(tmp.bPos);
+      camera.lookAt(tmp.bLook);
+      return;
+    }
+    tmp.inBoard = false;
+
     const p = sceneState.p;
     let i = 0;
     while (i < keys.length - 2 && p > keys[i + 1].p) i++;

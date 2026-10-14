@@ -15,8 +15,10 @@ type AppState = {
   entered: boolean;
   /** index into projects[] shown in the carousel */
   activeProject: number;
-  /** "journey" on the home routes, "detail" on /projects/[slug] */
-  mode: "journey" | "detail";
+  /** "journey" on the home routes, "detail" on /projects/[slug], "board" on /board */
+  mode: "journey" | "detail" | "board";
+  /** the card opened on the board (index into projects[]) */
+  boardFocus: number | null;
   detailSlug: string | null;
   /** DOM-only experience (no WebGL) */
   lite: boolean;
@@ -36,6 +38,7 @@ export const useApp = create<AppState>((set) => ({
   activeProject: 0,
   mode: "journey",
   detailSlug: null,
+  boardFocus: null,
   lite: false,
   sound: false,
   menuOpen: false,
