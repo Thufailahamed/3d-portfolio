@@ -700,8 +700,15 @@ html.has-cursor * {
 }
 
 /* the globe opening into the board: the About copy steps aside */
-html[data-unfold] #ch-about {
+/* every chapter's copy waits it out (hidden at once, so the hero's title can't flash over
+   the map while the page lands back on the globe); the About copy fades back in after */
+.journey > [data-chapter] {
+  transition: opacity 0.6s ease;
+}
+html[data-unfold] .journey > [data-chapter] {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.6s ease;
+}
+html[data-unfold] .journey > [data-chapter]:not(#ch-about) {
+  transition: none;
 }
