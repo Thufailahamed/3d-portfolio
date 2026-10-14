@@ -460,6 +460,14 @@ export default function Board() {
       art.reachDraw.value = 0;
       for (const c of art.cards) c.draw = 0;
     }
+    // heading back to the globe: the arrival in reverse, keyed to the camera's push back in
+    if (b.leaving) {
+      const k = b.arrive;
+      art.lampU.uLampOn.value = Math.min(art.lampU.uLampOn.value, k);
+      lamp.intensity = Math.min(lamp.intensity, 6 * k);
+      art.reachDraw.value = Math.min(art.reachDraw.value, k);
+      for (const c of art.cards) c.draw = Math.min(c.draw, THREE.MathUtils.smoothstep(k, 0.35, 0.9));
+    }
 
     // the lamp, for the hand-lit map
     g.updateWorldMatrix(true, true);

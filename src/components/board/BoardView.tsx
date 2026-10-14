@@ -155,6 +155,27 @@ export default function BoardView() {
     e.preventDefault();
     if (reduced()) return router.push(href);
     router.prefetch(href);
+    // back to the globe: the arrival in reverse. The camera pushes back in onto the map as
+    // the room dims, then the About page rolls that map back up into the globe
+    if (href === "/about") {
+      const b = sceneState.board;
+      if (b.leaving) return;
+      useApp.getState().set({ boardFocus: null });
+      b.leaving = true;
+      // the page's overlay (the link sits inside it) steps aside
+      gsap.to((e.currentTarget as HTMLElement).closest(".fixed.inset-0"), { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
+      gsap.to(b, {
+        arrive: 0,
+        duration: 1.9,
+        ease: "power2.inOut",
+        onComplete: () => {
+          sceneState.unfold.t = 1;
+          document.documentElement.dataset.unfold = "";
+          router.push(href);
+        },
+      });
+      return;
+    }
     const x = e.clientX || innerWidth / 2;
     const y = e.clientY || innerHeight / 2;
     curtain.cover({ x, y, tint, image }).then(() => router.push(href));

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { ScrollTrigger, useGSAP } from "@/lib/gsap";
+import { gsap, ScrollTrigger, useGSAP } from "@/lib/gsap";
 import { curtain } from "./Curtain";
 import { lenis } from "./SmoothScroll";
 import { chapters, chapterAt, landing, TRACK_VH, type ChapterId } from "@/lib/chapters";
@@ -28,9 +28,13 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
       sceneState.dive = 0;
       // coming back from the board through the curtain: it lifts over the globe
       curtain.reveal();
-      // back from the board: the globe is whole again, and the About copy returns
-      sceneState.unfold.t = 0;
-      delete document.documentElement.dataset.unfold;
+      // back from the board: the flat map it left on screen rolls back up into the globe,
+      // then the About copy returns
+      sceneState.board.leaving = false;
+      const restore = () => void delete document.documentElement.dataset.unfold;
+      if (sceneState.unfold.t > 0)
+        gsap.to(sceneState.unfold, { t: 0, duration: 2.4, delay: 0.15, ease: "power1.inOut", onComplete: restore });
+      else restore();
 
       let historyTimer: ReturnType<typeof setTimeout> | undefined;
       const st = ScrollTrigger.create({

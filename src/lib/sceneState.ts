@@ -45,6 +45,8 @@ export const sceneState = {
     arrive: 1,
     /** set by the globe as it opens; the board picks the hand-off up on arrival */
     fromGlobe: false,
+    /** heading back to the globe: the room dims and the threads rewind with `arrive` */
+    leaving: false,
     pick: (() => -1) as (x: number, y: number) => number,
   },
   /**
