@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { curtain } from "@/components/Curtain";
 import { board, projects } from "@/content/site";
+import { landing } from "@/lib/chapters";
 import { gsap, useGSAP } from "@/lib/gsap";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
@@ -150,41 +151,50 @@ export default function BoardView() {
   }, []);
 
   // leaving: the curtain closes from the centre of the screen
+  /**
+   * Back to the globe: the arrival in reverse. The camera pushes back in onto the map as the
+   * room dims and the threads rewind (Board keys all of that to `arrive`); then, under the
+   * identical flat map, the canvas cuts to the globe's scene before the route has even
+   * changed, and the About page rolls the map back up into the globe.
+   */
+  function backToGlobe() {
+    const b = sceneState.board;
+    if (b.leaving) return;
+    if (reduced()) return router.push("/about", { scroll: false });
+    router.prefetch("/about");
+    b.leaving = true;
+    useApp.getState().set({ boardFocus: null });
+    gsap.to("[data-board-overlay]", { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
+    gsap.to(b, {
+      arrive: 0,
+      duration: 1.7,
+      ease: "power2.inOut",
+      // the camera eases a beat behind its target: let it arrive on the map before the cut
+      onComplete: () =>
+        void gsap.delayedCall(0.35, () => {
+          sceneState.unfold.t = 1;
+          document.documentElement.dataset.unfold = "";
+          sceneState.p = landing("about");
+          sceneState.aboutSec = 16.0;
+          useApp.getState().set({ mode: "journey", chapter: "about" });
+          router.push("/about", { scroll: false });
+        }),
+    });
+  }
+
   const leave = (href: string, tint: string, image: string) => (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey) return;
     e.preventDefault();
     if (reduced()) return router.push(href, { scroll: href !== "/about" });
     router.prefetch(href);
-    // back to the globe: the arrival in reverse. The camera pushes back in onto the map as
-    // the room dims, then the About page rolls that map back up into the globe
-    if (href === "/about") {
-      const b = sceneState.board;
-      if (b.leaving) return;
-      useApp.getState().set({ boardFocus: null });
-      b.leaving = true;
-      // the page's overlay (the link sits inside it) steps aside
-      gsap.to((e.currentTarget as HTMLElement).closest(".fixed.inset-0"), { autoAlpha: 0, duration: 0.5, ease: "power2.out" });
-      gsap.to(b, {
-        arrive: 0,
-        duration: 1.9,
-        ease: "power2.inOut",
-        onComplete: () => {
-          sceneState.unfold.t = 1;
-          document.documentElement.dataset.unfold = "";
-          // no scroll-to-top: the journey lands itself on the globe, and the router's own
-          // reset would otherwise drop the visitor back at the forest
-          router.push(href, { scroll: false });
-        },
-      });
-      return;
-    }
+    if (href === "/about") return backToGlobe();
     const x = e.clientX || innerWidth / 2;
     const y = e.clientY || innerHeight / 2;
     curtain.cover({ x, y, tint, image }).then(() => router.push(href));
   };
 
   return (
-    <div ref={root} className="fixed inset-0 z-20">
+    <div ref={root} data-board-overlay className="fixed inset-0 z-20">
       <div ref={layer} aria-hidden className="absolute inset-0 touch-none" />
 
       {/* top HUD header */}

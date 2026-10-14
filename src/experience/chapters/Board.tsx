@@ -168,6 +168,7 @@ export default function Board() {
   const night = useTexture(NIGHT_URL);
   const paper = useTexture(PAPER_URL);
   const group = useRef<THREE.Group>(null);
+  const fill = useRef<THREE.HemisphereLight>(null);
   const cardRefs = useRef<(THREE.Group | null)[]>([]);
   const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
 
@@ -469,6 +470,8 @@ export default function Board() {
       for (const c of art.cards) c.draw = Math.min(c.draw, THREE.MathUtils.smoothstep(k, 0.35, 0.9));
     }
 
+    if (fill.current) fill.current.intensity = 0.14 * art.lampU.uLampOn.value;
+
     // the lamp, for the hand-lit map
     g.updateWorldMatrix(true, true);
     art.lampU.uLampPos.value.setFromMatrixPosition(lamp.matrixWorld);
@@ -493,7 +496,8 @@ export default function Board() {
       c.thread.setDrawRange(0, Math.floor((idx.count / 6) * c.draw) * 6);
       const dim = focus !== null && focus !== i ? 0.5 : 1;
       c.threadMat.emissiveIntensity = (0.12 + c.lift * 1.6) * dim;
-      art.cardMats[i].emissiveIntensity = (0.14 + c.lift * 0.16) * dim;
+      // (the room's fill and the cards' glow go with the lamp: a dark lamp is a dark room)
+      art.cardMats[i].emissiveIntensity = (0.14 + c.lift * 0.16) * dim * art.lampU.uLampOn.value;
       art.cardShadows[i].uniforms.uOpacity.value = 0.5 - c.lift * 0.12;
       art.cardShadows[i].uniforms.uBlur.value = 0.018 + c.lift * 0.03;
     });
@@ -541,7 +545,7 @@ export default function Board() {
     <group ref={group} position={BOARD_ORIGIN} visible={false}>
       <primitive object={lamp} />
       <primitive object={lamp.target} />
-      <hemisphereLight args={["#9fb4ff", "#1a1410", 0.14]} />
+      <hemisphereLight ref={fill} args={["#9fb4ff", "#1a1410", 0.14]} />
 
       {/* the wall it hangs on */}
       <mesh key="wall" material={art.wall} position={[0, 0, -0.03]}>

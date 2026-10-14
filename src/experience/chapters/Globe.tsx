@@ -317,7 +317,6 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
       q0: new THREE.Quaternion(),
       q1: new THREE.Quaternion(),
       q: new THREE.Quaternion(),
-      captured: false,
       m4: new THREE.Matrix4(),
       cr: new THREE.Vector3(),
       cu: new THREE.Vector3(),
@@ -339,16 +338,13 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
    * straighten into a cylinder (k1), and the cylinder unrolls flat and square on the screen,
    * at the size the board's camera will start from (k2).
    */
-  const openInto = (t: number, time: number) => {
+  const openInto = (t: number, time: number, sec: number) => {
     const u = unfold;
     const opening = t > 0;
     if (earth.current) earth.current.visible = !opening;
     if (lines.current) lines.current.visible = !opening;
     if (sheet.current) sheet.current.visible = opening;
-    if (!opening || !group.current) {
-      u.captured = false;
-      return;
-    }
+    if (!opening || !group.current) return;
     const ease = (x: number) => {
       const c = THREE.MathUtils.clamp(x, 0, 1);
       return c * c * (3 - 2 * c);
@@ -356,13 +352,12 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     const align = ease(t / 0.32);
     const k1 = ease((t - 0.22) / 0.38);
     const k2 = ease((t - 0.42) / 0.58);
-    // the atmosphere thins away as it starts to open
-    atmoMat.uniforms.uBody.value *= 1 - ease(t / 0.3);
+    // the atmosphere thins away as it starts to open, and restores when rolling back
+    atmoMat.uniforms.uBody.value = span(sec, 10.6, 11.6) * (1 - ease(t / 0.3));
 
-    if (!u.captured && spin.current) {
-      spin.current.getWorldQuaternion(u.q0);
-      u.captured = true;
-    }
+    // follow the globe as it turns now (it keeps drifting): the hand-back to the real globe
+    // at the end of the roll-up is then exact
+    if (spin.current) spin.current.getWorldQuaternion(u.q0);
     // the camera's frame, in the globe's (the globe's parents only translate it)
     u.cr.set(1, 0, 0).applyQuaternion(camera.quaternion);
     u.cu.set(0, 1, 0).applyQuaternion(camera.quaternion);
@@ -436,7 +431,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     if (spin.current) spin.current.rotation.y = START_TURN + m.yaw + sceneState.mouse.x * 0.08;
     if (pitchGroup.current) pitchGroup.current.rotation.x = m.pitch;
 
-    openInto(opening, time);
+    openInto(opening, time, sec);
     if (!group.current) return;
     const parent = group.current.parent!;
     // the globe on screen, for the DOM drag target

@@ -20,7 +20,10 @@ export default function About() {
   const c = chapter("about");
 
   useFrame(() => {
-    if (group.current) group.current.visible = sceneState.p >= c.start - 0.001 && sceneState.p <= c.end + 0.002;
+    if (group.current)
+      group.current.visible =
+        sceneState.unfold.t > 0 ||
+        (sceneState.p >= c.start - 0.001 && sceneState.p <= c.end + 0.002);
   });
 
   return (

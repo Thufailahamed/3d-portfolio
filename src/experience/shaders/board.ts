@@ -198,7 +198,7 @@ void main(){
   // the occasional pale fleck
   col += vec3(0.18, 0.12, 0.06) * step(0.985, noise(p * 420.0)) * fade;
   float lit = lampLight(vWorld, n);
-  col *= 0.08 + lit * 1.02;
+  col *= 0.08 * uLampOn + lit * 1.02;
   gl_FragColor = vec4(col * (1.0 - uFocus * 0.3), 1.0);
 }`;
 
@@ -224,7 +224,7 @@ void main(){
   baseWall *= 1.0 - seamX * 0.22;
 
   float lit = lampLight(vWorld, n);
-  vec3 col = baseWall * (0.35 + lit * 1.15);
+  vec3 col = baseWall * (0.35 * uLampOn + lit * 1.15);
 
   // Soft drop shadow behind the wooden board frame
   vec2 bHalf = vec2(1.06, 0.585);

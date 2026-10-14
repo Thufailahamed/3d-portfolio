@@ -28,13 +28,30 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
       sceneState.dive = 0;
       // coming back from the board through the curtain: it lifts over the globe
       curtain.reveal();
-      // back from the board: the flat map it left on screen rolls back up into the globe,
-      // then the About copy returns
+
+      // the scene and camera start on the target chapter from the very first frame
+      if (initial) {
+        sceneState.p = landing(initial);
+        if (initial === "about") sceneState.aboutSec = 16.0;
+      }
+
+      // back from the board: the board left its map flat on the screen. Once the page has
+      // landed on the globe, that map rolls back up into it; then the About copy returns
+      // (every chapter's copy stays hidden until then — see html[data-unfold] in globals.css)
       sceneState.board.leaving = false;
-      const restore = () => void delete document.documentElement.dataset.unfold;
-      if (sceneState.unfold.t > 0)
-        gsap.to(sceneState.unfold, { t: 0, duration: 2.4, delay: 0.15, ease: "power1.inOut", onComplete: restore });
-      else restore();
+      const sections = Array.from(track.current?.children ?? []) as HTMLElement[];
+      const restore = () => {
+        delete document.documentElement.dataset.unfold;
+        const about = sections.find((s) => s.dataset.chapter === "about");
+        gsap.set(sections.filter((s) => s !== about), { clearProps: "opacity,visibility" });
+        if (about) gsap.to(about, { autoAlpha: 1, duration: 0.7, ease: "power2.out", clearProps: "opacity,visibility" });
+      };
+      if (sceneState.unfold.t > 0) {
+        // hidden before the first paint, so nothing (the hero's title above all) can flash
+        // over the map while the page lands
+        gsap.set(sections, { autoAlpha: 0 });
+        gsap.fromTo(sceneState.unfold, { t: 1 }, { t: 0, duration: 3.2, delay: 0.1, ease: "sine.inOut", onComplete: restore });
+      } else restore();
 
       let historyTimer: ReturnType<typeof setTimeout> | undefined;
       const st = ScrollTrigger.create({
@@ -42,6 +59,11 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
         start: "top top",
         end: "bottom bottom",
         onUpdate: (self) => {
+          // While the globe is performing its rolling animation, keep camera locked on the globe
+          if (sceneState.unfold.t > 0) {
+            sceneState.p = landing("about");
+            return;
+          }
           sceneState.p = self.progress;
           const c = chapterAt(self.progress);
           if (useApp.getState().chapter === c.id) return;
@@ -57,12 +79,21 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
 
       // deep links (/projects, /about, …) land on their chapter, settled. Re-run after
       // the router's own scroll-to-top and once layout has settled.
-      const target = () => (initial ? st.start + (st.end - st.start) * landing(initial) : 0);
+      const target = () => {
+        if (!initial) return 0;
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        const fallback = landing(initial) * max;
+        const stMax = st.end - st.start;
+        return stMax > 100 ? st.start + stMax * landing(initial) : fallback;
+      };
       const jump = () => {
         st.refresh();
         const y = target();
         if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
         else window.scrollTo(0, y);
+        if (initial) {
+          sceneState.p = landing(initial);
+        }
         ScrollTrigger.update();
       };
       jump();
