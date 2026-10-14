@@ -8,9 +8,8 @@ import { chapter, local } from "@/lib/chapters";
 import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
-import { palette } from "../palette";
 import { discFrag, discVert } from "../shaders/signal";
-import { FOREST_URL, makeBakedMaterial } from "./Forest";
+import { FOREST_URL, makeBakedMaterial, RUNE_BLUE } from "./Forest";
 
 export const RING_CENTER = new THREE.Vector3(0, 3.2, 0);
 const Z = new THREE.Vector3(0, 0, 1);
@@ -39,6 +38,7 @@ export default function Fracture() {
   };
   const isMobile = useApp((s) => s.isMobile);
   const group = useRef<THREE.Group>(null);
+  const disc = useRef<THREE.Mesh>(null);
 
   const mats = useMemo(
     () => ({
@@ -53,7 +53,7 @@ export default function Fracture() {
         uniforms: {
           uTime: { value: 0 },
           uOpacity: { value: 0 },
-          uAccent: { value: palette.accent.clone() },
+          uAccent: { value: RUNE_BLUE.clone() },
         },
       }),
     }),
@@ -157,7 +157,10 @@ export default function Fracture() {
     const t = local(p, "fracture");
     const time = clock.elapsedTime;
     const burst = seg(t, 0.0, 0.32);
-    const gather = seg(t, 0.5, 0.88);
+    // sequence: burst → hang → gather into the ring → runes wake → the portal opens
+    const gather = seg(t, 0.42, 0.72);
+    const runes = seg(t, 0.68, 0.84);
+    const open = seg(t, 0.84, 0.98);
     const float = Math.sin(Math.PI * Math.min(1, t / 0.88)) * 0.12 + 0.03;
 
     // the ring keeps turning slowly — scroll adds a twist on top
@@ -181,11 +184,14 @@ export default function Fracture() {
     // crack light flares on the break, then settles to a steady glow in the ring
     const flare = Math.exp(-Math.pow((t - 0.08) * 9, 2)) * 3.5;
     const broken = Math.min(1, t * 40);
-    mats.stone.uniforms.uRim.value = broken * (0.1 + burst * 0.22 + flare * 0.6 + gather * 0.3);
-    mats.stone.uniforms.uFill.value = broken * (flare * 0.04 + gather * 0.006);
+    mats.stone.uniforms.uRim.value = broken * (0.08 + burst * 0.16 + flare * 0.5) * (1 - runes * 0.6);
+    mats.stone.uniforms.uFill.value = broken * flare * 0.03;
+    mats.stone.uniforms.uRunesAll.value = runes;
 
     mats.disc.uniforms.uTime.value += dt;
-    mats.disc.uniforms.uOpacity.value = seg(t, 0.68, 1.0);
+    mats.disc.uniforms.uOpacity.value = open;
+    // the portal irises open from a point once the ring is lit
+    if (disc.current) disc.current.scale.setScalar(0.05 + 0.95 * open);
   });
 
   return (
@@ -193,8 +199,8 @@ export default function Fracture() {
       {shards.map((s) => (
         <primitive key={s.mesh.uuid} object={s.mesh} />
       ))}
-      <mesh position={RING_CENTER} material={mats.disc} renderOrder={2}>
-        <circleGeometry args={[radius * 0.92, 96]} />
+      <mesh ref={disc} position={RING_CENTER} material={mats.disc} renderOrder={2}>
+        <circleGeometry args={[radius * 0.8, 96]} />
       </mesh>
     </group>
   );

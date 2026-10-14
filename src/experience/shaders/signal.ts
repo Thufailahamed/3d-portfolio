@@ -57,6 +57,27 @@ vec3 signal(vec2 uv, float time, float travel, vec3 accent){
   return col;
 }
 
+// the portal: a deep-blue vortex of smoke spiralling into a bright eye
+vec3 portal(vec2 uv, float t){
+  float r = length(uv) + 1e-4;
+  float a = atan(uv.y, uv.x);
+  float swirl = a + 2.4 / (r + 0.28) - t * 0.9;
+  vec2 p = vec2(cos(swirl), sin(swirl)) * (0.35 + r);
+  float n = fbm(vec3(p * 2.1, t * 0.12));
+  float n2 = fbm(vec3(p * 4.3 + n * 1.4, t * 0.18 + 3.0));
+  float v = smoothstep(0.2, 0.95, n * 0.5 + 0.5 + n2 * 0.4);
+  vec3 deep = vec3(0.0, 0.004, 0.035);
+  vec3 mid = vec3(0.02, 0.12, 0.85);
+  vec3 hi = vec3(0.55, 0.7, 1.0);
+  vec3 col = mix(deep, mid, v);
+  col = mix(col, hi, smoothstep(0.78, 1.0, v) * 0.6);
+  // dark rifts between the arms
+  col *= smoothstep(0.1, 0.45, v) * 0.92 + 0.08;
+  col += mid * exp(-r * 2.6) * 0.45;
+  col += hi * exp(-r * r * 30.0) * 0.45;
+  return col;
+}
+
 float hash12(vec2 p){
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -82,15 +103,15 @@ void main(){
   float r = length(uv);
   // space bends toward the rim: the view inside is pulled in slightly, like a lens
   vec2 bent = uv * (1.0 + 0.18 * smoothstep(0.55, 1.0, r));
-  vec3 col = signal(bent * 1.4, uTime, 0.0, uAccent);
+  vec3 col = portal(bent * 1.15, uTime);
   float edge = smoothstep(1.0, 0.82, r);
   // the membrane ripples outward from the centre
-  float ring = exp(-pow((r - fract(uTime * 0.25)) * 10.0, 2.0)) * 0.35;
+  float ring = exp(-pow((r - fract(uTime * 0.25)) * 10.0, 2.0)) * 0.15;
   col += uAccent * ring;
   // a bright, slightly unsteady lip where the portal meets the room
   float wob = snoise(vec3(atan(uv.y, uv.x) * 2.0, uTime * 0.6, 0.0)) * 0.015;
   float lip = exp(-pow((r - 0.9 - wob) * 30.0, 2.0));
-  col += mix(uAccent, vec3(1.0), 0.45) * lip * 0.55;
+  col += mix(uAccent, vec3(1.0), 0.2) * lip * 0.3;
   float alpha = max(edge, lip) * uOpacity;
   gl_FragColor = vec4(col, alpha);
 }`;
@@ -114,6 +135,8 @@ ${signalFn}
 void main(){
   vec2 uv = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * 2.0;
   vec3 col = signal(uv * 1.4, uTime, uTravel, uAccent);
+  // first the portal itself fills the screen, then it opens into the tunnel
+  col = mix(portal(uv * 0.75, uTime), col, smoothstep(0.45, 0.8, uTravel));
   float r = length(uv);
   float a = atan(uv.y, uv.x);
 

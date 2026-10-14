@@ -5,7 +5,7 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { chapter, local } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
-import { palette } from "../palette";
+import { RUNE_BLUE } from "./Forest";
 import { tunnelFrag, tunnelVert } from "../shaders/signal";
 
 /**
@@ -29,7 +29,7 @@ export default function Tunnel() {
           uOpacity: { value: 0 },
           uTravel: { value: 0 },
           uRes: { value: new THREE.Vector2(1, 1) },
-          uAccent: { value: palette.accent.clone() },
+          uAccent: { value: RUNE_BLUE.clone() },
         },
       }),
     [],

@@ -8,11 +8,12 @@ import { chapter } from "@/lib/chapters";
 import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
-import { palette } from "../palette";
 import { dustFrag, dustVert, raysFrag, raysVert } from "../shaders/atmosphere";
 import { bakedFrag, bakedVert, fireflyFrag, fireflyVert } from "../shaders/forest";
 
 export const FOREST_URL = "/models/forest.glb";
+/** rune / portal blue */
+export const RUNE_BLUE = new THREE.Color("#3d8bff");
 /** must match BAKE_SCALE in art/export_intro.py (times a little display exposure) */
 export const BAKE_EXPOSURE = 4 * 1.35;
 
@@ -38,13 +39,14 @@ export function makeBakedMaterial(side: THREE.Side = THREE.FrontSide) {
       THREE.UniformsLib.fog,
       {
         uExposure: { value: BAKE_EXPOSURE },
-        uAccent: { value: palette.accent.clone() },
+        uAccent: { value: RUNE_BLUE.clone() },
         uRim: { value: 0 },
         uFill: { value: 0 },
         uTime: { value: 0 },
         uHoverPos: { value: new THREE.Vector3(0, -100, 0) },
         uHoverAmt: { value: 0 },
-        uRune: { value: new THREE.Color("#3d8bff") },
+        uRune: { value: RUNE_BLUE.clone() },
+        uRunesAll: { value: 0 },
       },
     ]),
   });
