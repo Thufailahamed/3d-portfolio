@@ -7,14 +7,14 @@ import { sceneState } from "@/lib/sceneState";
 import { useChapterActive } from "@/hooks/useChapterActive";
 
 /**
- * About copy beside the bloom, plus annotation notes whose leader lines are
- * pinned to petal tips (projected from 3D every frame).
+ * About copy beside the globe, plus annotation notes whose leader lines are
+ * pinned to spots on the globe (projected from 3D every frame).
  */
 export default function AboutHUD() {
   const root = useRef<HTMLElement>(null);
   const active = useChapterActive("about", 0.8, 0.95);
 
-  // reveal when the bloom has opened
+  // reveal once the globe has formed
   useGSAP(
     () => {
       const split = SplitText.create(".about-headline", { type: "lines", mask: "lines", aria: "auto" });
@@ -55,7 +55,7 @@ export default function AboutHUD() {
           note.style.visibility = show ? "visible" : "hidden";
           line.style.visibility = show ? "visible" : "hidden";
           if (!show) return;
-          // push each note outward from the bloom, a little above its anchor
+          // push each note outward from the globe, a little above its anchor
           const dir = a.x >= mid ? 1 : -1;
           const nx = a.x + dir * (70 + i * 14);
           const ny = a.y - 56 + i * 12;
@@ -124,7 +124,7 @@ export default function AboutHUD() {
             </li>
           ))}
         </ul>
-        {/* on phones the notes sit inline instead of floating on the bloom */}
+        {/* on phones the notes sit inline instead of floating on the globe */}
         <dl className="about-in mt-4 grid grid-cols-3 gap-2 md:sr-only">
           {about.annotations.map((n) => (
             <div key={n.label} className="hud-card">

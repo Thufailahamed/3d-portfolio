@@ -1,7 +1,7 @@
 import { snoise3 } from "./noise";
 
 /**
- * "Signal": swirling interference used both inside the shard ring (on a disc)
+ * "Signal": a swirling energy portal used both inside the shard ring (on a disc)
  * and as the full-screen tunnel. Same function → the hand-off is seamless.
  */
 const signalFn = /* glsl */ `
@@ -11,6 +11,11 @@ float fbm(vec3 p){
   for(int i = 0; i < 4; i++){ s += a * snoise(p); p *= 2.03; a *= 0.5; }
   return s;
 }
+float fbm3(vec3 p){
+  float a = 0.5, s = 0.0;
+  for(int i = 0; i < 3; i++){ s += a * snoise(p); p *= 2.07; a *= 0.5; }
+  return s;
+}
 // uv centred at 0, roughly -1..1. travel pushes us down the tunnel.
 vec3 signal(vec2 uv, float time, float travel, vec3 accent){
   float r = length(uv) + 1e-4;
@@ -18,18 +23,44 @@ vec3 signal(vec2 uv, float time, float travel, vec3 accent){
   float depth = 0.32 / r + travel * 3.0 + time * 0.12;
   float twist = a + depth * 0.9;
   vec2 tc = vec2(cos(twist), sin(twist)) * 1.3;
-  float n = fbm(vec3(tc, depth * 1.4));
-  float bands = sin(depth * 18.0 + n * 6.0) * 0.5 + 0.5;
-  float streak = pow(max(0.0, snoise(vec3(a * 9.0, depth * 2.2, time * 0.2))), 3.0);
+
+  // domain-warped noise: smoky, layered plasma rather than flat blobs
+  vec3 q = vec3(tc, depth * 1.4);
+  vec2 warp = vec2(fbm3(q + vec3(0.0, 0.0, time * 0.05)), fbm3(q + vec3(5.2, 1.3, 2.1)));
+  float n = fbm(q + vec3(warp * 0.85, 0.0));
+
+  // the tunnel's wall shells, split a touch per colour channel toward the rim (lens fringe)
+  float ca = 0.03 * smoothstep(0.2, 1.2, r);
+  vec3 bands = vec3(
+    sin((depth + ca) * 18.0 + n * 6.0),
+    sin(depth * 18.0 + n * 6.0),
+    sin((depth - ca) * 18.0 + n * 6.0)
+  ) * 0.5 + 0.5;
 
   vec3 deep = vec3(0.0015, 0.002, 0.0015);
-  float body = smoothstep(0.35, 0.95, n * 0.5 + 0.5) * bands;
-  vec3 col = mix(deep, accent * 0.32, body * body);
-  col += accent * streak * 1.1;
-  col += vec3(1.0) * pow(bands, 28.0) * 0.28 * smoothstep(0.0, 0.6, r);
+  float body = smoothstep(0.3, 0.95, n * 0.5 + 0.5);
+  vec3 col = mix(deep, accent * 0.3, body * body * bands.g);
+  // thin energy filaments along the ridges of the smoke
+  float fil = pow(1.0 - abs(n), 16.0);
+  col += mix(accent, vec3(1.0), 0.35) * fil * 0.5 * smoothstep(0.08, 0.5, r);
+  // streaks drawn along the flow
+  float streak = pow(max(0.0, snoise(vec3(a * 9.0, depth * 2.2, time * 0.2))), 3.0);
+  col += accent * streak * 0.85;
+  // glowing shell edges (lime-white, fringed) instead of flat grey lines
+  col += vec3(0.82, 1.0, 0.78) * pow(bands, vec3(26.0)) * 0.24 * smoothstep(0.0, 0.6, r);
+  // depth haze: the far end glows, the near walls fall into shadow
+  col += accent * exp(-r * 2.4) * 0.16;
+  col *= mix(1.0, 0.55, smoothstep(0.5, 1.5, r));
   // a hot core you fall toward
-  col += mix(accent, vec3(1.0), 0.5) * exp(-r * r * 34.0) * (0.45 + travel * 1.2);
+  col += mix(accent, vec3(1.0), 0.55) * exp(-r * r * 34.0) * (0.45 + travel * 1.2);
+  col += vec3(1.0) * exp(-r * r * 220.0) * (0.35 + travel * 0.6);
   return col;
+}
+
+float hash12(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 `;
 
@@ -49,19 +80,26 @@ ${signalFn}
 void main(){
   vec2 uv = (vUv - 0.5) * 2.0;
   float r = length(uv);
-  vec3 col = signal(uv * 1.4, uTime, 0.0, uAccent);
+  // space bends toward the rim: the view inside is pulled in slightly, like a lens
+  vec2 bent = uv * (1.0 + 0.18 * smoothstep(0.55, 1.0, r));
+  vec3 col = signal(bent * 1.4, uTime, 0.0, uAccent);
   float edge = smoothstep(1.0, 0.82, r);
   // the membrane ripples outward from the centre
-  float ring = exp(-pow((r - fract(uTime * 0.25)) * 10.0, 2.0)) * 0.4;
+  float ring = exp(-pow((r - fract(uTime * 0.25)) * 10.0, 2.0)) * 0.35;
   col += uAccent * ring;
-  gl_FragColor = vec4(col * edge * uOpacity, edge * uOpacity);
+  // a bright, slightly unsteady lip where the portal meets the room
+  float wob = snoise(vec3(atan(uv.y, uv.x) * 2.0, uTime * 0.6, 0.0)) * 0.015;
+  float lip = exp(-pow((r - 0.9 - wob) * 30.0, 2.0));
+  col += mix(uAccent, vec3(1.0), 0.45) * lip * 0.55;
+  float alpha = max(edge, lip) * uOpacity;
+  gl_FragColor = vec4(col, alpha);
 }`;
 
 export const tunnelVert = /* glsl */ `
 varying vec2 vUv;
 void main(){
   vUv = uv;
-  // full-screen triangle-free quad straight in clip space
+  // full-screen quad straight in clip space
   gl_Position = vec4(position.xy * 2.0, 0.0, 1.0);
 }`;
 
@@ -76,13 +114,25 @@ ${signalFn}
 void main(){
   vec2 uv = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * 2.0;
   vec3 col = signal(uv * 1.4, uTime, uTravel, uAccent);
-  // radial speed lines grow with travel
   float r = length(uv);
   float a = atan(uv.y, uv.x);
-  float lines = pow(max(0.0, sin(a * 60.0 + snoise(vec3(a * 4.0, uTravel * 6.0, 0.0)) * 8.0)), 40.0);
-  col += vec3(0.9, 1.0, 0.85) * lines * smoothstep(0.2, 1.2, r) * uTravel * 0.35;
-  // darken the rim so the eye is pulled to the centre
+
+  // light streaks rushing past: each angular lane has its own streak, speed and length
+  float lanes = 140.0;
+  float lane = (a / 6.2831853 + 0.5) * lanes;
+  float id = floor(lane);
+  float h = hash12(vec2(id, 7.0));
+  float across = abs(fract(lane) - 0.5) * 2.0;           // 0 at the lane's centre
+  float speed = 0.35 + h * 0.9;
+  float ph = fract(h * 13.7 + uTime * speed * (0.4 + uTravel * 2.6));
+  float at = mix(0.05, 1.9, ph * ph);                     // accelerates outward, toward us
+  float len = 0.04 + 0.35 * ph * (0.4 + uTravel);
+  float streaks = exp(-pow((r - at) / len, 2.0)) * smoothstep(1.0, 0.0, across) * step(0.45, h);
+  col += mix(uAccent, vec3(1.0), 0.6) * streaks * smoothstep(0.12, 0.6, r) * (0.25 + uTravel * 0.9);
+
+  // pull the eye to the centre; a whisper of grain keeps the gradients from banding
   col *= mix(1.0, 0.45, smoothstep(0.6, 1.6, r));
+  col += (hash12(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.012;
   gl_FragColor = vec4(col, uOpacity);
 }`;
 

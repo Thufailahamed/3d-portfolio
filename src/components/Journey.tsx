@@ -10,7 +10,9 @@ import { beats, person } from "@/content/site";
 import Beats from "./sections/Beats";
 import Hero from "./sections/Hero";
 import ProjectsHUD from "./sections/ProjectsHUD";
+import AboutCaptions from "./sections/AboutCaptions";
 import AboutHUD from "./sections/AboutHUD";
+import GlobeLayer from "./sections/GlobeLayer";
 import ContactSection from "./sections/ContactSection";
 
 /**
@@ -99,8 +101,9 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
           {c.id === "projects" && <ProjectsHUD />}
           {c.id === "about" && (
             <>
-              <Beats chapter="about" label="How I work" lines={beats.about} window={[0.08, 0.66]} />
+              <AboutCaptions />
               <AboutHUD />
+              <GlobeLayer />
             </>
           )}
           {c.id === "contact" && <ContactSection />}

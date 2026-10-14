@@ -16,6 +16,7 @@ import Fracture from "./chapters/Fracture";
 import Projects from "./chapters/Projects";
 import Monolith from "./chapters/Monolith";
 import Tunnel from "./chapters/Tunnel";
+import AdaptiveResolution from "./AdaptiveResolution";
 import { CompileGate, LoadProgress } from "./LoadTracker";
 import { palette } from "./palette";
 import PostFX from "./PostFX";
@@ -89,6 +90,7 @@ export default function Experience() {
         <DetailBackdrop />
         <CameraRig />
         <PostFX />
+        <AdaptiveResolution max={low ? 1.25 : isMobile ? 1.5 : 2} />
         <CompileGate />
       </Suspense>
     </Canvas>

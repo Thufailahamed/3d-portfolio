@@ -66,6 +66,17 @@ export const about = {
     { label: "Tools", value: "Three.js · GLSL · GSAP" },
   ],
   services: ["Creative development", "WebGL & shaders", "Motion design", "Design engineering"],
+  /** cities marked on the About globe, each labelled with its live local time */
+  places: [
+    { city: "New York", tz: "America/New_York", lat: 40.71, lon: -74.01 },
+    { city: "Los Angeles", tz: "America/Los_Angeles", lat: 34.05, lon: -118.24 },
+    { city: "São Paulo", tz: "America/Sao_Paulo", lat: -23.55, lon: -46.63 },
+    { city: "London", tz: "Europe/London", lat: 51.51, lon: -0.13 },
+    { city: "Dubai", tz: "Asia/Dubai", lat: 25.2, lon: 55.27 },
+    { city: "Mumbai", tz: "Asia/Kolkata", lat: 19.08, lon: 72.88 },
+    { city: "Tokyo", tz: "Asia/Tokyo", lat: 35.68, lon: 139.69 },
+    { city: "Sydney", tz: "Australia/Sydney", lat: -33.87, lon: 151.21 },
+  ],
 };
 
 export const contact = {

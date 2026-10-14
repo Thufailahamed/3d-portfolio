@@ -148,3 +148,13 @@ html.has-cursor * {
 @media (prefers-reduced-motion: reduce) {
   .grain, .sound-bar.is-on { animation: none; }
 }
+
+/* About captions: terminal caret */
+.about-caret {
+  animation: about-caret 1s steps(1) infinite;
+}
+@keyframes about-caret {
+  50% {
+    opacity: 0;
+  }
+}
