@@ -119,9 +119,12 @@ export default function GlobeLayer() {
         line.setAttribute("x2", String(m.x + dx * 7));
         line.setAttribute("y2", String(m.y + dy * 7));
         const left = dx < 0;
-        const x = left ? lx - card.offsetWidth - 8 : lx + 8;
-        card.style.transform = `translate(${x}px, ${ly - card.offsetHeight / 2}px)`;
-        a *= Math.min(1, Math.max(0, (x - edge) / 60));
+        const cardAnchorX = left ? lx - 8 : lx + 8;
+        card.style.transform = left
+          ? `translate(${cardAnchorX}px, ${ly}px) translate(-100%, -50%)`
+          : `translate(${cardAnchorX}px, ${ly}px) translateY(-50%)`;
+        const estLeft = left ? cardAnchorX - 140 : cardAnchorX;
+        a *= Math.min(1, Math.max(0, (estLeft - edge) / 60));
         card.style.opacity = line.style.opacity = String(a);
       });
     };

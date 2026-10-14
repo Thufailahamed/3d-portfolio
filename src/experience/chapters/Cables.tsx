@@ -11,7 +11,7 @@ import { sparkFrag, sparkVert, strandFrag, strandVert } from "../shaders/cables"
 import { GLOBE_R, GLOBE_Y, TILT } from "./Globe";
 
 const DEPTH = 6;
-const POINTS = 200;
+const POINTS = 120;
 /** Fraction of each strand that forms the stem; the rest becomes a meridian on the globe. */
 const SPLIT = 0.45;
 const BUD = 0.16;
@@ -319,54 +319,56 @@ export default function Cables({ count, globe }: { count: number; globe: React.R
     }
 
     // wave: blend the keyframes per strand (each on its own delay), write camera-space points
-    const pos = g.attributes.position.array as Float32Array;
-    const tan = g.attributes.aTangent.array as Float32Array;
-    const live = g.attributes.aLive.array as Float32Array;
-    const sx = tanH * (size.width / size.height) * DEPTH;
-    const sy = tanH * DEPTH;
-    strands.forEach((st, i) => {
-      const ls = sec - st.delay;
-      // one continuous spline through all wave shapes: no stop at each keyframe
-      keyWeights(KEY_TIMES, ls, kw);
-      line.fill(0);
-      for (let q = 0; q < keys.length; q++) {
-        const w = kw[q];
-        if (w === 0) continue;
-        const K = keys[q][i];
-        for (let j = 0; j < POINTS * 2; j++) line[j] += K[j] * w;
-      }
-      for (let j = 0; j < POINTS; j++) {
-        const s = j / (POINTS - 1);
-        // slow organic drift, two frequencies per strand so it never looks like a loop
-        line[j * 2] += Math.sin(time * 0.31 + s * 4 + st.ph * 1.3) * 0.006;
-        line[j * 2 + 1] +=
-          Math.sin(time * 0.7 + s * 6 + st.ph) * 0.011 + Math.sin(time * 0.43 + s * 11 + st.ph * 1.7) * 0.006;
-      }
-      // the head draws in on one smooth, accelerating curve
-      const head = Math.pow(Math.min(1, Math.max(0, ls / 4.6)), 1.5);
-      const k = span(ls, 8.0, 9.2);
-      const bloom = span(ls, 10.4, 11.6);
-      for (let j = 0; j < POINTS; j++) {
-        const ja = Math.max(0, j - 1) * 2;
-        const jb = Math.min(POINTS - 1, j + 1) * 2;
-        const tx = (line[jb] - line[ja]) * sx;
-        const ty = (line[jb + 1] - line[ja + 1]) * sy;
-        const tl = Math.hypot(tx, ty) || 1;
-        for (let e = 0; e < 2; e++) {
-          const o = (i * POINTS + j) * 2 + e;
-          pos[o * 3] = line[j * 2] * sx;
-          pos[o * 3 + 1] = line[j * 2 + 1] * sy;
-          pos[o * 3 + 2] = -DEPTH;
-          tan[o * 3] = tx / tl;
-          tan[o * 3 + 1] = ty / tl;
-          tan[o * 3 + 2] = 0;
-          live[o * 3] = k;
-          live[o * 3 + 1] = bloom;
-          live[o * 3 + 2] = Math.max(0, head) * 1.001;
+    if (mesh.visible) {
+      const pos = g.attributes.position.array as Float32Array;
+      const tan = g.attributes.aTangent.array as Float32Array;
+      const live = g.attributes.aLive.array as Float32Array;
+      const sx = tanH * (size.width / size.height) * DEPTH;
+      const sy = tanH * DEPTH;
+      strands.forEach((st, i) => {
+        const ls = sec - st.delay;
+        // one continuous spline through all wave shapes: no stop at each keyframe
+        keyWeights(KEY_TIMES, ls, kw);
+        line.fill(0);
+        for (let q = 0; q < keys.length; q++) {
+          const w = kw[q];
+          if (w === 0) continue;
+          const K = keys[q][i];
+          for (let j = 0; j < POINTS * 2; j++) line[j] += K[j] * w;
         }
-      }
-    });
-    for (const n of ["position", "aTangent", "aLive"]) g.attributes[n].needsUpdate = true;
+        for (let j = 0; j < POINTS; j++) {
+          const s = j / (POINTS - 1);
+          // slow organic drift, two frequencies per strand so it never looks like a loop
+          line[j * 2] += Math.sin(time * 0.31 + s * 4 + st.ph * 1.3) * 0.006;
+          line[j * 2 + 1] +=
+            Math.sin(time * 0.7 + s * 6 + st.ph) * 0.011 + Math.sin(time * 0.43 + s * 11 + st.ph * 1.7) * 0.006;
+        }
+        // the head draws in on one smooth, accelerating curve
+        const head = Math.pow(Math.min(1, Math.max(0, ls / 4.6)), 1.5);
+        const k = span(ls, 8.0, 9.2);
+        const bloom = span(ls, 10.4, 11.6);
+        for (let j = 0; j < POINTS; j++) {
+          const ja = Math.max(0, j - 1) * 2;
+          const jb = Math.min(POINTS - 1, j + 1) * 2;
+          const tx = (line[jb] - line[ja]) * sx;
+          const ty = (line[jb + 1] - line[ja + 1]) * sy;
+          const tl = Math.hypot(tx, ty) || 1;
+          for (let e = 0; e < 2; e++) {
+            const o = (i * POINTS + j) * 2 + e;
+            pos[o * 3] = line[j * 2] * sx;
+            pos[o * 3 + 1] = line[j * 2 + 1] * sy;
+            pos[o * 3 + 2] = -DEPTH;
+            tan[o * 3] = tx / tl;
+            tan[o * 3 + 1] = ty / tl;
+            tan[o * 3 + 2] = 0;
+            live[o * 3] = k;
+            live[o * 3 + 1] = bloom;
+            live[o * 3 + 2] = Math.max(0, head) * 1.001;
+          }
+        }
+      });
+      for (const n of ["position", "aTangent", "aLive"]) g.attributes[n].needsUpdate = true;
+    }
 
     // sparkles off the stem; the starfield fades in from ~10s and stays
     const fade: [THREE.Points, number][] = [

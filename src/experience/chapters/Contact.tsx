@@ -56,9 +56,10 @@ export default function Contact() {
   const hover = useMemo(
     () => ({
       ray: new THREE.Raycaster(),
-      ndc: new THREE.Vector2(),
-      target: new THREE.Vector3(),
+      ndc: new THREE.Vector2(-999, -999),
+      target: new THREE.Vector3(0, -100, 0),
       hit: false,
+      lastCheck: 0,
       canHover: typeof matchMedia !== "undefined" && matchMedia("(hover: hover) and (pointer: fine)").matches,
     }),
     [],
@@ -224,16 +225,16 @@ export default function Contact() {
     baked.uniforms.uTime.value += dt;
     archMat.uniforms.uTime.value += dt;
 
-    // cursor over the arch: same feel as the intro (snap in, ease out, trail the pointer)
-    hover.hit = false;
-    if (hover.canHover && arch.current && light.on.value > 0.5) {
+    // cursor over the arch: only re-raycast when pointer moves or periodically
+    hover.lastCheck += dt;
+    const moved = Math.abs(sceneState.mouse.x - hover.ndc.x) > 0.003 || Math.abs(sceneState.mouse.y - hover.ndc.y) > 0.003;
+    if (hover.canHover && arch.current && light.on.value > 0.5 && (moved || hover.lastCheck > 0.08)) {
+      hover.lastCheck = 0;
       hover.ndc.set(sceneState.mouse.x, sceneState.mouse.y);
       hover.ray.setFromCamera(hover.ndc, camera);
       const hit = hover.ray.intersectObject(arch.current, false)[0];
-      if (hit) {
-        hover.hit = true;
-        hover.target.copy(hit.point);
-      }
+      hover.hit = !!hit;
+      if (hit) hover.target.copy(hit.point);
     }
     const u = archMat.uniforms;
     if (u.uHoverAmt.value < 0.01 && hover.hit) u.uHoverPos.value.copy(hover.target);

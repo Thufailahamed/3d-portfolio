@@ -8,6 +8,7 @@ import { useApp } from "@/store/useApp";
 import CameraRig from "./CameraRig";
 import About from "./chapters/About";
 import Board from "./chapters/Board";
+import BuildingFlow from "./chapters/BuildingFlow";
 import Contact from "./chapters/Contact";
 import Fades from "./chapters/Fades";
 import DetailBackdrop from "./chapters/DetailBackdrop";
@@ -25,6 +26,7 @@ export default function Experience() {
   const isMobile = useApp((s) => s.isMobile);
   const mode = useApp((s) => s.mode);
   const low = useApp((s) => s.quality === "low");
+  const maxDpr = low ? 1.15 : isMobile ? 1.25 : 1.5;
   const [frameloop, setFrameloop] = useState<"always" | "never">("always");
 
   // stop rendering entirely while the tab is hidden
@@ -37,7 +39,7 @@ export default function Experience() {
   return (
     <Canvas
       frameloop={frameloop}
-      dpr={[1, low ? 1.25 : isMobile ? 1.5 : 2]}
+      dpr={[1, maxDpr]}
       camera={{ fov: isMobile ? 48 : 35, near: 0.1, far: 120, position: [0, 1.3, 12.5] }}
       gl={{ antialias: false, powerPreference: "high-performance", stencil: false }}
       onCreated={({ scene }) => {
@@ -59,18 +61,20 @@ export default function Experience() {
           <Lightformer form="rect" intensity={1.6} color="#ffffff" position={[4.5, 3, 4]} rotation-y={Math.PI / 4} scale={[0.25, 10, 1]} />
         </Environment>
 
-        <ambientLight intensity={0.03} />
-        <spotLight
-          position={[0.6, 13, 1.2]}
-          angle={0.32}
-          penumbra={1}
-          intensity={120}
-          decay={1.6}
-          color="#eef2e6"
-        />
-        <pointLight position={[0, 3, -3]} intensity={6} distance={9} color="#c8ff3d" />
-        {/* cool rim from behind separates the silhouette from the fog */}
-        <directionalLight position={[-3, 6, -8]} intensity={0.8} color="#cfd8ff" />
+        <group visible={mode !== "flow"}>
+          <ambientLight intensity={0.03} />
+          <spotLight
+            position={[0.6, 13, 1.2]}
+            angle={0.32}
+            penumbra={1}
+            intensity={120}
+            decay={1.6}
+            color="#eef2e6"
+          />
+          <pointLight position={[0, 3, -3]} intensity={6} distance={9} color="#c8ff3d" />
+          {/* cool rim from behind separates the silhouette from the fog */}
+          <directionalLight position={[-3, 6, -8]} intensity={0.8} color="#cfd8ff" />
+        </group>
 
         {/* the journey stays mounted (and cached) while a detail page is open */}
         <group visible={mode === "journey"}>
@@ -83,10 +87,11 @@ export default function Experience() {
           <Fades />
         </group>
         <Board />
+        <BuildingFlow />
         <DetailBackdrop />
         <CameraRig />
         <PostFX />
-        <AdaptiveResolution max={low ? 1.25 : isMobile ? 1.5 : 2} />
+        <AdaptiveResolution max={maxDpr} />
         <CompileGate />
       </Suspense>
     </Canvas>

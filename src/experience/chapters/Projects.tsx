@@ -45,7 +45,7 @@ export default function Projects() {
   return (
     <group ref={group} position={PROJECTS_ORIGIN} visible={false}>
       <Mountains crystal={CRYSTAL_WORLD} />
-      <Dune count={isMobile ? 11000 : 42000} />
+      <Dune count={isMobile ? 8000 : 20000} />
       <Crystal />
     </group>
   );
@@ -451,7 +451,7 @@ function RiverGlitter({ rocks, shared }: { rocks: Rock[]; shared: Record<string,
     const hueNoise = perlin(4);
 
     // stream: crowded along the banks, sparse mid-stream; the shader does the flowing
-    const count = isMobile ? 7000 : 22000;
+    const count = isMobile ? 6000 : 12000;
     const sp = new Float32Array(count * 3);
     const across = new Float32Array(count);
     const sr = new Float32Array(count);

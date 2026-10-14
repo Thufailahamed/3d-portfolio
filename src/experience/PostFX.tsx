@@ -6,15 +6,8 @@ import { useThree } from "@react-three/fiber";
 import { useApp } from "@/store/useApp";
 
 export default function PostFX() {
-  const quality = useApp((s) => s.quality);
-  const isMobile = useApp((s) => s.isMobile);
-  const low = quality === "low" || isMobile;
-  // MSAA is ~4× the fill cost; above ~1.4× pixel ratio the edges are already fine without it
-  const dpr = useThree((s) => s.viewport.dpr);
-  const msaa = low || dpr >= 1.4 ? 0 : 4;
-
   return (
-    <EffectComposer multisampling={msaa}>
+    <EffectComposer multisampling={0}>
       <Bloom
         mipmapBlur
         intensity={0.9}

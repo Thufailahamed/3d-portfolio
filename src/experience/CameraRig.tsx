@@ -94,11 +94,34 @@ export default function CameraRig() {
       bPos: new THREE.Vector3(),
       bLook: new THREE.Vector3(),
       inBoard: false,
+      // the flow pavilion's camera, eased toward where flow asks for it
+      fPos: new THREE.Vector3(),
+      fLook: new THREE.Vector3(),
+      inFlow: false,
     }),
     [],
   );
 
   useFrame((_, dt) => {
+    // /flow owns the camera; glides between exterior, interior hall, and individual showcases
+    const flow = sceneState.flow;
+    if (flow.active) {
+      tmp.a.fromArray(flow.pos);
+      tmp.b.fromArray(flow.look);
+      if (!tmp.inFlow) {
+        tmp.fPos.copy(tmp.a);
+        tmp.fLook.copy(tmp.b);
+        tmp.inFlow = true;
+      }
+      const k = 1 - Math.exp(-Math.min(dt, 0.1) * 3.2);
+      tmp.fPos.lerp(tmp.a, k);
+      tmp.fLook.lerp(tmp.b, k);
+      camera.position.copy(tmp.fPos);
+      camera.lookAt(tmp.fLook);
+      return;
+    }
+    tmp.inFlow = false;
+
     // /board owns the camera; it cuts there under the curtain, then glides between cards
     const board = sceneState.board;
     if (board.active) {

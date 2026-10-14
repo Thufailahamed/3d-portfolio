@@ -3,6 +3,7 @@ import { snoise3 } from "./noise";
 
 /** Dark rock mass of the mountain range; ridges catch a cool key light and glitter. */
 export const ridgeVert = /* glsl */ `
+${snoise3}
 // two landscape designs (A → B) blended by uMorph
 uniform float uMorph;
 attribute float aHA;
@@ -12,12 +13,14 @@ attribute vec3 aNB;
 varying vec3 vW;
 varying vec3 vNrm;
 varying float vH;
+varying float vHue;
 void main(){
   vec3 p = vec3(position.x, mix(aHA, aHB, uMorph), position.z);
   vec4 w = modelMatrix * vec4(p, 1.0);
   vW = w.xyz;
   vNrm = normalize(mat3(modelMatrix) * normalize(mix(aNA, aNB, uMorph)));
   vH = p.y;
+  vHue = snoise(vec3(w.xz * 0.06, 1.7)) * 0.5 + 0.5;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 
@@ -31,7 +34,7 @@ uniform float uTime;
 varying vec3 vW;
 varying vec3 vNrm;
 varying float vH;
-${snoise3}
+varying float vHue;
 
 float hash(vec3 p){
   p = fract(p * vec3(0.1031, 0.1030, 0.0973));
@@ -57,8 +60,7 @@ void main(){
   float g = hash(cell);
   float spark = smoothstep(0.72, 1.0, g) * (0.55 + 0.45 * sin(uTime * (1.5 + g * 3.0) + g * 40.0));
 
-  float hue = snoise(vec3(vW.xz * 0.06, 1.7)) * 0.5 + 0.5;
-  vec3 tone = mix(mineral(hue), uTint, 0.35);
+  vec3 tone = mix(mineral(vHue), uTint, 0.35);
 
   vec3 col = vec3(0.006, 0.008, 0.012);
   col += tone * pow(lit, 2.2) * (0.05 + 1.1 * spark) * (0.25 + 0.95 * crest);

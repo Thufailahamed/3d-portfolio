@@ -106,9 +106,10 @@ export default function Fracture() {
   const hover = useMemo(
     () => ({
       ray: new THREE.Raycaster(),
-      ndc: new THREE.Vector2(),
+      ndc: new THREE.Vector2(-999, -999),
       target: new THREE.Vector3(),
       hit: false,
+      lastCheck: 0,
       // any device with a real hover pointer, whatever its width
       canHover: matchMedia("(hover: hover) and (pointer: fine)").matches,
     }),
@@ -132,27 +133,28 @@ export default function Fracture() {
     const g = group.current;
     if (!g) return;
     const p = sceneState.p;
+    const tu = chapter("tunnel");
+    // the stones are the arch until the break, and live on until the tunnel covers the screen
+    g.visible = p < tu.start + (tu.end - tu.start) * 0.55;
+    if (!g.visible) return;
+
     const u = mats.stone.uniforms;
     u.uTime.value = clock.elapsedTime;
     const intact = p < chapter("fracture").start + 0.002 && sceneState.intro > 0.9;
-    hover.hit = false;
-    if (intact && hover.canHover) {
+    hover.lastCheck += dt;
+    const moved = Math.abs(sceneState.mouse.x - hover.ndc.x) > 0.003 || Math.abs(sceneState.mouse.y - hover.ndc.y) > 0.003;
+    if (intact && hover.canHover && (moved || hover.lastCheck > 0.08)) {
+      hover.lastCheck = 0;
       hover.ndc.set(sceneState.mouse.x, sceneState.mouse.y);
       hover.ray.setFromCamera(hover.ndc, camera);
       const hit = hover.ray.intersectObjects(meshes, false)[0];
-      if (hit) {
-        hover.hit = true;
-        hover.target.copy(hit.point);
-      }
+      hover.hit = !!hit;
+      if (hit) hover.target.copy(hit.point);
     }
     // the patch trails the cursor a little, and fades in / out
     if (u.uHoverAmt.value < 0.01 && hover.hit) u.uHoverPos.value.copy(hover.target);
     u.uHoverPos.value.lerp(hover.target, Math.min(1, dt * 10));
     u.uHoverAmt.value += ((hover.hit ? 1 : 0) - u.uHoverAmt.value) * Math.min(1, dt * (hover.hit ? 5 : 2.5));
-    const tu = chapter("tunnel");
-    // the stones are the arch until the break, and live on until the tunnel covers the screen
-    g.visible = p < tu.start + (tu.end - tu.start) * 0.55;
-    if (!g.visible) return;
 
     const t = local(p, "fracture");
     const time = clock.elapsedTime;

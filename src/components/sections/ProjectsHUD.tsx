@@ -158,9 +158,22 @@ export default function ProjectsHUD() {
         aria-hidden
       />
 
-      <p className="label pointer-events-none absolute left-1/2 top-[62svh] -translate-x-1/2 md:top-[70svh]">
-        ← Drag to switch · {isMobile ? "tap" : "click"} the crystal to enter →
-      </p>
+      <div className="pointer-events-none absolute left-1/2 top-[60svh] -translate-x-1/2 flex flex-col items-center gap-2.5 md:top-[67svh]">
+        <p className="label">
+          ← Drag to switch · {isMobile ? "tap" : "click"} the crystal to enter →
+        </p>
+        <Link
+          href="/flow"
+          data-cursor="enter"
+          className="pointer-events-auto group inline-flex items-center gap-2 rounded-full border border-accent/40 bg-black/70 px-4 py-1.5 text-xs font-mono uppercase tracking-widest text-accent backdrop-blur-md transition-all duration-300 hover:border-accent hover:bg-black/90 hover:shadow-[0_0_20px_rgba(200,255,61,0.3)] hover:scale-105 active:scale-95"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+          </span>
+          <span>Enter 3D Flow ↗</span>
+        </Link>
+      </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-6 px-gutter pb-8 md:pb-10">
         <div className="pointer-events-auto max-w-[min(42rem,70vw)]" aria-live="polite">
@@ -171,14 +184,27 @@ export default function ProjectsHUD() {
             {project.title.toUpperCase()}
           </h2>
           <p className="hud-meta mt-3 max-w-[38ch] text-sm text-fg/70 md:text-base">{project.tagline}</p>
-          <Link
-            href={`/projects/${project.slug}`}
-            onClick={discover}
-            data-cursor="view"
-            className="hud-meta label mt-5 inline-flex items-center gap-2 !text-fg underline decoration-accent underline-offset-[6px] hover:text-accent"
-          >
-            Discover project ↘
-          </Link>
+          <div className="mt-5 flex flex-wrap items-center gap-4">
+            <Link
+              href={`/projects/${project.slug}`}
+              onClick={discover}
+              data-cursor="view"
+              className="hud-meta label inline-flex items-center gap-2 !text-fg underline decoration-accent underline-offset-[6px] hover:text-accent"
+            >
+              Discover project ↘
+            </Link>
+            <Link
+              href="/flow"
+              data-cursor="enter"
+              className="hud-meta group inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-3.5 py-1.5 text-xs font-mono uppercase tracking-widest text-accent backdrop-blur-md transition-all duration-300 hover:border-accent hover:bg-accent/25 hover:shadow-[0_0_20px_rgba(200,255,61,0.25)] hover:scale-105 active:scale-95"
+            >
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
+              </span>
+              <span>Enter 3D Flow ↗</span>
+            </Link>
+          </div>
         </div>
 
         <div className="pointer-events-auto flex flex-col items-end gap-3">

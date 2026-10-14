@@ -338,6 +338,11 @@ export const projects: Project[] = [
       { label: "Market", value: "Sri Lankan jewellers" },
       { label: "Runs on", value: "Cloudflare Workers" },
     ],
+    metrics: [
+      { value: "3", label: "Rooms on one ledger" },
+      { value: "24K", label: "Live per-karat pricing" },
+      { value: "100%", label: "Barcode-tracked stock" },
+    ],
     challenges: [
       {
         title: "Three rooms, three ledgers",
@@ -382,6 +387,11 @@ export const projects: Project[] = [
       { label: "Market", value: "Sri Lankan wholesale" },
       { label: "Runs on", value: "Cloudflare Pages" },
     ],
+    metrics: [
+      { value: "Direct", label: "Verified mill & importer sourcing" },
+      { value: "Live", label: "Real-time LKR benchmarks" },
+      { value: "N→1", label: "Multi-supplier unified cart" },
+    ],
     challenges: [
       {
         title: "Too many middlemen",
@@ -425,6 +435,11 @@ export const projects: Project[] = [
       { label: "Status", value: "Private beta" },
       { label: "Languages", value: "English · Sinhala · Tamil" },
       { label: "Runs on", value: "Cloudflare Workers" },
+    ],
+    metrics: [
+      { value: "03", label: "Languages natively supported" },
+      { value: "3.8s", label: "Paper-to-digital scan indexing" },
+      { value: "00", label: "Ads or third-party trackers" },
     ],
     challenges: [
       {

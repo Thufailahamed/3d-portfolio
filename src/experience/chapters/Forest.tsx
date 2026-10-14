@@ -306,6 +306,8 @@ export function Butterflies({ count }: { count: number }) {
   useFrame(({ clock }) => {
     const im = mesh.current;
     if (!im) return;
+    if (im.parent && !im.parent.visible) return;
+    if (im.parent?.parent && !im.parent.parent.visible) return;
     const t = clock.elapsedTime;
     material.uniforms.uTime.value = t;
     material.uniforms.uIntensity.value = 0.25 + 0.75 * sceneState.intro;

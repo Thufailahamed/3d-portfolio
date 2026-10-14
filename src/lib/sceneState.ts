@@ -41,4 +41,21 @@ export const sceneState = {
     pan: 0,
     pick: (() => -1) as (x: number, y: number) => number,
   },
+  /**
+   * The 3D flow pavilion (/flow): whether it owns the camera, target positions,
+   * active view preset, showcase focus, and pointer look.
+   */
+  flow: {
+    active: false,
+    pos: [0, 0, 0] as [number, number, number],
+    look: [0, 0, 0] as [number, number, number],
+    view: "exterior" as "exterior" | "hall" | "showcase",
+    showcaseIndex: 0,
+    pan: 0,
+    tilt: 0,
+    walk: 0,
+    hover: -1,
+    /** NDC (x, y) -> 0..5 for showcase hit, 99 for portal/enter button hit, or -1 */
+    pick: (() => -1) as (x: number, y: number) => number,
+  },
 };

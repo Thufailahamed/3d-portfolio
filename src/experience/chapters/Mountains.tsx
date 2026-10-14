@@ -165,8 +165,8 @@ type Built = {
 function* buildMountains(isMobile: boolean): Generator<void, Built> {
   const heights = makeHeights();
   const depth = FAR_Z - NEAR_Z;
-  const segX = isMobile ? 220 : 380;
-  const segZ = isMobile ? 80 : 140;
+  const segX = isMobile ? 160 : 240;
+  const segZ = isMobile ? 60 : 90;
   const cols = segX + 1;
   const rows = segZ + 1;
   const dx = WIDTH / segX;
@@ -255,7 +255,7 @@ function* buildMountains(isMobile: boolean): Generator<void, Built> {
   };
   const random = rng(23);
   const hueNoise = perlin(4);
-  const want = isMobile ? 16000 : 60000;
+  const want = isMobile ? 12000 : 28000;
   const xz = new Float32Array(want * 3);
   const ys = Array.from({ length: D }, () => new Float32Array(want));
   const ls = Array.from({ length: D }, () => new Float32Array(want));
@@ -298,11 +298,11 @@ function useIdleBuild<T>(make: () => Generator<void, T>, key: unknown) {
     const it = make();
     const idle =
       typeof requestIdleCallback === "function"
-        ? (cb: () => void) => requestIdleCallback(cb, { timeout: 200 })
+        ? (cb: () => void) => requestIdleCallback(cb, { timeout: 1000 })
         : (cb: () => void) => setTimeout(cb, 16);
     const step = () => {
       if (cancelled) return;
-      const until = performance.now() + 6;
+      const until = performance.now() + 3;
       let r = it.next();
       while (!r.done && performance.now() < until) r = it.next();
       if (r.done) setResult({ key, value: r.value });

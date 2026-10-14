@@ -15,10 +15,13 @@ type AppState = {
   entered: boolean;
   /** index into projects[] shown in the carousel */
   activeProject: number;
-  /** "journey" on the home routes, "detail" on /projects/[slug], "board" on /board */
-  mode: "journey" | "detail" | "board";
+  /** "journey" on the home routes, "detail" on /projects/[slug], "board" on /board, "flow" on /flow */
+  mode: "journey" | "detail" | "board" | "flow";
   /** the card opened on the board (index into projects[]) */
   boardFocus: number | null;
+  /** currently focused project showcase in the 3D flow pavilion (index into projects[]) */
+  flowFocus: number | null;
+  flowView: "exterior" | "hall" | "showcase";
   detailSlug: string | null;
   /** DOM-only experience (no WebGL) */
   lite: boolean;
@@ -39,6 +42,8 @@ export const useApp = create<AppState>((set) => ({
   mode: "journey",
   detailSlug: null,
   boardFocus: null,
+  flowFocus: null,
+  flowView: "exterior",
   lite: false,
   sound: false,
   menuOpen: false,

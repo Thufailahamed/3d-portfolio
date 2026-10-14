@@ -38,6 +38,8 @@ export const ABOUT_ORIGIN: [number, number, number] = [0, 0, -200];
 export const CONTACT_ORIGIN: [number, number, number] = [0, 0, -280];
 /** The investigation board (/board), off the journey entirely. */
 export const BOARD_ORIGIN: [number, number, number] = [0, 0, -360];
+/** The 3D flow pavilion (/flow), dedicated architectural space. */
+export const FLOW_ORIGIN: [number, number, number] = [0, 0, -480];
 
 /** Where in each chapter a deep link or menu jump lands (fraction of the chapter). */
 const LANDING: Record<ChapterId, number> = { hero: 0, fracture: 0.1, tunnel: 0, projects: 0.3, about: 0.9, contact: 1 };

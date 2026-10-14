@@ -29,7 +29,7 @@ export default function About() {
         <Globe spin={globe} />
       </group>
       {/* screen-locked, so it lives outside the scene-space group */}
-      <Cables count={isMobile ? 24 : 36} globe={globe} />
+      <Cables count={isMobile ? 16 : 24} globe={globe} />
     </>
   );
 }

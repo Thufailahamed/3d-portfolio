@@ -1114,38 +1114,38 @@ def build_interior_gallery(col, marble_mat, stone_mat, lime_mat, brass_mat, gold
 
         # -------------------------------------------------- D) Freestanding Angled Interactive Kiosk
         kiosk_bm = bmesh.new()
-        kiosk_x = px - (p["side"] * (pw * 0.5 + 0.85))
-        kiosk_y = py - 0.75
+        kiosk_x = px - (p["side"] * (pw * 0.5 + 0.38))
+        kiosk_y = py - 0.55
         kiosk_z = pz
         # Slanted pedestal pole
         bmesh.ops.create_cube(kiosk_bm, size=1.0)
         for v in kiosk_bm.verts[-8:]:
-            v.co.x = kiosk_x + v.co.x * 0.08
-            v.co.y = kiosk_y + v.co.y * 0.08
-            v.co.z = kiosk_z + (v.co.z + 0.5) * 0.85
+            v.co.x = kiosk_x + v.co.x * 0.07
+            v.co.y = kiosk_y + v.co.y * 0.07
+            v.co.z = kiosk_z + (v.co.z + 0.5) * 0.82
         # Angled glass interface tablet
         screen_start = len(kiosk_bm.verts)
         bmesh.ops.create_cube(kiosk_bm, size=1.0)
         for v in kiosk_bm.verts[screen_start:]:
-            v.co.x = kiosk_x + v.co.x * 0.45
-            v.co.y = kiosk_y + v.co.y * 0.32
-            v.co.z = kiosk_z + 0.88 + v.co.z * 0.02
+            v.co.x = kiosk_x + v.co.x * 0.38
+            v.co.y = kiosk_y + v.co.y * 0.28
+            v.co.z = kiosk_z + 0.85 + v.co.z * 0.02
         obj_from_bm(f"InteractiveKiosk_{p['id']}", kiosk_bm, col, brass_mat)
 
         # Screen Glow surface
         screen_bm = bmesh.new()
         bmesh.ops.create_cube(screen_bm, size=1.0)
         for v in screen_bm.verts[-8:]:
-            v.co.x = kiosk_x + v.co.x * 0.42
-            v.co.y = kiosk_y + v.co.y * 0.28
-            v.co.z = kiosk_z + 0.89 + (v.co.z + 0.5) * 0.01
-        screen_glow = portal_glow_mat(p["color"], 8.0)
+            v.co.x = kiosk_x + v.co.x * 0.35
+            v.co.y = kiosk_y + v.co.y * 0.24
+            v.co.z = kiosk_z + 0.86 + (v.co.z + 0.5) * 0.01
+        screen_glow = portal_glow_mat(p["color"], 6.0)
         obj_from_bm(f"KioskScreen_{p['id']}", screen_bm, col, screen_glow)
 
         # -------------------------------------------------- E) Unique High-Detail 3D Sculpture
         art_bm = bmesh.new()
         art_center_z = pz + ph + vh * 0.52
-        art_mat = hologram_mat(p["slug"], p["color"], 28.0)
+        art_mat = hologram_mat(p["slug"], p["color"], strength=6.0)
 
         if p["art_type"] == "school_system":
             # 01. School System: 6 Interlocking Modular Portal Cubes & Central Cryptographic Token Ring

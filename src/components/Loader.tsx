@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { person } from "@/content/site";
 import { gsap } from "@/lib/gsap";
@@ -11,6 +12,7 @@ import { useApp } from "@/store/useApp";
  * manager + font loading + shader precompile) and never runs ahead of it.
  */
 export default function Loader() {
+  const pathname = usePathname();
   const root = useRef<HTMLDivElement>(null);
   const counter = useRef<HTMLSpanElement>(null);
   const bar = useRef<HTMLSpanElement>(null);
@@ -18,6 +20,15 @@ export default function Loader() {
   const shown = useRef({ v: 0 });
   const [gone, setGone] = useState(false);
   const [canEnter, setCanEnter] = useState(false);
+
+  // /flow is a direct standalone 3D exhibition space; skip the hero intro gate
+  useEffect(() => {
+    if (pathname === "/flow") {
+      useApp.getState().set({ entered: true });
+      sceneState.intro = 1;
+      setGone(true);
+    }
+  }, [pathname]);
 
   // fonts are part of "loaded"
   const [fontsReady, setFontsReady] = useState(false);
@@ -49,7 +60,13 @@ export default function Loader() {
   }, [fontsReady]);
 
   useEffect(() => {
-    if (canEnter) button.current?.focus({ preventScroll: true });
+    if (canEnter) {
+      if (window.location.pathname === "/flow") {
+        enter();
+      } else {
+        button.current?.focus({ preventScroll: true });
+      }
+    }
   }, [canEnter]);
 
   const enter = () => {
@@ -62,7 +79,7 @@ export default function Loader() {
       .to(sceneState, { intro: 1, duration: 2.6, ease: "power3.out" }, 0.45);
   };
 
-  if (gone) return null;
+  if (gone || pathname === "/flow") return null;
 
   return (
     <div

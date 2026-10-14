@@ -41,11 +41,19 @@ export default function AboutCaptions() {
       letters.forEach((chars, i) => {
         const [from, to] = SLOTS[i];
         const live = sec > from - 0.1 && sec < to + chars.length * STAGGER + FADE + 0.1;
-        rows[i].style.visibility = live ? "visible" : "hidden";
+        const row = rows[i];
+        if (row.style.visibility !== (live ? "visible" : "hidden")) {
+          row.style.visibility = live ? "visible" : "hidden";
+        }
         if (!live) return;
         chars.forEach((ch, j) => {
           const d = j * STAGGER;
-          ch.style.opacity = String(clamp((sec - from - d) / FADE) * (1 - clamp((sec - to - d) / FADE)));
+          const val = clamp((sec - from - d) / FADE) * (1 - clamp((sec - to - d) / FADE));
+          const rounded = Math.round(val * 100) / 100;
+          if (ch.dataset.v !== String(rounded)) {
+            ch.dataset.v = String(rounded);
+            ch.style.opacity = String(rounded);
+          }
         });
       });
     };

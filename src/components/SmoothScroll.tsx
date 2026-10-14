@@ -12,7 +12,7 @@ export let lenis: Lenis | null = null;
 export default function SmoothScroll() {
   useEffect(() => {
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    lenis = new Lenis({ autoRaf: false, lerp: reduce ? 1 : 0.085, wheelMultiplier: 0.9 });
+    lenis = new Lenis({ autoRaf: false, lerp: reduce ? 1 : 0.095, wheelMultiplier: 1.0 });
     lenis.on("scroll", ScrollTrigger.update);
 
     // no browser scroll restoration: each route decides where it starts. Locked until "Enter".
@@ -23,7 +23,7 @@ export default function SmoothScroll() {
     });
     const tick = (t: number) => lenis?.raf(t * 1000);
     gsap.ticker.add(tick);
-    gsap.ticker.lagSmoothing(0);
+    gsap.ticker.lagSmoothing(500, 33);
 
     const onMove = (e: PointerEvent) => {
       sceneState.mouse.x = (e.clientX / innerWidth) * 2 - 1;

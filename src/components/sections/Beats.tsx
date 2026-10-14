@@ -42,20 +42,18 @@ export default function Beats({ chapter, label, lines, window = [0.05, 0.95], va
 
           splits.forEach((split, i) => {
             const at = a * 10 + i * per;
-            // desktop: words rise out of a blur; mobile: a cheaper rise + fade
-            const from = desktop && !reduce
-              ? { opacity: 0, yPercent: 60, filter: "blur(10px)" }
-              : { opacity: 0, yPercent: reduce ? 0 : 40 };
+            // clean rise + fade with GPU acceleration
+            const from = { opacity: 0, yPercent: reduce ? 0 : 45 };
             tl.set(els[i], { autoAlpha: 1 }, at);
             tl.fromTo(
               split.words,
               from,
-              { opacity: 1, yPercent: 0, filter: "blur(0px)", stagger: per * 0.05, duration: per * 0.35 },
+              { opacity: 1, yPercent: 0, stagger: per * 0.05, duration: per * 0.35, willChange: "transform, opacity" },
               at,
             );
             tl.to(
               split.words,
-              { opacity: 0, yPercent: -40, stagger: per * 0.03, duration: per * 0.25 },
+              { opacity: 0, yPercent: -35, stagger: per * 0.03, duration: per * 0.25 },
               at + per * 0.72,
             );
             tl.set(els[i], { autoAlpha: 0 }, at + per);

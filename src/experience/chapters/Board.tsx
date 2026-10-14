@@ -9,38 +9,67 @@ import { BOARD_ORIGIN } from "@/lib/chapters";
 import { gsap } from "@/lib/gsap";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
-import { CARD_PX, caseNote, cardTexture, inkTexture, mapUv, NOTE_PX, type MapFrame } from "../boardArt";
-import { corkFrag, dotFrag, dotVert, mapFrag, mapVert, reachFrag, reachVert, shadowFrag, shadowVert } from "../shaders/board";
+import {
+  CARD_PX,
+  caseNote,
+  cardTexture,
+  inkTexture,
+  mapUv,
+  NOTE_PX,
+  telemetryNote,
+  WALL_SHEET_PX,
+  wallBlueprintLeft,
+  wallBlueprintRight,
+  type MapFrame,
+} from "../boardArt";
+import {
+  corkFrag,
+  dotFrag,
+  dotVert,
+  mapFrag,
+  mapVert,
+  reachFrag,
+  reachVert,
+  shadowFrag,
+  shadowVert,
+  wallFrag,
+} from "../shaders/board";
 import { NIGHT_URL } from "./Globe";
 
 export const BOARD_URL = "/models/board.glb";
 const PAPER_URL = "/board/paper-normal.webp";
 
-/** The printed map: centred on 10°E, from the Southern Ocean to the Arctic. */
+/** The printed map: centred on 10°E, from the Southern Ocean to the Arctic, enlarged on the board. */
 const FRAME: MapFrame = { lonC: 10, lat0: -58, lat1: 78 };
-const MAP_W = 1.62;
+const MAP_W = 1.72;
 const MAP_H = (MAP_W * (FRAME.lat1 - FRAME.lat0)) / 360;
-const MAP_C: [number, number] = [0.04, -0.005];
+const MAP_C: [number, number] = [0.02, -0.005];
 /** The board's front face (the model is centred on the origin, facing +z). */
 const FACE = 0.0085;
 const HOME = 0;
 /** The cork inside the frame. */
 const CORK: [number, number] = [2.03, 1.105];
 
-const CARD_W = 0.17;
+const CARD_W = 0.2;
 const CARD_H = (CARD_W * CARD_PX.h) / CARD_PX.w;
-const NOTE_W = 0.22;
+const NOTE_W = 0.23;
 const NOTE_H = (NOTE_W * NOTE_PX.h) / NOTE_PX.w;
+const WALL_W = 0.4;
+const WALL_H = (WALL_W * WALL_SHEET_PX.h) / WALL_SHEET_PX.w;
+
 /** Where each polaroid hangs (board-local), and its tilt. Top row above the map, bottom below. */
 const SLOTS: { x: number; y: number; r: number }[] = [
-  { x: -0.5, y: 0.392, r: 0.05 },
-  { x: 0.06, y: 0.402, r: -0.035 },
-  { x: 0.62, y: 0.388, r: 0.04 },
-  { x: -0.7, y: -0.392, r: -0.045 },
-  { x: -0.13, y: -0.402, r: 0.03 },
-  { x: 0.44, y: -0.39, r: -0.05 },
+  { x: -0.44, y: 0.398, r: 0.045 },
+  { x: 0.13, y: 0.406, r: -0.032 },
+  { x: 0.7, y: 0.394, r: 0.038 },
+  { x: -0.71, y: -0.396, r: -0.042 },
+  { x: -0.14, y: -0.406, r: 0.028 },
+  { x: 0.42, y: -0.396, r: -0.045 },
 ];
-const NOTE = { x: -0.86, y: 0.4, r: -0.06 };
+const NOTE = { x: -0.84, y: 0.395, r: -0.055 };
+const TELEM = { x: 0.83, y: -0.39, r: 0.048 };
+const LEFT_SHEET = { x: -1.34, y: 0.02, z: -0.022, r: 0.015 };
+const RIGHT_SHEET = { x: 1.34, y: -0.01, z: -0.022, r: -0.015 };
 
 /** Map position (board-local) of a lon/lat. */
 function onMap(lon: number, lat: number, z = FACE + 0.0015) {
@@ -55,20 +84,26 @@ function curledPlane(w: number, h: number, curl: number) {
   for (let i = 0; i < p.count; i++) {
     const x = (p.getX(i) / w) * 2;
     const y = (p.getY(i) / h) * 2;
-    p.setZ(i, curl * (Math.pow(Math.abs(x * y), 2.2) * 0.9 + Math.pow(Math.max(0, -y), 3) * 0.6));
+    p.setZ(i, curl * (Math.pow(Math.abs(x * y), 2.2) * 0.85 + Math.pow(Math.max(0, -y), 3) * 0.5));
   }
   g.computeVertexNormals();
   return g;
 }
 
 /** Red thread from a card's pin to home: almost taut, a slight droop, lying just off the board. */
-function threadGeometry(a: THREE.Vector3, b: THREE.Vector3) {
+function threadGeometry(a: THREE.Vector3, b: THREE.Vector3, radius = 0.0019) {
   const len = a.distanceTo(b);
   const mid = a.clone().lerp(b, 0.5);
   mid.y -= len * 0.025;
   mid.z = FACE + 0.007;
-  const curve = new THREE.CatmullRomCurve3([a, a.clone().lerp(mid, 0.5).setZ(FACE + 0.01), mid, mid.clone().lerp(b, 0.5).setZ(FACE + 0.006), b]);
-  return new THREE.TubeGeometry(curve, 96, 0.0019, 5, false);
+  const curve = new THREE.CatmullRomCurve3([
+    a,
+    a.clone().lerp(mid, 0.5).setZ(FACE + 0.01),
+    mid,
+    mid.clone().lerp(b, 0.5).setZ(FACE + 0.006),
+    b,
+  ]);
+  return new THREE.TubeGeometry(curve, 96, radius, 5, false);
 }
 
 /** Great-circle paths from home to the other places, flattened onto the map. */
@@ -92,13 +127,16 @@ function reachGeometry() {
     const pts: THREE.Vector3[] = [];
     for (let s = 0; s <= SEG; s++) {
       const u = s / SEG;
-      const v = a.clone().multiplyScalar(Math.sin((1 - u) * ang)).add(b.clone().multiplyScalar(Math.sin(u * ang))).divideScalar(Math.sin(ang));
+      const v = a
+        .clone()
+        .multiplyScalar(Math.sin((1 - u) * ang))
+        .add(b.clone().multiplyScalar(Math.sin(u * ang)))
+        .divideScalar(Math.sin(ang));
       const lat = (Math.asin(THREE.MathUtils.clamp(v.y, -1, 1)) * 180) / Math.PI;
       const lon = (Math.atan2(v.z, v.x) * 180) / Math.PI;
       pts.push(onMap(lon, lat, FACE + 0.0025));
     }
     for (let s = 0; s < SEG; s++) {
-      // a path that runs off one edge of the map comes back on the other: don't draw across
       if (Math.abs(pts[s].x - pts[s + 1].x) > MAP_W * 0.5) continue;
       pos.push(...pts[s].toArray(), ...pts[s + 1].toArray());
       t.push(s / SEG, (s + 1) / SEG);
@@ -115,9 +153,8 @@ function reachGeometry() {
 
 /**
  * /board — the investigation board behind the About globe. A cork board under a desk lamp:
- * the night-lights map with the places the work reaches, a polaroid of each project strung
- * to home with red thread, and a case note. Cards lift under the pointer; one can be opened
- * (the camera moves in and the DOM shows its file).
+ * the enlarged night-lights map with the places the work reaches, a polaroid of each project
+ * strung to home with red thread, field notes, and subtle architectural blueprints on the studio wall.
  */
 export default function Board() {
   const mode = useApp((s) => s.mode);
@@ -127,7 +164,6 @@ export default function Board() {
   const size = useThree((s) => s.size);
   const dpr = useThree((s) => s.viewport.dpr);
   const { nodes } = useGLTF(BOARD_URL, "/draco/") as unknown as { nodes: Record<string, THREE.Mesh> };
-  // one url per call: these match the preloads, so nothing starts loading during render
   const night = useTexture(NIGHT_URL);
   const paper = useTexture(PAPER_URL);
   const group = useRef<THREE.Group>(null);
@@ -146,9 +182,9 @@ export default function Board() {
   }, [nodes]);
 
   const lamp = useMemo(() => {
-    const spot = new THREE.SpotLight("#ffe2b8", 6, 6, 0.62, 0.9, 1.4);
-    spot.position.set(-0.1, 1.25, 1.15);
-    spot.target.position.set(0.05, 0.02, 0);
+    const spot = new THREE.SpotLight("#ffe2b8", 6, 7.5, 0.88, 0.92, 1.25);
+    spot.position.set(-0.05, 1.25, 1.35);
+    spot.target.position.set(0.02, 0.0, 0);
     return spot;
   }, []);
 
@@ -156,7 +192,7 @@ export default function Board() {
   const hub = useMemo(() => onMap(home.lon, home.lat), [home]);
 
   const art = useMemo(() => {
-    const on = { value: 0 };
+    const on = { value: 1 };
     const time = { value: 0 };
     const focus = { value: 0 };
     const lampU = { uLampPos: { value: new THREE.Vector3() }, uLampDir: { value: new THREE.Vector3() } };
@@ -170,7 +206,12 @@ export default function Board() {
         uPaper: { value: paper },
         uInk: { value: inkTexture(FRAME, HOME) },
         uRect: {
-          value: new THREE.Vector4((FRAME.lonC - 180 + 180) / 360, (FRAME.lonC + 180 + 180) / 360, (FRAME.lat0 + 90) / 180, (FRAME.lat1 + 90) / 180),
+          value: new THREE.Vector4(
+            (FRAME.lonC - 180 + 180) / 360,
+            (FRAME.lonC + 180 + 180) / 360,
+            (FRAME.lat0 + 90) / 180,
+            (FRAME.lat1 + 90) / 180,
+          ),
         },
         uOn: on,
         uTime: time,
@@ -182,6 +223,11 @@ export default function Board() {
     const cork = new THREE.ShaderMaterial({
       vertexShader: mapVert,
       fragmentShader: corkFrag,
+      uniforms: { uFocus: focus, ...lampU },
+    });
+    const wall = new THREE.ShaderMaterial({
+      vertexShader: mapVert,
+      fragmentShader: wallFrag,
       uniforms: { uFocus: focus, ...lampU },
     });
     const reach = new THREE.ShaderMaterial({
@@ -209,24 +255,37 @@ export default function Board() {
       },
     });
     const dotGeo = new THREE.BufferGeometry();
-    dotGeo.setAttribute("position", new THREE.Float32BufferAttribute(about.places.flatMap((p) => onMap(p.lon, p.lat, FACE + 0.003).toArray()), 3));
+    dotGeo.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(about.places.flatMap((p) => onMap(p.lon, p.lat, FACE + 0.003).toArray()), 3),
+    );
     dotGeo.setAttribute("aHome", new THREE.Float32BufferAttribute(about.places.map((_, i) => (i === HOME ? 1 : 0)), 1));
 
     const cards = projects.map((p, i) => {
       const slot = SLOTS[i % SLOTS.length];
-      const pin = new THREE.Vector3(slot.x - Math.sin(slot.r) * CARD_H * 0.42, slot.y + Math.cos(slot.r) * CARD_H * 0.42, FACE + 0.012);
+      const pin = new THREE.Vector3(
+        slot.x - Math.sin(slot.r) * CARD_H * 0.42,
+        slot.y + Math.cos(slot.r) * CARD_H * 0.42,
+        FACE + 0.012,
+      );
       const thread = threadGeometry(pin, hub.clone().setZ(FACE + 0.008));
       return {
         slot,
         pin,
         tex: cardTexture(p, i),
         thread,
-        threadMat: new THREE.MeshStandardMaterial({ color: "#8e0f16", roughness: 0.75, emissive: new THREE.Color("#ff2a1f"), emissiveIntensity: 0 }),
+        threadMat: new THREE.MeshStandardMaterial({
+          color: "#8e0f16",
+          roughness: 0.75,
+          emissive: new THREE.Color("#ff2a1f"),
+          emissiveIntensity: 0.14,
+        }),
         lift: 0,
         /** how much of the thread has run home, 0..1 */
         draw: 1,
       };
     });
+
     const shadow = (w: number, h: number) =>
       new THREE.ShaderMaterial({
         vertexShader: shadowVert,
@@ -235,6 +294,10 @@ export default function Board() {
         depthWrite: false,
         uniforms: { uOpacity: { value: 0.55 }, uSize: { value: new THREE.Vector2(w, h) }, uBlur: { value: 0.02 } },
       });
+
+    const leftTex = wallBlueprintLeft();
+    const rightTex = wallBlueprintRight();
+
     return {
       on,
       time,
@@ -242,25 +305,68 @@ export default function Board() {
       lampU,
       map,
       cork,
+      wall,
       reach,
       reachGeo: reachGeometry(),
       dots,
       dotGeo,
       cards,
-      cardGeo: curledPlane(CARD_W, CARD_H, 0.006),
-      cardMats: cards.map((c) => new THREE.MeshStandardMaterial({ map: c.tex, color: "#cfcac2", roughness: 0.82, envMapIntensity: 0.05 })),
+      cardGeo: curledPlane(CARD_W, CARD_H, 0.005),
+      cardMats: cards.map(
+        (c) =>
+          new THREE.MeshStandardMaterial({
+            map: c.tex,
+            color: "#e6e1d8",
+            roughness: 0.88,
+            envMapIntensity: 0.04,
+            emissive: new THREE.Color("#ffffff"),
+            emissiveMap: c.tex,
+            emissiveIntensity: 0.14,
+          }),
+      ),
       cardShadows: cards.map(() => shadow(CARD_W, CARD_H)),
       note: new THREE.MeshStandardMaterial({ map: caseNote(), roughness: 0.9, envMapIntensity: 0.05 }),
+      telem: new THREE.MeshStandardMaterial({ map: telemetryNote(), roughness: 0.9, envMapIntensity: 0.05 }),
+      leftSheetMat: new THREE.MeshStandardMaterial({
+        map: leftTex,
+        color: "#c8d6eb",
+        roughness: 0.92,
+        envMapIntensity: 0.02,
+      }),
+      rightSheetMat: new THREE.MeshStandardMaterial({
+        map: rightTex,
+        color: "#c8d6eb",
+        roughness: 0.92,
+        envMapIntensity: 0.02,
+      }),
+      wallSheetGeo: curledPlane(WALL_W, WALL_H, 0.003),
+      wallSheetShadow: shadow(WALL_W, WALL_H),
       noteGeo: curledPlane(NOTE_W, NOTE_H, 0.004),
       noteShadow: shadow(NOTE_W, NOTE_H),
-      wall: new THREE.MeshStandardMaterial({ color: "#16171a", roughness: 0.95, envMapIntensity: 0.02 }),
     };
   }, [night, paper, hub, home, dpr, size.height]);
 
   useEffect(
     () => () => {
       boardMat.dispose();
-      for (const o of [art.map, art.cork, art.reach, art.reachGeo, art.dots, art.dotGeo, art.cardGeo, art.note, art.noteGeo, art.noteShadow, art.wall])
+      for (const o of [
+        art.map,
+        art.cork,
+        art.wall,
+        art.reach,
+        art.reachGeo,
+        art.dots,
+        art.dotGeo,
+        art.cardGeo,
+        art.note,
+        art.telem,
+        art.leftSheetMat,
+        art.rightSheetMat,
+        art.wallSheetGeo,
+        art.wallSheetShadow,
+        art.noteGeo,
+        art.noteShadow,
+      ])
         o.dispose();
       art.cards.forEach((c, i) => {
         c.tex.dispose();
@@ -281,7 +387,6 @@ export default function Board() {
     tl.fromTo(lamp, { intensity: 0 }, { intensity: 6, duration: 1.4, ease: "power2.out" }, 0.1)
       .fromTo(art.on, { value: 0 }, { value: 1, duration: 2.6, ease: "power2.inOut" }, 0.5)
       .fromTo(art.cards, { draw: 0 }, { draw: 1, duration: 1.4, stagger: 0.12, ease: "power2.inOut" }, 0.9);
-    // interrupted (strict mode, a resize): land on the finished board rather than a half-drawn one
     return () => {
       tl.progress(1).kill();
     };
@@ -292,8 +397,6 @@ export default function Board() {
       ray: new THREE.Raycaster(),
       ndc: new THREE.Vector2(),
       canHover: typeof matchMedia !== "undefined" && matchMedia("(hover: hover) and (pointer: fine)").matches,
-      v: new THREE.Vector3(),
-      w: new THREE.Vector3(),
     }),
     [],
   );
@@ -350,28 +453,26 @@ export default function Board() {
       c.thread.setDrawRange(0, Math.floor((idx.count / 6) * c.draw) * 6);
       const dim = focus !== null && focus !== i ? 0.5 : 1;
       c.threadMat.emissiveIntensity = (0.12 + c.lift * 1.6) * dim;
+      art.cardMats[i].emissiveIntensity = (0.14 + c.lift * 0.16) * dim;
       art.cardShadows[i].uniforms.uOpacity.value = 0.5 - c.lift * 0.12;
       art.cardShadows[i].uniforms.uBlur.value = 0.018 + c.lift * 0.03;
     });
 
-    // where the camera wants to be: the whole board, or the open card (left of the file
-    // panel on desktop, above the sheet on phones)
+    // where the camera wants to be: the whole board, or the open card
     const fov = THREE.MathUtils.degToRad(camera.fov);
     const tan = Math.tan(fov / 2);
     const aspect = size.width / size.height;
     const o = g.position;
     if (focus === null) {
-      // the board fits the band between the heading (top) and the card index (bottom)
-      const top = (isMobile ? 190 : 196) / size.height;
-      const bottom = 1 - (isMobile ? 96 : 100) / size.height;
+      const top = (isMobile ? 186 : 184) / size.height;
+      const bottom = 1 - (isMobile ? 96 : 92) / size.height;
       const band = bottom - top;
-      // phones are too narrow for the whole board: it fills the height, and you swipe along it
       const fitH = (1.165 * (isMobile ? 1.12 : 1.03)) / (band * 2 * tan);
-      const d = isMobile ? fitH : Math.max(fitH, (2.108 * 1.04) / (0.96 * 2 * tan * aspect));
+      const d = isMobile ? fitH : Math.max(fitH, (2.108 * 1.03) / (0.96 * 2 * tan * aspect));
       const visH = 2 * d * tan;
       const visW = visH * aspect;
       const lift = ((top + bottom) / 2 - 0.5) * visH;
-      const pan = Math.max(0, (2.108 * 1.04 - visW) / 2) * THREE.MathUtils.clamp(b.pan, -1, 1);
+      const pan = Math.max(0, (2.108 * 1.03 - visW) / 2) * THREE.MathUtils.clamp(b.pan, -1, 1);
       b.look = [o.x + pan, o.y + lift, o.z];
       b.pos = [o.x + pan + sceneState.mouse.x * 0.06, o.y + lift + sceneState.mouse.y * 0.04, o.z + d];
     } else {
@@ -391,31 +492,58 @@ export default function Board() {
     <group ref={group} position={BOARD_ORIGIN} visible={false}>
       <primitive object={lamp} />
       <primitive object={lamp.target} />
-      <hemisphereLight args={["#9fb4ff", "#1a1410", 0.12]} />
+      <hemisphereLight args={["#9fb4ff", "#1a1410", 0.14]} />
 
       {/* the wall it hangs on */}
-      <mesh material={art.wall} position={[0, 0, -0.03]}>
+      <mesh key="wall" material={art.wall} position={[0, 0, -0.03]}>
         <planeGeometry args={[14, 9]} />
       </mesh>
-      <mesh geometry={nodes.Board.geometry} material={boardMat} />
-      <mesh material={art.cork} position-z={FACE + 0.0004}>
+      <mesh key="board-frame" geometry={nodes.Board.geometry} material={boardMat} />
+      <mesh key="cork" material={art.cork} position={[0, 0, FACE + 0.0004]}>
         <planeGeometry args={CORK} />
       </mesh>
 
       {/* the map, its places and the light threads from home */}
-      <mesh material={art.map} position={[MAP_C[0], MAP_C[1], FACE + 0.001]}>
+      <mesh key="map" material={art.map} position={[MAP_C[0], MAP_C[1], FACE + 0.001]}>
         <planeGeometry args={[MAP_W, MAP_H]} />
       </mesh>
-      <lineSegments geometry={art.reachGeo} material={art.reach} renderOrder={2} frustumCulled={false} />
-      <points geometry={art.dotGeo} material={art.dots} renderOrder={3} frustumCulled={false} />
-      {pin && <mesh geometry={pin} material={boardMat} position={hub.clone().setZ(FACE)} scale={1.5} />}
+      <lineSegments key="reach" geometry={art.reachGeo} material={art.reach} renderOrder={2} frustumCulled={false} />
+      <points key="dots" geometry={art.dotGeo} material={art.dots} renderOrder={3} frustumCulled={false} />
+      {pin && <mesh key="hub-pin" geometry={pin} material={boardMat} position={hub.clone().setZ(FACE)} scale={1.5} />}
+
+      {/* Left studio wall blueprint sheet */}
+      <group key="left-sheet" position={[LEFT_SHEET.x, LEFT_SHEET.y, LEFT_SHEET.z]} rotation-z={LEFT_SHEET.r}>
+        <mesh material={art.wallSheetShadow} position={[0.008, -0.012, -0.003]}>
+          <planeGeometry args={[WALL_W + 0.05, WALL_H + 0.05]} />
+        </mesh>
+        <mesh geometry={art.wallSheetGeo} material={art.leftSheetMat} />
+        {pin && <mesh geometry={pin} material={boardMat} position={[0, WALL_H * 0.44, 0.006]} scale={1.1} />}
+      </group>
+
+      {/* Right studio wall topology sheet */}
+      <group key="right-sheet" position={[RIGHT_SHEET.x, RIGHT_SHEET.y, RIGHT_SHEET.z]} rotation-z={RIGHT_SHEET.r}>
+        <mesh material={art.wallSheetShadow} position={[0.008, -0.012, -0.003]}>
+          <planeGeometry args={[WALL_W + 0.05, WALL_H + 0.05]} />
+        </mesh>
+        <mesh geometry={art.wallSheetGeo} material={art.rightSheetMat} />
+        {pin && <mesh geometry={pin} material={boardMat} position={[0, WALL_H * 0.44, 0.006]} scale={1.1} />}
+      </group>
 
       {/* the case note */}
-      <group position={[NOTE.x, NOTE.y, FACE + 0.003]} rotation-z={NOTE.r}>
+      <group key="case-note" position={[NOTE.x, NOTE.y, FACE + 0.003]} rotation-z={NOTE.r}>
         <mesh material={art.noteShadow} position={[0.006, -0.01, -0.002]}>
           <planeGeometry args={[NOTE_W + 0.04, NOTE_H + 0.04]} />
         </mesh>
         <mesh geometry={art.noteGeo} material={art.note} />
+        {pin && <mesh geometry={pin} material={boardMat} position={[0, NOTE_H * 0.4, 0.002]} />}
+      </group>
+
+      {/* the telemetry blueprint note */}
+      <group key="telem-note" position={[TELEM.x, TELEM.y, FACE + 0.003]} rotation-z={TELEM.r}>
+        <mesh material={art.noteShadow} position={[0.006, -0.01, -0.002]}>
+          <planeGeometry args={[NOTE_W + 0.04, NOTE_H + 0.04]} />
+        </mesh>
+        <mesh geometry={art.noteGeo} material={art.telem} />
         {pin && <mesh geometry={pin} material={boardMat} position={[0, NOTE_H * 0.4, 0.002]} />}
       </group>
 

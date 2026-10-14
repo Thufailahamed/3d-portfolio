@@ -29,6 +29,7 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
       // coming back from the board through the curtain: it lifts over the globe
       curtain.reveal();
 
+      let historyTimer: ReturnType<typeof setTimeout> | undefined;
       const st = ScrollTrigger.create({
         trigger: track.current,
         start: "top top",
@@ -38,9 +39,12 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
           const c = chapterAt(self.progress);
           if (useApp.getState().chapter === c.id) return;
           useApp.getState().set({ chapter: c.id });
-          // the URL and title follow the story (Next syncs native history calls)
-          if (location.pathname !== c.path) history.replaceState(null, "", c.path);
-          document.title = c.title === "Home" ? `${person.name} — ${person.role}` : `${c.title} · ${person.name}`;
+          // debounce history replace to avoid router re-renders while scrolling
+          clearTimeout(historyTimer);
+          historyTimer = setTimeout(() => {
+            if (location.pathname !== c.path) history.replaceState(null, "", c.path);
+            document.title = c.title === "Home" ? `${person.name} — ${person.role}` : `${c.title} · ${person.name}`;
+          }, 180);
         },
       });
 
@@ -69,6 +73,7 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
       return () => {
         cancelAnimationFrame(raf);
         clearTimeout(settleTimer);
+        clearTimeout(historyTimer);
         settle();
         removeEventListener("wheel", settle);
         removeEventListener("touchstart", settle);
