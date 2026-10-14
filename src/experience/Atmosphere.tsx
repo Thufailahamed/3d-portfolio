@@ -1,7 +1,9 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { chapter } from "@/lib/chapters";
+import { sceneState } from "@/lib/sceneState";
 import * as THREE from "three";
 import { rng } from "@/lib/random";
 import { palette } from "./palette";
@@ -97,14 +99,20 @@ export default function Atmosphere({ dustCount = 1800 }: { dustCount?: number })
     [ground, rays, dust, cone],
   );
 
+  const group = useRef<THREE.Group>(null);
+  const tunnel = chapter("tunnel");
+  const hideAt = tunnel.start + (tunnel.end - tunnel.start) * 0.55;
+
   useFrame((_, dt) => {
+    if (group.current) group.current.visible = sceneState.p < hideAt;
+    if (sceneState.p >= hideAt) return;
     ground.uniforms.uTime.value += dt;
     rays.uniforms.uTime.value += dt;
     dust.m.uniforms.uTime.value += dt;
   });
 
   return (
-    <group>
+    <group ref={group}>
       <mesh material={ground} rotation-x={-Math.PI / 2} renderOrder={-1}>
         <planeGeometry args={[160, 160]} />
       </mesh>

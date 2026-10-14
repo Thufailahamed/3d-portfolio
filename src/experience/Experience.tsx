@@ -7,7 +7,10 @@ import * as THREE from "three";
 import { useApp } from "@/store/useApp";
 import Atmosphere from "./Atmosphere";
 import CameraRig from "./CameraRig";
+import Fracture from "./chapters/Fracture";
 import Monolith from "./chapters/Monolith";
+import Tunnel from "./chapters/Tunnel";
+import { CompileGate, LoadProgress } from "./LoadTracker";
 import { palette } from "./palette";
 import PostFX from "./PostFX";
 
@@ -34,6 +37,7 @@ export default function Experience() {
         scene.fog = new THREE.FogExp2(palette.fog, 0.045);
       }}
     >
+      <LoadProgress />
       <Suspense fallback={null}>
         <Environment resolution={128} frames={1}>
           {/* procedural studio: long soft strips give the obsidian its streaky reflections */}
@@ -61,9 +65,12 @@ export default function Experience() {
         <directionalLight position={[-3, 6, -8]} intensity={0.8} color="#cfd8ff" />
 
         <Monolith />
+        <Fracture />
+        <Tunnel />
         <Atmosphere dustCount={isMobile ? 700 : 1800} />
         <CameraRig />
         <PostFX />
+        <CompileGate />
       </Suspense>
     </Canvas>
   );

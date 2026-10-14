@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter_Tight, JetBrains_Mono } from "next/font/google";
 import GlobalCanvas from "@/components/GlobalCanvas";
+import Loader from "@/components/Loader";
 import SmoothScroll from "@/components/SmoothScroll";
 import { person } from "@/content/site";
 import "./globals.css";
@@ -21,7 +22,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${display.variable} ${mono.variable}`}>
       <body>
+        <noscript>
+          <style>{`.loader{display:none!important}`}</style>
+        </noscript>
         <SmoothScroll />
+        <Loader />
         <GlobalCanvas />
         <main id="main" className="relative z-10">
           {children}

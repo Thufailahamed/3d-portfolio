@@ -4,6 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { chapter } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { palette } from "../palette";
 import { glyphFrag, glyphVert } from "../shaders/atmosphere";
@@ -51,10 +52,16 @@ export default function Monolith() {
     [obsidian, glyph],
   );
 
+  const fractureStart = chapter("fracture").start;
+
   useFrame((_, dt) => {
-    glyph.uniforms.uTime.value += dt;
     const g = group.current;
     if (!g) return;
+    // the intact slab is swapped for its shards the moment the fracture begins
+    g.visible = sceneState.p <= fractureStart;
+    if (!g.visible) return;
+    glyph.uniforms.uTime.value += dt;
+    glyph.uniforms.uPower.value = sceneState.intro;
     // the slab turns very slightly toward the pointer
     const target = sceneState.mouse.x * 0.12;
     g.rotation.y += (target - g.rotation.y) * Math.min(1, dt * 2);

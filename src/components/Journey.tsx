@@ -5,6 +5,8 @@ import { ScrollTrigger, useGSAP } from "@/lib/gsap";
 import { chapters, chapterAt, TRACK_VH } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
+import { beats } from "@/content/site";
+import Beats from "./sections/Beats";
 import Hero from "./sections/Hero";
 
 /**
@@ -52,6 +54,18 @@ export default function Journey() {
           style={{ top: `${c.start * 100}%`, height: `${(c.end - c.start) * 100}%` }}
         >
           {c.id === "hero" && <Hero />}
+          {c.id === "fracture" && (
+            <Beats chapter="fracture" label="The rule" lines={beats.fracture} window={[0.06, 0.9]} />
+          )}
+          {c.id === "tunnel" && (
+            <Beats
+              chapter="tunnel"
+              label="Into the work"
+              lines={["Entering — selected work, 2023 → 2026"]}
+              window={[0.45, 1.05]}
+              variant="label"
+            />
+          )}
         </div>
       ))}
     </div>

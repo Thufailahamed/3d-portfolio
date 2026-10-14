@@ -1,0 +1,192 @@
+"use client";
+
+import { useGLTF } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
+import * as THREE from "three";
+import { chapter, local } from "@/lib/chapters";
+import { rng } from "@/lib/random";
+import { sceneState } from "@/lib/sceneState";
+import { useApp } from "@/store/useApp";
+import { palette } from "../palette";
+import { coreFrag, coreVert, discFrag, discVert } from "../shaders/signal";
+import { MONOLITH_URL } from "./Monolith";
+
+export const RING_CENTER = new THREE.Vector3(0, 3.2, 0);
+const Z = new THREE.Vector3(0, 0, 1);
+
+const ease = (t: number) => t * t * (3 - 2 * t);
+const seg = (t: number, a: number, b: number) => ease(THREE.MathUtils.clamp((t - a) / (b - a), 0, 1));
+
+type Shard = {
+  mesh: THREE.Object3D;
+  origin: THREE.Vector3;
+  burst: THREE.Vector3;
+  ring: THREE.Vector3;
+  qBurst: THREE.Quaternion;
+  qRing: THREE.Quaternion;
+  phase: number;
+};
+
+/**
+ * Chapter 2 — the monolith breaks into its Voronoi shards, they hang in the air,
+ * then coil into a ring around a "signal" membrane. Fully scroll-driven.
+ */
+export default function Fracture() {
+  const { nodes } = useGLTF(MONOLITH_URL, "/draco/") as unknown as {
+    nodes: Record<string, THREE.Object3D>;
+  };
+  const isMobile = useApp((s) => s.isMobile);
+  const group = useRef<THREE.Group>(null);
+
+  const mats = useMemo(
+    () => ({
+      obsidian: new THREE.MeshStandardMaterial({
+        color: "#0b0b0d",
+        roughness: 0.22,
+        metalness: 0.85,
+        envMapIntensity: 1.2,
+      }),
+      // inner cut faces: dark glass, lime at grazing angles so the cracks glow
+      core: new THREE.ShaderMaterial({
+        vertexShader: coreVert,
+        fragmentShader: coreFrag,
+        toneMapped: false,
+        uniforms: {
+          uAccent: { value: palette.accent.clone() },
+          uRim: { value: 1 },
+          uFill: { value: 0 },
+        },
+      }),
+      disc: new THREE.ShaderMaterial({
+        vertexShader: discVert,
+        fragmentShader: discFrag,
+        transparent: true,
+        depthWrite: false,
+        toneMapped: false,
+        uniforms: {
+          uTime: { value: 0 },
+          uOpacity: { value: 0 },
+          uAccent: { value: palette.accent.clone() },
+        },
+      }),
+    }),
+    [],
+  );
+
+  const radius = isMobile ? 1.75 : 2.6;
+
+  const shards = useMemo<Shard[]>(() => {
+    const random = rng(23);
+    const center = new THREE.Vector3(0, 2.2, 0);
+    // a two-material Blender mesh arrives as a Group of one mesh per material
+    const list = Object.values(nodes)
+      .filter((n) => /^Shard_\d+$/.test(n.name))
+      .sort((a, b) => a.position.y - b.position.y);
+
+    const pick = (m: THREE.Material) => (m.name === "Core" ? mats.core : mats.obsidian);
+    const parts = (n: THREE.Object3D) =>
+      ((n as THREE.Mesh).isMesh ? [n as THREE.Mesh] : (n.children as THREE.Mesh[])).map(
+        (c) => new THREE.Mesh(c.geometry, pick(c.material as THREE.Material)),
+      );
+
+    return list.map((src, i) => {
+      const mesh = new THREE.Group();
+      mesh.add(...parts(src));
+      const origin = src.position.clone();
+
+      const dir = origin.clone().sub(center);
+      dir.z += (random() - 0.5) * 1.2;
+      dir.normalize();
+      const burst = origin
+        .clone()
+        .addScaledVector(dir, 1.4 + random() * 2.4)
+        .add(new THREE.Vector3(0, 0.6 + random() * 1.4, (random() - 0.5) * 2.5));
+
+      // coil the column into the ring: bottom shards start at the bottom of the circle
+      const a = -Math.PI / 2 + (i / list.length) * Math.PI * 2;
+      const ring = new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, (random() - 0.5) * 0.25);
+
+      const qBurst = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(random() * 6.28, random() * 6.28, random() * 6.28),
+      );
+      const qRing = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3 * (random() - 0.5), 0, a));
+
+      return { mesh, origin, burst, ring, qBurst, qRing, phase: random() * 6.28 };
+    });
+  }, [nodes, mats, radius]);
+
+  useEffect(
+    () => () => {
+      mats.obsidian.dispose();
+      mats.core.dispose();
+      mats.disc.dispose();
+    },
+    [mats],
+  );
+
+  const tmp = useMemo(
+    () => ({
+      v: new THREE.Vector3(),
+      r: new THREE.Vector3(),
+      q: new THREE.Quaternion(),
+      qSpin: new THREE.Quaternion(),
+      qr: new THREE.Quaternion(),
+      id: new THREE.Quaternion(),
+    }),
+    [],
+  );
+
+  useFrame(({ clock }, dt) => {
+    const g = group.current;
+    if (!g) return;
+    const p = sceneState.p;
+    const tu = chapter("tunnel");
+    // shards live from the break until the tunnel has fully covered the screen
+    g.visible = p > chapter("fracture").start && p < tu.start + (tu.end - tu.start) * 0.55;
+    if (!g.visible) return;
+
+    const t = local(p, "fracture");
+    const time = clock.elapsedTime;
+    const burst = seg(t, 0.0, 0.32);
+    const gather = seg(t, 0.5, 0.88);
+    const float = Math.sin(Math.PI * Math.min(1, t / 0.88)) * 0.12 + 0.03;
+
+    // the ring keeps turning slowly — scroll adds a twist on top
+    const spin = time * 0.05 + t * 1.2;
+    tmp.qSpin.setFromAxisAngle(Z, spin);
+
+    for (const s of shards) {
+      tmp.r.copy(s.ring).applyAxisAngle(Z, spin).add(RING_CENTER);
+      tmp.v.lerpVectors(s.origin, s.burst, burst).lerp(tmp.r, gather);
+      tmp.v.y += Math.sin(time * 0.8 + s.phase) * float;
+      tmp.v.x += Math.cos(time * 0.6 + s.phase) * float * 0.5;
+      s.mesh.position.copy(tmp.v);
+
+      tmp.q.slerpQuaternions(tmp.id, s.qBurst, burst);
+      tmp.qr.multiplyQuaternions(tmp.qSpin, s.qRing);
+      tmp.q.slerp(tmp.qr, gather);
+      s.mesh.quaternion.copy(tmp.q);
+      s.mesh.rotateX(Math.sin(time * 0.5 + s.phase) * float * 0.6);
+    }
+
+    // crack light flares on the break, then settles to a steady glow in the ring
+    const flare = Math.exp(-Math.pow((t - 0.08) * 9, 2)) * 3.5;
+    mats.core.uniforms.uRim.value = 0.45 + burst * 0.55 + flare + gather * 0.8;
+    mats.core.uniforms.uFill.value = 0.02 + flare * 0.35 + gather * 0.04;
+
+    mats.disc.uniforms.uTime.value += dt;
+    mats.disc.uniforms.uOpacity.value = seg(t, 0.68, 1.0);
+  });
+
+  return (
+    <group ref={group} visible={false}>
+      {shards.map((s) => (
+        <primitive key={s.mesh.uuid} object={s.mesh} />
+      ))}
+      <mesh position={RING_CENTER} material={mats.disc} renderOrder={2}>
+        <circleGeometry args={[radius * 0.92, 96]} />
+      </mesh>
+    </group>
+  );
+}

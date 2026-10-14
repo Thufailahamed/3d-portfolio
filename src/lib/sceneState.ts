@@ -8,5 +8,5 @@ export const sceneState = {
   /** normalised pointer, -1..1 */
   mouse: { x: 0, y: 0 },
   /** 0 → 1 as the visitor clicks Enter */
-  intro: 1,
+  intro: 0,
 };

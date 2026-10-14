@@ -47,3 +47,15 @@ export const active = (p: number, id: ChapterId, pad = 0.02) => {
 
 export const chapterAt = (p: number) =>
   chapters.find((c) => p >= c.start && p < c.end) ?? chapters[chapters.length - 1];
+
+/**
+ * ScrollTrigger start/end (in px) for a chapter, computed from the same master
+ * progress the WebGL scene uses — so DOM and 3D stay frame-locked.
+ * `from`/`to` select a sub-range of the chapter (0..1).
+ */
+export const chapterScroll = (id: ChapterId, from = 0, to = 1) => {
+  const c = chapter(id);
+  const max = () => document.documentElement.scrollHeight - window.innerHeight;
+  const at = (f: number) => () => (c.start + (c.end - c.start) * f) * max();
+  return { start: at(from), end: at(to) };
+};

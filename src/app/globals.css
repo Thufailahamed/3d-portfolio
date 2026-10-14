@@ -75,3 +75,22 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .scroll-hint { animation: none; }
 }
+
+.loader-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--color-fg) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-fg) 5%, transparent) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at 40% 50%, black 30%, transparent 85%);
+}
+
+.hud-card {
+  border: 1px solid color-mix(in oklab, var(--color-fg) 14%, transparent);
+  background: color-mix(in oklab, var(--color-fg) 3%, transparent);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: color-mix(in oklab, var(--color-fg) 60%, transparent);
+}

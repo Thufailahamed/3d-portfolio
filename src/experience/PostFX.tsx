@@ -19,7 +19,7 @@ export default function PostFX() {
         radius={0.72}
         resolutionScale={low ? 0.5 : 1}
       />
-      <ToneMapping mode={ToneMappingMode.AGX} />
+      <ToneMapping mode={ToneMappingMode.NEUTRAL} />
       <Vignette offset={0.28} darkness={0.75} />
     </EffectComposer>
   );
