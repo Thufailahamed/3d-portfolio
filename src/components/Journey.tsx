@@ -57,24 +57,37 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
 
       // deep links (/projects, /about, …) land on their chapter, settled. Re-run after
       // the router's own scroll-to-top and once layout has settled.
+      const target = () => (initial ? st.start + (st.end - st.start) * landing(initial) : 0);
       const jump = () => {
         st.refresh();
-        let y = 0;
-        if (initial) y = st.start + (st.end - st.start) * landing(initial);
+        const y = target();
         if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
         else window.scrollTo(0, y);
         ScrollTrigger.update();
       };
       jump();
       let raf = requestAnimationFrame(() => (raf = requestAnimationFrame(jump)));
-      // the previous route can linger in the DOM for a moment during client navigation:
-      // keep re-landing while the layout settles, until the visitor scrolls themselves
+      // the previous route can linger in the DOM for a moment during client navigation, and
+      // a slow first load can lay the track out late: keep re-landing until the page has sat
+      // on its chapter for a moment, or the visitor scrolls themselves
       const ro = new ResizeObserver(() => jump());
       ro.observe(document.body);
-      const settle = () => ro.disconnect();
-      const settleTimer = setTimeout(settle, 1200);
+      let steady = 0;
+      const hold = () => {
+        if (Math.abs(scrollY - target()) > 2) {
+          steady = 0;
+          jump();
+        } else if (++steady > 30) settle();
+      };
+      gsap.ticker.add(hold);
+      const settle = () => {
+        ro.disconnect();
+        gsap.ticker.remove(hold);
+      };
+      const settleTimer = setTimeout(settle, 4000);
       addEventListener("wheel", settle, { once: true, passive: true });
       addEventListener("touchstart", settle, { once: true, passive: true });
+      addEventListener("keydown", settle, { once: true });
 
       sceneState.p = st.progress;
       return () => {
@@ -84,6 +97,7 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
         settle();
         removeEventListener("wheel", settle);
         removeEventListener("touchstart", settle);
+        removeEventListener("keydown", settle);
         st.kill();
       };
     },
