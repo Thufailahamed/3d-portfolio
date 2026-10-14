@@ -9,7 +9,7 @@ import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { dustFrag, dustVert, raysFrag, raysVert } from "../shaders/atmosphere";
-import { bakedFrag, bakedVert, fireflyFrag, fireflyVert } from "../shaders/forest";
+import { bakedFrag, bakedVert, butterflyFrag, butterflyVert, fireflyFrag, fireflyVert } from "../shaders/forest";
 
 export const FOREST_URL = "/models/forest.glb";
 /** rune / portal blue */
@@ -128,7 +128,7 @@ export default function Forest() {
   }, [isMobile, dpr]);
 
   const flies = useMemo(() => {
-    const n = isMobile ? 24 : 42;
+    const n = isMobile ? 36 : 72;
     const random = rng(41);
     const pos = new Float32Array(n * 3);
     const rnd = new Float32Array(n);
@@ -136,7 +136,8 @@ export default function Forest() {
       let x = (random() - 0.5) * 12;
       if (Math.abs(x) < 1.6) x += Math.sign(x || 1) * 2;
       pos[i * 3] = x;
-      pos[i * 3 + 1] = 0.3 + random() * 2.6;
+      // mostly low, over the ferns; a few higher up
+      pos[i * 3 + 1] = 0.25 + Math.pow(random(), 1.6) * 2.6;
       pos[i * 3 + 2] = 2.5 - random() * 8.5;
       rnd[i] = random();
     }
@@ -152,10 +153,10 @@ export default function Forest() {
       toneMapped: false,
       uniforms: {
         uTime: { value: 0 },
-        uSize: { value: 70 },
+        uSize: { value: 105 },
         uPixelRatio: { value: dpr },
         uIntensity: { value: 0 },
-        uColor: { value: new THREE.Color("#4fa8ff") },
+        uColor: { value: new THREE.Color("#b4ff48") },
       },
     });
     return { g, m };
@@ -205,8 +206,125 @@ export default function Forest() {
       ))}
       <points geometry={motes.g} material={motes.m} frustumCulled={false} />
       <points geometry={flies.g} material={flies.m} frustumCulled={false} renderOrder={6} />
+      <Butterflies count={isMobile ? 5 : 9} />
     </group>
   );
+}
+
+// ------------------------------------------------------------------ butterflies
+/** Right wing outline (x out from the body, z forward), fore- and hindwing in one. */
+const WING: [number, number][] = [
+  [0.02, 0.12], [0.3, 0.5], [0.62, 0.62], [0.9, 0.52], [1.0, 0.3], [0.86, 0.08],
+  [0.6, -0.02], [0.72, -0.28], [0.64, -0.56], [0.42, -0.72], [0.2, -0.66], [0.04, -0.3],
+];
+const SPAN = 0.12; // half wingspan in metres (a touch larger than life, so they read from the path)
+
+function butterflyGeometry() {
+  const pos: number[] = [];
+  const side: number[] = [];
+  const edge: number[] = [];
+  const wing: number[] = [];
+  for (const sd of [-1, 1]) {
+    // fan from a point near the hinge; aEdge is 1 there, 0 on the outline
+    const c: [number, number] = [0.3, -0.05];
+    for (let i = 0; i < WING.length; i++) {
+      const a = WING[i];
+      const b = WING[(i + 1) % WING.length];
+      for (const [x, z, e] of [
+        [c[0], c[1], 1],
+        [a[0], a[1], 0],
+        [b[0], b[1], 0],
+      ] as const) {
+        pos.push(sd * x * SPAN, 0, z * SPAN);
+        side.push(sd);
+        edge.push(e);
+        wing.push(x, z);
+      }
+    }
+  }
+  // the body: a thin dark sliver
+  const body: [number, number][] = [[-0.012, 0.5], [0.012, 0.5], [0.012, -0.6], [-0.012, 0.5], [0.012, -0.6], [-0.012, -0.6]];
+  for (const [x, z] of body) {
+    pos.push(x, 0.002, z * SPAN);
+    side.push(0);
+    edge.push(1);
+    wing.push(0, 0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("aSide", new THREE.Float32BufferAttribute(side, 1));
+  g.setAttribute("aEdge", new THREE.Float32BufferAttribute(edge, 1));
+  g.setAttribute("aWing", new THREE.Float32BufferAttribute(wing, 2));
+  return g;
+}
+
+type Flight = { c: THREE.Vector3; amp: THREE.Vector3; f: THREE.Vector3; ph: THREE.Vector3 };
+
+/** Small blue butterflies flitting around the arch: wandering paths, flapping, now and then gliding. */
+function Butterflies({ count }: { count: number }) {
+  const mesh = useRef<THREE.InstancedMesh>(null);
+
+  const { geometry, material, flights } = useMemo(() => {
+    const random = rng(77);
+    const geometry = butterflyGeometry();
+    geometry.setAttribute("aPhase", new THREE.InstancedBufferAttribute(Float32Array.from({ length: count }, () => random() * 6.28), 1));
+    // 6–9 wingbeats a second
+    geometry.setAttribute("aRate", new THREE.InstancedBufferAttribute(Float32Array.from({ length: count }, () => 38 + random() * 18), 1));
+    const material = new THREE.ShaderMaterial({
+      vertexShader: butterflyVert,
+      fragmentShader: butterflyFrag,
+      side: THREE.DoubleSide,
+      fog: true,
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uIntensity: { value: 0 } }]),
+    });
+    const flights: Flight[] = Array.from({ length: count }, () => ({
+      // loiter around the arch, the ferns and the sunbeam
+      c: new THREE.Vector3((random() - 0.5) * 5, 1 + random() * 1.8, (random() - 0.5) * 3 + 0.5),
+      amp: new THREE.Vector3(0.8 + random() * 1.4, 0.3 + random() * 0.5, 0.6 + random() * 1.0),
+      f: new THREE.Vector3(0.07 + random() * 0.08, 0.11 + random() * 0.1, 0.06 + random() * 0.07),
+      ph: new THREE.Vector3(random() * 6.28, random() * 6.28, random() * 6.28),
+    }));
+    return { geometry, material, flights };
+  }, [count]);
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  const tmp = useMemo(() => ({ o: new THREE.Object3D(), p: new THREE.Vector3(), q: new THREE.Vector3() }), []);
+  const at = (fl: Flight, t: number, out: THREE.Vector3) =>
+    out.set(
+      fl.c.x + Math.sin(t * fl.f.x + fl.ph.x) * fl.amp.x + Math.sin(t * fl.f.x * 2.7 + fl.ph.y) * fl.amp.x * 0.25,
+      fl.c.y + Math.sin(t * fl.f.y + fl.ph.y) * fl.amp.y + Math.sin(t * 3.1 + fl.ph.z) * 0.04,
+      fl.c.z + Math.cos(t * fl.f.z + fl.ph.z) * fl.amp.z,
+    );
+
+  useFrame(({ clock }) => {
+    const im = mesh.current;
+    if (!im) return;
+    const t = clock.elapsedTime;
+    material.uniforms.uTime.value = t;
+    material.uniforms.uIntensity.value = 0.25 + 0.75 * sceneState.intro;
+    flights.forEach((fl, i) => {
+      at(fl, t, tmp.p);
+      at(fl, t + 0.15, tmp.q);
+      tmp.o.position.copy(tmp.p);
+      tmp.o.lookAt(tmp.q);
+      // bank into turns and pitch a little with the flutter
+      const turn = Math.sin(t * fl.f.x + fl.ph.x + 1.57);
+      tmp.o.rotateZ(turn * 0.35);
+      tmp.o.rotateX(-0.25 + Math.sin(t * 7 + fl.ph.x) * 0.08);
+      tmp.o.updateMatrix();
+      im.setMatrixAt(i, tmp.o.matrix);
+    });
+    im.instanceMatrix.needsUpdate = true;
+  });
+
+  return <instancedMesh ref={mesh} args={[geometry, material, count]} frustumCulled={false} renderOrder={4} />;
 }
 
 useGLTF.preload(FOREST_URL, "/draco/");
