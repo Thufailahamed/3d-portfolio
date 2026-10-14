@@ -12,7 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // vendored Draco decoder
+    "public/draco/**",
   ]),
+  {
+    // React Three Fiber mutates three.js objects (uniforms, transforms) every frame by design.
+    files: ["src/experience/**/*.{ts,tsx}"],
+    rules: { "react-hooks/immutability": "off" },
+  },
 ]);
 
 export default eslintConfig;
