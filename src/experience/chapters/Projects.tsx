@@ -1,8 +1,8 @@
 "use client";
 
-import { useTexture } from "@react-three/drei";
+import { useGLTF, useTexture } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { projects } from "@/content/site";
 import { chapter, PROJECTS_ORIGIN } from "@/lib/chapters";
@@ -11,7 +11,7 @@ import { perlin } from "@/lib/perlin";
 import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
-import { crystalGeometry, crystalVariant } from "../crystal";
+import { CRYSTALS_URL, crystalFromMesh } from "../crystal";
 import { useCursorRay } from "../cursor";
 import { palette } from "../palette";
 import { riverInside } from "../river";
@@ -118,7 +118,7 @@ function Dune({ count }: { count: number }) {
 }
 
 type Mats = ReturnType<typeof crystalMaterials>;
-type Motion = { spin: number; pulse: number };
+type Motion = { spin: number; pulse: number; scale: number };
 
 /** Every layer (and the floor reflection) shares the same uniform objects. */
 function crystalMaterials(shared: Record<string, THREE.IUniform>, reflect: boolean) {
@@ -167,7 +167,8 @@ function crystalMaterials(shared: Record<string, THREE.IUniform>, reflect: boole
 /** A layered "phantom" crystal: smoky outer glass, two nested growth shells and a glowing core. */
 function Crystal() {
   const textures = useTexture(COVERS);
-  const motion = useRef<Motion>({ spin: 0, pulse: 0 });
+  const motion = useRef<Motion>({ spin: 0, pulse: 0, scale: 1 });
+  const { nodes } = useGLTF(CRYSTALS_URL) as unknown as { nodes: Record<string, THREE.Mesh> };
 
   useMemo(() => {
     for (const t of textures) {
@@ -176,16 +177,22 @@ function Crystal() {
     }
   }, [textures]);
 
-  // one cut per project; they share a topology so the crystal can morph between them
-  const variants = useMemo(() => projects.map((_, i) => crystalVariant(31 + i * 17)), []);
-  const geometry = useMemo(() => crystalGeometry(variants), [variants]);
+  // one Blender cut per project (cycled if there are more projects than cuts)
+  const cuts = useMemo(() => {
+    const meshes = Object.values(nodes)
+      .filter((n) => n.isMesh && /^Crystal_\d+$/.test(n.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return meshes.map((m) => crystalFromMesh(m.geometry));
+  }, [nodes]);
+  const [shown, setShown] = useState(() => useApp.getState().activeProject);
+  const geometry = cuts[shown % cuts.length];
+  const swap = useRef<gsap.core.Timeline | null>(null);
 
   const shared = useMemo<Record<string, THREE.IUniform>>(
     () => ({
       uTexA: { value: textures[0] },
       uTexB: { value: textures[0] },
       uMix: { value: 0 },
-      uMorph: { value: 0 },
       uTime: { value: 0 },
       uPulse: { value: 0 },
       uTint: { value: new THREE.Color(projects[0].tint) },
@@ -211,11 +218,12 @@ function Crystal() {
 
   useEffect(
     () => () => {
-      geometry.dispose();
       floorMat.dispose();
       for (const set of [mats.main, mats.mirror]) for (const m of Object.values(set)) m.dispose();
     },
-    [geometry, mats, floorMat],
+    [mats, floorMat],
+  );
+  useEffect(() => () => cuts.forEach((g) => g.dispose()), [cuts]
   );
 
   // project switch: morph to the next cut, dissolve the image, retint and give it a turn
@@ -232,43 +240,17 @@ function Crystal() {
       gsap.fromTo(shared.uMix, { value: 0 }, { value: 1, duration: 1.15, ease: "power2.inOut", overwrite: true });
       gsap.to(shared.uTint.value, { r: tint.r, g: tint.g, b: tint.b, duration: 1.1, ease: "power2.inOut" });
 
-      // bake wherever the morph is right now into A, then morph toward the next cut
-      const attr = (n: string) => geometry.getAttribute(n) as THREE.BufferAttribute;
-      const [pA, nA, pB, nB] = [attr("position"), attr("normal"), attr("aPos2"), attr("aNor2")];
-      const m = shared.uMorph.value as number;
-      for (const [a, b] of [
-        [pA, pB],
-        [nA, nB],
-      ]) {
-        const A = a.array as Float32Array;
-        const B = b.array as Float32Array;
-        for (let i = 0; i < A.length; i++) A[i] += (B[i] - A[i]) * m;
-        a.needsUpdate = true;
-      }
-      (pB.array as Float32Array).set(variants[next].position);
-      (nB.array as Float32Array).set(variants[next].normal);
-      pB.needsUpdate = nB.needsUpdate = true;
-      gsap.fromTo(
-        shared.uMorph,
-        { value: 0 },
-        {
-          value: 1,
-          duration: 1.3,
-          ease: "power3.inOut",
-          overwrite: true,
-          onComplete: () => {
-            (pA.array as Float32Array).set(variants[next].position);
-            (nA.array as Float32Array).set(variants[next].normal);
-            pA.needsUpdate = nA.needsUpdate = true;
-            shared.uMorph.value = 0;
-          },
-        },
-      );
-
-      gsap.to(motion.current, { spin: `+=${(Math.PI * 2 * dir) / 8}`, duration: 1.4, ease: "expo.out" });
+      // the crystal spins down to a spark, changes cut, and grows back as the next one
+      swap.current?.kill();
+      swap.current = gsap
+        .timeline()
+        .to(motion.current, { scale: 0.12, duration: 0.42, ease: "power2.in" })
+        .call(() => setShown(next))
+        .to(motion.current, { scale: 1, duration: 0.95, ease: "back.out(1.6)" });
+      gsap.to(motion.current, { spin: `+=${(Math.PI * 2 * dir) / 3}`, duration: 1.4, ease: "expo.out" });
       gsap.fromTo(motion.current, { pulse: 1 }, { pulse: 0, duration: 1.3, ease: "power3.out" });
     });
-  }, [shared, textures, geometry, variants]);
+  }, [shared, textures]);
 
   useFrame(({ clock }) => {
     shared.uTime.value = clock.elapsedTime;
@@ -309,12 +291,12 @@ function CrystalBody({
     const g = spin.current;
     if (!g) return;
     const time = clock.elapsedTime;
-    const { spin: turn, pulse } = motion.current;
+    const { spin: turn, pulse, scale } = motion.current;
     // idle float + slow turn; a switch adds a facet's worth of rotation
     g.rotation.y = time * 0.18 + turn + sceneState.mouse.x * 0.25 + sceneState.drag * 1.4;
     g.rotation.x = sceneState.mouse.y * 0.06;
     g.position.y = PRISM_Y + Math.sin(time * 0.9) * 0.06;
-    g.scale.setScalar(1 + pulse * 0.06);
+    g.scale.setScalar((1 + pulse * 0.06) * scale);
     // the innermost phantom drifts against the outer shell
     if (heart.current) heart.current.rotation.y = -time * 0.32 - turn * 0.6;
   });
@@ -540,3 +522,4 @@ function RiverGlitter({ rocks, shared }: { rocks: Rock[]; shared: Record<string,
 }
 
 useTexture.preload(COVERS);
+useGLTF.preload(CRYSTALS_URL);

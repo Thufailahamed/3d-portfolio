@@ -5,12 +5,9 @@ import { snoise3 } from "./noise";
  *   LAYER_BACK    — inner walls seen through the glass
  *   LAYER_PHANTOM — nested growth shells (additive edges + rim)
  *   LAYER_FRONT   — smoky outer glass carrying the project image as a glowing core
- * The vertex shader morphs between two crystal variants (uMorph).
+ * Each project has its own cut (crystals.glb); switching swaps the geometry mid-spin.
  */
 export const crystalVert = /* glsl */ `
-uniform float uMorph;
-attribute vec3 aPos2;
-attribute vec3 aNor2;
 attribute vec3 aBary;
 varying vec3 vWorld;
 varying vec3 vN;
@@ -19,8 +16,8 @@ varying vec3 vBary;
 varying vec2 vScreen;
 varying float vY;
 void main(){
-  vec3 p = mix(position, aPos2, uMorph);
-  vec3 n = normalize(mix(normal, aNor2, uMorph));
+  vec3 p = position;
+  vec3 n = normalize(normal);
   vec4 w = modelMatrix * vec4(p, 1.0);
   vWorld = w.xyz;
   vN = normalize(mat3(modelMatrix) * n);
@@ -112,14 +109,19 @@ void main(){
   col *= mix(1.0, 0.45, fres);                       // grazing facets go smoky
   col += uTint * 0.012;                              // body colour of the glass
   col += env(reflect(-V, N)) * (0.05 + 0.7 * fres);
-  col += (uTint * 0.3 + 0.08) * line * 0.12 + uTint * halo * 0.01;
+  // cut-gem read: every facet catches a key light differently, a few flash a glint
+  vec3 L = normalize(vec3(-0.45, 0.8, 0.55));
+  float facet = max(dot(N, L), 0.0);
+  float glint = pow(max(dot(reflect(-V, N), L), 0.0), 28.0);
+  col += uTint * facet * facet * 0.09 + vec3(0.9, 0.95, 1.0) * glint * 0.45;
+  col += (uTint * 0.45 + 0.22) * line * 0.38 + uTint * halo * 0.03;
   col += uTint * pow(fres, 1.5) * 0.12;
-  alpha = clamp(0.7 + fres * 0.28 + line * 0.2, 0.0, 1.0);
+  alpha = clamp(0.7 + fres * 0.28 + line * 0.25 + glint * 0.2, 0.0, 1.0);
 #endif
 
 #ifdef LAYER_BACK
   // inner walls: dark tinted glass with faint edges catching the core's light
-  col = uTint * (0.015 + 0.03 * fres) + (uTint * 0.25 + 0.03) * line * 0.1 + uTint * halo * 0.01;
+  col = uTint * (0.015 + 0.03 * fres) + (uTint * 0.35 + 0.08) * line * 0.22 + uTint * halo * 0.015;
   col += env(reflect(-V, N)) * 0.04;
   alpha = 0.45;
 #endif
