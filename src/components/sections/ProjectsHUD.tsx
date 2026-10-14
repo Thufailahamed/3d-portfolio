@@ -125,7 +125,7 @@ export default function ProjectsHUD() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-6 px-gutter pb-8 md:pb-10">
         <div className="pointer-events-auto max-w-[min(42rem,70vw)]" aria-live="polite">
           <p className="hud-meta label mb-2">
-            {project.year} — {project.role}
+            {project.category}
           </p>
           <h2 ref={title} className="display text-[11vw] md:text-[6.2vw]" aria-label={project.title}>
             {project.title.toUpperCase()}

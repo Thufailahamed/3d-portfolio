@@ -107,7 +107,7 @@ export default function GlobeLayer() {
     const update = () => {
       const now = new Date();
       labels.current?.querySelectorAll<HTMLElement>("[data-time]").forEach((el, i) => {
-        el.textContent = fmts[i].format(now);
+        el.textContent = fmts[i]?.format(now) ?? "";
       });
     };
     update();

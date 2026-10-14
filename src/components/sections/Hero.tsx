@@ -49,11 +49,11 @@ export default function Hero() {
       className="sticky top-0 flex h-svh flex-col justify-between px-gutter pb-8 pt-6 md:pb-10"
     >
       <div className="hero-name pt-16 md:pt-4">
-        <h1 className="hero-title display text-[19vw] md:text-[11.5vw]">
+        <h1 className="hero-title display text-[15vw] md:text-[10vw]">
           {person.shortName}
         </h1>
-        <p className="hero-title display -mt-[0.5vw] text-[7.2vw] text-fg/80 md:text-[4.1vw]">
-          {person.role.split("&")[0].trim()}
+        <p className="hero-title display -mt-[0.5vw] text-[6vw] text-fg/80 md:text-[3.4vw]">
+          {person.role}
         </p>
       </div>
 

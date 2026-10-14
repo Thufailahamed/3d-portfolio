@@ -16,7 +16,7 @@ export async function generateMetadata(props: PageProps<"/projects/[slug]">): Pr
   if (!p) return {};
   return {
     title: p.title,
-    description: `${p.tagline}. ${p.description[0]}`,
+    description: `${p.tagline} ${p.description[0]}`,
     openGraph: { title: p.title, description: p.tagline, images: [{ url: p.cover }] },
   };
 }
@@ -54,10 +54,9 @@ async function ProjectBody({ params }: { params: PageProps<"/projects/[slug]">["
 
         <header className="grid gap-8 md:grid-cols-12">
           <div className="md:col-span-8">
+            <p className="reveal label mb-4">{project.category}</p>
             <h1 className="reveal display text-[15vw] md:text-[8.5vw]">{project.title}</h1>
-            <p className="reveal mt-4 max-w-[30ch] text-balance text-xl text-fg/80 md:text-2xl">
-              {project.tagline} — {project.year}
-            </p>
+            <p className="reveal mt-4 max-w-[34ch] text-balance text-xl text-fg/80 md:text-2xl">{project.tagline}</p>
           </div>
           <dl className="reveal grid grid-cols-2 gap-x-6 gap-y-4 self-end md:col-span-4 md:grid-cols-1">
             <div>
@@ -114,6 +113,32 @@ async function ProjectBody({ params }: { params: PageProps<"/projects/[slug]">["
           </div>
         </section>
 
+        {project.metrics && (
+          <section className="mt-20 grid gap-8 border-t border-fg/10 pt-10 md:grid-cols-3" aria-label="In numbers">
+            {project.metrics.map((m) => (
+              <div key={m.label} className="reveal">
+                <p className="display text-[18vw] text-accent md:text-[6vw]">{m.value}</p>
+                <p className="label mt-3">{m.label}</p>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {project.highlights && (
+          <section className="mt-20 grid gap-10 md:grid-cols-12" aria-label="How it's built">
+            <h2 className="reveal label md:col-span-3">How it&apos;s built</h2>
+            <ol className="space-y-5 md:col-span-7">
+              {project.highlights.map((h, k) => (
+                <li key={k} className="reveal flex gap-5 border-b border-fg/10 pb-5 text-base leading-relaxed text-fg/80 md:text-lg">
+                  <span className="label pt-1">{String(k + 1).padStart(2, "0")}</span>
+                  {h}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+
+        {project.images.length > 0 && (
         <section className="mt-20 grid gap-4 md:grid-cols-2" aria-label="Gallery">
           {project.images.map((src, k) => (
             <figure
@@ -131,6 +156,7 @@ async function ProjectBody({ params }: { params: PageProps<"/projects/[slug]">["
             </figure>
           ))}
         </section>
+        )}
 
         <Link
           href={`/projects/${next.slug}`}

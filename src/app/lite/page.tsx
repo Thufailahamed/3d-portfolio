@@ -21,7 +21,7 @@ export default function LitePage() {
           <p className="label mb-4">
             <span className="text-accent">●</span> {person.location} — Lite version
           </p>
-          <h1 id="lite-title" className="display text-[19vw] md:text-[11.5vw]">
+          <h1 id="lite-title" className="display text-[15vw] md:text-[10vw]">
             {person.shortName}
           </h1>
           <p className="display mt-1 text-[7.2vw] text-fg/80 md:text-[4.1vw]">{person.role}</p>
