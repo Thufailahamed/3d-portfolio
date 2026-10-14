@@ -3,13 +3,15 @@
 import { useRef } from "react";
 import { ScrollTrigger, useGSAP } from "@/lib/gsap";
 import { lenis } from "./SmoothScroll";
-import { chapter, chapters, chapterAt, TRACK_VH, type ChapterId } from "@/lib/chapters";
+import { chapters, chapterAt, landing, TRACK_VH, type ChapterId } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
-import { beats } from "@/content/site";
+import { beats, person } from "@/content/site";
 import Beats from "./sections/Beats";
 import Hero from "./sections/Hero";
 import ProjectsHUD from "./sections/ProjectsHUD";
+import AboutHUD from "./sections/AboutHUD";
+import ContactSection from "./sections/ContactSection";
 
 /**
  * The scroll track. Its height defines how long the journey is; one ScrollTrigger
@@ -28,8 +30,12 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
         end: "bottom bottom",
         onUpdate: (self) => {
           sceneState.p = self.progress;
-          const c = chapterAt(self.progress).id;
-          if (useApp.getState().chapter !== c) useApp.getState().set({ chapter: c });
+          const c = chapterAt(self.progress);
+          if (useApp.getState().chapter === c.id) return;
+          useApp.getState().set({ chapter: c.id });
+          // the URL and title follow the story (Next syncs native history calls)
+          if (location.pathname !== c.path) history.replaceState(null, "", c.path);
+          document.title = c.title === "Home" ? `${person.name} — ${person.role}` : `${c.title} · ${person.name}`;
         },
       });
 
@@ -38,11 +44,7 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
       const jump = () => {
         st.refresh();
         let y = 0;
-        if (initial) {
-          const c = chapter(initial);
-          const f = initial === "projects" ? 0.3 : 0.15;
-          y = st.start + (st.end - st.start) * (c.start + (c.end - c.start) * f);
-        }
+        if (initial) y = st.start + (st.end - st.start) * landing(initial);
         if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
         else window.scrollTo(0, y);
         ScrollTrigger.update();
@@ -95,6 +97,13 @@ export default function Journey({ initial }: { initial?: ChapterId }) {
             <Beats chapter="fracture" label="The rule" lines={beats.fracture} window={[0.06, 0.9]} />
           )}
           {c.id === "projects" && <ProjectsHUD />}
+          {c.id === "about" && (
+            <>
+              <Beats chapter="about" label="How I work" lines={beats.about} window={[0.08, 0.66]} />
+              <AboutHUD />
+            </>
+          )}
+          {c.id === "contact" && <ContactSection />}
           {c.id === "tunnel" && (
             <Beats
               chapter="tunnel"

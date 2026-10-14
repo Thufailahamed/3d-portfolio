@@ -3,6 +3,7 @@
 import { useProgress } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useEffect } from "react";
+import type * as THREE from "three";
 import { useApp } from "@/store/useApp";
 
 /** Mirrors three's loading manager into the app store (lives outside Suspense). */
@@ -22,7 +23,18 @@ export function CompileGate() {
   const { gl, scene, camera } = useThree();
   useEffect(() => {
     let cancelled = false;
-    gl.compileAsync(scene, camera)
+    // compile() skips invisible objects, and most chapters start hidden: reveal
+    // everything for the synchronous part of the call, then restore
+    const hidden: THREE.Object3D[] = [];
+    scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    const job = gl.compileAsync(scene, camera);
+    for (const o of hidden) o.visible = false;
+    job
       .catch(() => undefined)
       .then(() => {
         if (!cancelled) useApp.getState().set({ loadProgress: 1, ready: true });

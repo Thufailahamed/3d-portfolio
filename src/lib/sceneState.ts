@@ -13,4 +13,6 @@ export const sceneState = {
   dive: 0,
   /** live horizontal drag on the projects carousel, roughly -1..1 */
   drag: 0,
+  /** screen-space positions (px) of 3D points the About HUD pins its notes to */
+  anchors: [0, 1, 2].map(() => ({ x: 0, y: 0, visible: false })),
 };

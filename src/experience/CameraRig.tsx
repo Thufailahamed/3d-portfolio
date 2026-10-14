@@ -3,7 +3,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three";
-import { chapter, PROJECTS_ORIGIN } from "@/lib/chapters";
+import { ABOUT_ORIGIN, at as atP, chapter, CONTACT_ORIGIN, PROJECTS_ORIGIN } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 
@@ -31,6 +31,14 @@ export default function CameraRig() {
     const [ox, oy, oz] = PROJECTS_ORIGIN;
     const P = (x: number, y: number, zz: number): [number, number, number] => [ox + x, oy + y, oz + zz];
     const pz = isMobile ? 1.35 : 1;
+    const az = isMobile ? 1.3 : 1;
+    const off = (o: [number, number, number]) => (x: number, y: number, zz: number): [number, number, number] => [
+      o[0] + x,
+      o[1] + y,
+      o[2] + zz,
+    ];
+    const A = off(ABOUT_ORIGIN);
+    const C = off(CONTACT_ORIGIN);
     return [
       { p: 0, pos: [0, 1.3, 12.5 * z], look: [0, 2.9, 0] },
       { p: hero.end, pos: [-1.1, 2.5, 6.4 * z], look: [0, 2.7, 0] },
@@ -47,7 +55,21 @@ export default function CameraRig() {
       { p: at(pr, 0.22), pos: P(0, 2.1, 6.4 * pz), look: P(0, 1.65, 0) },
       { p: at(pr, 0.8), pos: P(1.1, 1.8, 5.8 * pz), look: P(0, 1.65, 0) },
       { p: pr.end, pos: P(0.4, 4.5, 4.5 * pz), look: P(0, 6, -8) },
-      { p: 1, pos: P(0.4, 4.5, 4.5 * pz), look: P(0, 6, -8) },
+      // dip to black → about: drift through the ribbons toward the bloom
+      { p: atP("about", 0.012), pos: A(0, 3, 17 * az), look: A(0, 2.6, 0) },
+      { p: atP("about", 0.45), pos: A(-1.4, 2.6, 12 * az), look: A(0, 2.4, 0) },
+      { p: atP("about", 0.7), pos: A(1, 2.2, 9.5 * az), look: A(0, 2, 0) },
+      // desktop frames the bloom on the right, leaving room for the copy
+      isMobile
+        ? { p: atP("about", 0.86), pos: A(0, 3.1, 8.6), look: A(0, 1.55, 0) }
+        : { p: atP("about", 0.86), pos: A(-0.2, 3.1, 6.4), look: A(-1, 2.8, 0) },
+      isMobile
+        ? { p: atP("about", 0.99), pos: A(0.3, 3.2, 8.2), look: A(0, 1.6, 0) }
+        : { p: atP("about", 0.99), pos: A(0.4, 3.3, 5.8), look: A(-0.95, 2.85, 0) },
+      // dip to black → contact: the shard in its beam
+      { p: atP("contact", 0.012), pos: C(0, 4, 12 * az), look: C(0, 1.8, 0) },
+      { p: atP("contact", 0.6), pos: C(-0.5, 2, 7.5 * az), look: C(0, 1.9, 0) },
+      { p: 1, pos: C(0.2, 1.9, 6.6 * az), look: C(0, 2.1, 0) },
     ];
   }, [isMobile]);
 

@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Inter_Tight, JetBrains_Mono } from "next/font/google";
-import GlobalCanvas from "@/components/GlobalCanvas";
-import Loader from "@/components/Loader";
+import Cursor from "@/components/Cursor";
+import ExperienceGate from "@/components/ExperienceGate";
+import Header from "@/components/Header";
 import SmoothScroll from "@/components/SmoothScroll";
 import { person } from "@/content/site";
+import Toast from "@/components/Toast";
 import "./globals.css";
 
 const display = Inter_Tight({ variable: "--font-inter-tight", subsets: ["latin"] });
@@ -25,12 +27,18 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <noscript>
           <style>{`.loader{display:none!important}`}</style>
         </noscript>
+        <a href="#main" className="label fixed left-gutter top-3 z-[80] -translate-y-20 rounded-full bg-fg px-4 py-2 !text-bg focus:translate-y-0">
+          Skip to content
+        </a>
         <SmoothScroll />
-        <Loader />
-        <GlobalCanvas />
+        <ExperienceGate />
+        <Header />
         <main id="main" className="relative z-10">
           {children}
         </main>
+        <Toast />
+        <Cursor />
+        <div aria-hidden className="grain pointer-events-none fixed inset-0 z-[60]" />
       </body>
     </html>
   );

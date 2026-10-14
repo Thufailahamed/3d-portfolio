@@ -18,6 +18,11 @@ type AppState = {
   /** "journey" on the home routes, "detail" on /projects/[slug] */
   mode: "journey" | "detail";
   detailSlug: string | null;
+  /** DOM-only experience (no WebGL) */
+  lite: boolean;
+  sound: boolean;
+  menuOpen: boolean;
+  toast: string | null;
   set: (s: Partial<Omit<AppState, "set">>) => void;
 };
 
@@ -31,5 +36,9 @@ export const useApp = create<AppState>((set) => ({
   activeProject: 0,
   mode: "journey",
   detailSlug: null,
+  lite: false,
+  sound: false,
+  menuOpen: false,
+  toast: null,
   set: (s) => set(s),
 }));

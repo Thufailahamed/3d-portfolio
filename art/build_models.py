@@ -1,7 +1,7 @@
 """
 Builds every GLB the site uses, headless:
 
-    /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P art/build_models.py [-- monolith prism]
+    /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P art/build_models.py [-- monolith prism bloom]
 
 Output goes to public/models/. Everything is generated from code (seeded), so the
 models are reproducible and the .blend is only saved for inspection (art/scene.blend).
@@ -218,6 +218,72 @@ def build_prism():
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "prism.blend"))
 
 
+# ---------------------------------------------------------------- bloom
+def build_bloom():
+    """One faceted petal blade + a crystalline core. The site instances the petal
+    in rings and unfolds them with scroll, so only one petal is modelled.
+
+    Blender Z-up: the petal grows along +Z and curls toward -Y (glTF: +Y, curling to +Z).
+    UV: u across the blade (0..1), v along it (0 base .. 1 tip).
+    """
+    reset()
+    rnd = random.Random(53)
+    L, Wd, T, SEG = 1.0, 0.24, 0.035, 10
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new()
+    rows = []
+    for k in range(SEG + 1):
+        s = k / SEG
+        # blade outline: narrow stalk, swells, then a long pointed tip
+        w = Wd * math.sin(math.pi * min(1.0, s ** 0.75)) * (1.0 - 0.15 * s)
+        if k == SEG:
+            w = 0.0
+        t = T * (1.0 - s) + 0.004
+        curl = -0.32 * s * s  # bends outward
+        z = L * s
+        jitter = rnd.uniform(-0.01, 0.01)
+        rows.append(
+            [
+                bm.verts.new((-w / 2, curl, z)),
+                bm.verts.new((0.0, curl - t + jitter, z)),  # back ridge
+                bm.verts.new((w / 2, curl, z)),
+                bm.verts.new((0.0, curl + t + jitter, z)),  # front ridge
+            ]
+        )
+    U = [0.0, 0.5, 1.0, 0.5]
+    for k in range(SEG):
+        a, b = rows[k], rows[k + 1]
+        for i in range(4):
+            j = (i + 1) % 4
+            for tri in ((a[i], a[j], b[j]), (a[i], b[j], b[i])):
+                try:
+                    f = bm.faces.new(tri)
+                except ValueError:
+                    continue
+                for loop in f.loops:
+                    v = loop.vert
+                    ki = next(n for n, r in enumerate(rows) if v in r)
+                    loop[uv].uv = (U[rows[ki].index(v)], ki / SEG)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    petal = mesh_object("Petal", bm, ["Petal"])
+    for p in petal.data.polygons:
+        p.use_smooth = False
+
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=1, radius=0.2)
+    for v in bm.verts:
+        v.co *= rnd.uniform(0.85, 1.15)
+        v.co.z *= 1.25
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    core = mesh_object("BloomCore", bm, ["BloomCore"])
+    for p in core.data.polygons:
+        p.use_smooth = False
+
+    export(os.path.join(OUT, "bloom.glb"), [petal, core])
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "bloom.blend"))
+
+
 if __name__ == "__main__":
     import sys
 
@@ -227,3 +293,5 @@ if __name__ == "__main__":
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "scene.blend"))
     if not only or "prism" in only:
         build_prism()
+    if not only or "bloom" in only:
+        build_bloom()

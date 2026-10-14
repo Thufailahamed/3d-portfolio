@@ -4,9 +4,13 @@ import { Environment, Lightformer } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { Suspense, useEffect, useState } from "react";
 import * as THREE from "three";
+import { chapter } from "@/lib/chapters";
 import { useApp } from "@/store/useApp";
 import Atmosphere from "./Atmosphere";
 import CameraRig from "./CameraRig";
+import About from "./chapters/About";
+import Contact from "./chapters/Contact";
+import Fades from "./chapters/Fades";
 import DetailBackdrop from "./chapters/DetailBackdrop";
 import Fracture from "./chapters/Fracture";
 import Projects from "./chapters/Projects";
@@ -16,10 +20,14 @@ import { CompileGate, LoadProgress } from "./LoadTracker";
 import { palette } from "./palette";
 import PostFX from "./PostFX";
 
+const tunnel = chapter("tunnel");
+const monolithAtmosphereEnd = tunnel.start + (tunnel.end - tunnel.start) * 0.55;
+
 /** The single, persistent WebGL canvas behind every page. */
 export default function Experience() {
   const isMobile = useApp((s) => s.isMobile);
   const mode = useApp((s) => s.mode);
+  const low = useApp((s) => s.quality === "low");
   const [frameloop, setFrameloop] = useState<"always" | "never">("always");
 
   // stop rendering entirely while the tab is hidden
@@ -32,7 +40,7 @@ export default function Experience() {
   return (
     <Canvas
       frameloop={frameloop}
-      dpr={[1, isMobile ? 1.5 : 2]}
+      dpr={[1, low ? 1.25 : isMobile ? 1.5 : 2]}
       camera={{ fov: isMobile ? 48 : 35, near: 0.1, far: 120, position: [0, 1.3, 12.5] }}
       gl={{ antialias: false, powerPreference: "high-performance", stencil: false }}
       onCreated={({ scene }) => {
@@ -72,8 +80,11 @@ export default function Experience() {
           <Monolith />
           <Fracture />
           <Tunnel />
-          <Atmosphere dustCount={isMobile ? 700 : 1800} />
+          <Atmosphere dustCount={isMobile ? 700 : 1800} range={[-1, monolithAtmosphereEnd]} />
           <Projects />
+          <About />
+          <Contact />
+          <Fades />
         </group>
         <DetailBackdrop />
         <CameraRig />

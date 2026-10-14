@@ -33,6 +33,25 @@ export const TRACK_VH = { desktop: total * 100, mobile: total * 62 };
 
 /** Where the projects scene lives (far from the monolith; the tunnel hides the jump). */
 export const PROJECTS_ORIGIN: [number, number, number] = [0, 0, -120];
+/** About (ribbons + bloom) and contact (beam) scenes; dips to black hide the cuts. */
+export const ABOUT_ORIGIN: [number, number, number] = [0, 0, -200];
+export const CONTACT_ORIGIN: [number, number, number] = [0, 0, -280];
+
+/** Where in each chapter a deep link or menu jump lands (fraction of the chapter). */
+const LANDING: Record<ChapterId, number> = { hero: 0, fracture: 0.1, tunnel: 0, projects: 0.3, about: 0.86, contact: 1 };
+
+/** Master progress of a chapter's landing spot. */
+export const landing = (id: ChapterId) => at(id, LANDING[id]);
+
+/** Scroll position (px) of a chapter's landing spot on the journey track. */
+export const landingY = (id: ChapterId) =>
+  landing(id) * (document.documentElement.scrollHeight - window.innerHeight);
+
+/** Master progress at fraction f of a chapter. */
+export const at = (id: ChapterId, f: number) => {
+  const c = chapter(id);
+  return c.start + (c.end - c.start) * f;
+};
 
 export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 

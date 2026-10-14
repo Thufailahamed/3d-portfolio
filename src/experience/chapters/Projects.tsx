@@ -23,7 +23,7 @@ export default function Projects() {
   const visibleRange = useMemo(() => {
     const tu = chapter("tunnel");
     const pr = chapter("projects");
-    return [tu.end - 0.002, pr.end + 0.03] as const;
+    return [tu.end - 0.002, pr.end + 0.004] as const;
   }, []);
 
   useFrame(() => {

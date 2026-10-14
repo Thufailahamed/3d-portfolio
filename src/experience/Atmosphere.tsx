@@ -2,7 +2,6 @@
 
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { chapter } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import * as THREE from "three";
 import { rng } from "@/lib/random";
@@ -16,11 +15,30 @@ import {
   raysVert,
 } from "./shaders/atmosphere";
 
-const BEAM = new THREE.Vector3(0.4, 0, 0.2);
+type Props = {
+  dustCount?: number;
+  /** where the scene sits in the world */
+  origin?: [number, number, number];
+  /** god-ray position relative to origin (y ignored) */
+  beam?: [number, number, number];
+  /** visible while from <= p < to */
+  range: [number, number];
+  rayIntensity?: number;
+};
 
-/** Night desert floor, god rays from above and drifting dust — shared by early chapters. */
-export default function Atmosphere({ dustCount = 1800 }: { dustCount?: number }) {
+/** Night desert floor, god rays from above and drifting dust (monolith + contact scenes). */
+export default function Atmosphere({
+  dustCount = 1800,
+  origin = [0, 0, 0],
+  beam = [0.4, 0, 0.2],
+  range,
+  rayIntensity = 0.22,
+}: Props) {
   const dpr = useThree((s) => s.viewport.dpr);
+  const [ox, oy, oz] = origin;
+  const [bx, , bz] = beam;
+  const BEAM = useMemo(() => new THREE.Vector3(bx, 0, bz), [bx, bz]);
+  const lightWorld = useMemo(() => new THREE.Vector3(ox + bx, oy, oz + bz), [ox, oy, oz, bx, bz]);
 
   const ground = useMemo(
     () =>
@@ -29,14 +47,14 @@ export default function Atmosphere({ dustCount = 1800 }: { dustCount?: number })
         fragmentShader: groundFrag,
         uniforms: {
           uColor: { value: new THREE.Color("#2a2724") },
-          uLight: { value: BEAM },
+          uLight: { value: lightWorld },
           uAccent: { value: palette.accent.clone() },
           uFog: { value: palette.fog.clone() },
           uFogDensity: { value: 0.045 },
           uTime: { value: 0 },
         },
       }),
-    [],
+    [lightWorld],
   );
 
   const rays = useMemo(
@@ -49,11 +67,11 @@ export default function Atmosphere({ dustCount = 1800 }: { dustCount?: number })
         blending: THREE.AdditiveBlending,
         uniforms: {
           uTime: { value: 0 },
-          uIntensity: { value: 0.22 },
+          uIntensity: { value: rayIntensity },
           uColor: { value: new THREE.Color("#dfe6d6") },
         },
       }),
-    [],
+    [rayIntensity],
   );
 
   const dust = useMemo(() => {
@@ -84,7 +102,7 @@ export default function Atmosphere({ dustCount = 1800 }: { dustCount?: number })
       },
     });
     return { g, m };
-  }, [dustCount, dpr]);
+  }, [dustCount, dpr, BEAM]);
 
   const cone = useMemo(() => new THREE.CylinderGeometry(0.35, 3.4, 18, 64, 1, true), []);
 
@@ -100,19 +118,19 @@ export default function Atmosphere({ dustCount = 1800 }: { dustCount?: number })
   );
 
   const group = useRef<THREE.Group>(null);
-  const tunnel = chapter("tunnel");
-  const hideAt = tunnel.start + (tunnel.end - tunnel.start) * 0.55;
+  const [from, to] = range;
 
   useFrame((_, dt) => {
-    if (group.current) group.current.visible = sceneState.p < hideAt;
-    if (sceneState.p >= hideAt) return;
+    const on = sceneState.p >= from && sceneState.p < to;
+    if (group.current) group.current.visible = on;
+    if (!on) return;
     ground.uniforms.uTime.value += dt;
     rays.uniforms.uTime.value += dt;
     dust.m.uniforms.uTime.value += dt;
   });
 
   return (
-    <group ref={group}>
+    <group ref={group} position={origin} visible={false}>
       <mesh material={ground} rotation-x={-Math.PI / 2} renderOrder={-1}>
         <planeGeometry args={[160, 160]} />
       </mesh>

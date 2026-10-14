@@ -68,6 +68,14 @@ export const about = {
   services: ["Creative development", "WebGL & shaders", "Motion design", "Design engineering"],
 };
 
+export const contact = {
+  label: "Reach out",
+  heading: "Let's build something that glows.",
+  note: "Booking a few projects for early 2027 — studios, brands and curious people welcome.",
+  footer: "Built with three.js, GSAP and a lot of noise.",
+  year: 2026,
+};
+
 const img = (slug: string) => ({
   cover: `/projects/${slug}/cover.webp`,
   images: [`/projects/${slug}/1.webp`, `/projects/${slug}/2.webp`, `/projects/${slug}/3.webp`],
