@@ -1,12 +1,23 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { useApp } from "@/store/useApp";
+import { lenis } from "./SmoothScroll";
 
 const Experience = dynamic(() => import("@/experience/Experience"), { ssr: false });
 
 export default function GlobalCanvas() {
+  const pathname = usePathname();
+
+  // /projects/[slug] swaps the journey for the detail backdrop
+  useEffect(() => {
+    const m = pathname.match(/^\/projects\/([^/]+)/);
+    useApp.getState().set({ mode: m ? "detail" : "journey", detailSlug: m ? m[1] : null });
+    if (m) lenis?.scrollTo(0, { immediate: true, force: true });
+  }, [pathname]);
+
   useEffect(() => {
     const mq = matchMedia("(max-width: 767px), (pointer: coarse)");
     const sync = () => useApp.getState().set({ isMobile: mq.matches });

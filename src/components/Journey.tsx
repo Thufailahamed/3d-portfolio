@@ -2,22 +2,26 @@
 
 import { useRef } from "react";
 import { ScrollTrigger, useGSAP } from "@/lib/gsap";
-import { chapters, chapterAt, TRACK_VH } from "@/lib/chapters";
+import { lenis } from "./SmoothScroll";
+import { chapter, chapters, chapterAt, TRACK_VH, type ChapterId } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { beats } from "@/content/site";
 import Beats from "./sections/Beats";
 import Hero from "./sections/Hero";
+import ProjectsHUD from "./sections/ProjectsHUD";
 
 /**
  * The scroll track. Its height defines how long the journey is; one ScrollTrigger
  * maps scroll position → sceneState.p, and every chapter reads from that.
  */
-export default function Journey() {
+export default function Journey({ initial }: { initial?: ChapterId }) {
   const track = useRef<HTMLDivElement>(null);
 
   useGSAP(
     () => {
+      sceneState.dive = 0;
+
       const st = ScrollTrigger.create({
         trigger: track.current,
         start: "top top",
@@ -28,10 +32,43 @@ export default function Journey() {
           if (useApp.getState().chapter !== c) useApp.getState().set({ chapter: c });
         },
       });
+
+      // deep links (/projects, /about, …) land on their chapter, settled. Re-run after
+      // the router's own scroll-to-top and once layout has settled.
+      const jump = () => {
+        st.refresh();
+        let y = 0;
+        if (initial) {
+          const c = chapter(initial);
+          const f = initial === "projects" ? 0.3 : 0.15;
+          y = st.start + (st.end - st.start) * (c.start + (c.end - c.start) * f);
+        }
+        if (lenis) lenis.scrollTo(y, { immediate: true, force: true });
+        else window.scrollTo(0, y);
+        ScrollTrigger.update();
+      };
+      jump();
+      let raf = requestAnimationFrame(() => (raf = requestAnimationFrame(jump)));
+      // the previous route can linger in the DOM for a moment during client navigation:
+      // keep re-landing while the layout settles, until the visitor scrolls themselves
+      const ro = new ResizeObserver(() => jump());
+      ro.observe(document.body);
+      const settle = () => ro.disconnect();
+      const settleTimer = setTimeout(settle, 1200);
+      addEventListener("wheel", settle, { once: true, passive: true });
+      addEventListener("touchstart", settle, { once: true, passive: true });
+
       sceneState.p = st.progress;
-      return () => st.kill();
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(settleTimer);
+        settle();
+        removeEventListener("wheel", settle);
+        removeEventListener("touchstart", settle);
+        st.kill();
+      };
     },
-    { scope: track },
+    { scope: track, dependencies: [initial] },
   );
 
   return (
@@ -57,6 +94,7 @@ export default function Journey() {
           {c.id === "fracture" && (
             <Beats chapter="fracture" label="The rule" lines={beats.fracture} window={[0.06, 0.9]} />
           )}
+          {c.id === "projects" && <ProjectsHUD />}
           {c.id === "tunnel" && (
             <Beats
               chapter="tunnel"

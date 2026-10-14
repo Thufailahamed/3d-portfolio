@@ -1,7 +1,7 @@
 """
 Builds every GLB the site uses, headless:
 
-    /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P art/build_models.py
+    /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P art/build_models.py [-- monolith prism]
 
 Output goes to public/models/. Everything is generated from code (seeded), so the
 models are reproducible and the .blend is only saved for inspection (art/scene.blend).
@@ -175,6 +175,55 @@ def build_monolith():
     return body, glyph, shards
 
 
+# ---------------------------------------------------------------- prism
+def build_prism():
+    """Faceted glass crystal: a jittered heptagonal column capped by uneven points."""
+    reset()
+    rnd = random.Random(31)
+    sides, R, h = 7, 0.62, 1.55
+    bm = bmesh.new()
+
+    def ring(z, r, twist):
+        out = []
+        for i in range(sides):
+            a = i / sides * math.tau + twist + rnd.uniform(-0.12, 0.12)
+            rr = r * rnd.uniform(0.86, 1.08)
+            out.append(bm.verts.new((math.cos(a) * rr, math.sin(a) * rr, z + rnd.uniform(-0.08, 0.08))))
+        return out
+
+    rings = [
+        ring(-h * 0.55, R * 0.92, 0.0),
+        ring(-h * 0.1, R * 1.0, 0.18),
+        ring(h * 0.42, R * 0.88, 0.33),
+    ]
+    top = bm.verts.new((rnd.uniform(-0.08, 0.08), rnd.uniform(-0.08, 0.08), h * 0.95))
+    bot = bm.verts.new((rnd.uniform(-0.06, 0.06), rnd.uniform(-0.06, 0.06), -h * 0.98))
+
+    for a, b in zip(rings, rings[1:]):
+        for i in range(sides):
+            j = (i + 1) % sides
+            # split each quad into two triangles for a cut-gem look
+            bm.faces.new((a[i], a[j], b[j]))
+            bm.faces.new((a[i], b[j], b[i]))
+    for i in range(sides):
+        j = (i + 1) % sides
+        bm.faces.new((rings[-1][i], rings[-1][j], top))
+        bm.faces.new((rings[0][j], rings[0][i], bot))
+
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    ob = mesh_object("Prism", bm, ["Glass"])
+    for p in ob.data.polygons:
+        p.use_smooth = False
+    export(os.path.join(OUT, "prism.glb"), [ob])
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "prism.blend"))
+
+
 if __name__ == "__main__":
-    build_monolith()
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "scene.blend"))
+    import sys
+
+    only = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+    if not only or "monolith" in only:
+        build_monolith()
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "scene.blend"))
+    if not only or "prism" in only:
+        build_prism()

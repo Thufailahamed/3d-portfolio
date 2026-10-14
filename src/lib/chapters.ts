@@ -31,6 +31,9 @@ export const chapter = (id: ChapterId) => chapters.find((c) => c.id === id)!;
 /** Number of viewport heights the journey track is tall (desktop / mobile). */
 export const TRACK_VH = { desktop: total * 100, mobile: total * 62 };
 
+/** Where the projects scene lives (far from the monolith; the tunnel hides the jump). */
+export const PROJECTS_ORIGIN: [number, number, number] = [0, 0, -120];
+
 export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /** Local 0..1 progress of a chapter for master progress p. */

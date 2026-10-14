@@ -47,7 +47,8 @@ export default function Tunnel() {
     const t = local(p, "tunnel");
     // fade in as we pierce the membrane; fade out into the next chapter
     const fadeIn = THREE.MathUtils.smoothstep(t, 0.28, 0.5);
-    const fadeOut = 1 - THREE.MathUtils.smoothstep(p, tunnel.end - 0.004, tunnel.end + 0.02);
+    // stays fully opaque through the camera's jump to the projects scene, then clears
+    const fadeOut = 1 - THREE.MathUtils.smoothstep(p, tunnel.end + 0.001, tunnel.end + 0.03);
     const o = p < tunnel.start ? 0 : fadeIn * fadeOut;
     mat.uniforms.uOpacity.value = o;
     if (o <= 0) return;

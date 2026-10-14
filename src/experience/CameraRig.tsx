@@ -3,7 +3,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three";
-import { chapter } from "@/lib/chapters";
+import { chapter, PROJECTS_ORIGIN } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 
@@ -27,6 +27,10 @@ export default function CameraRig() {
     // mobile frames the tall monolith / ring from further back
     const z = isMobile ? 1.12 : 1;
     const ringZ = isMobile ? 9.5 : 7.4;
+    const pr = chapter("projects");
+    const [ox, oy, oz] = PROJECTS_ORIGIN;
+    const P = (x: number, y: number, zz: number): [number, number, number] => [ox + x, oy + y, oz + zz];
+    const pz = isMobile ? 1.35 : 1;
     return [
       { p: 0, pos: [0, 1.3, 12.5 * z], look: [0, 2.9, 0] },
       { p: hero.end, pos: [-1.1, 2.5, 6.4 * z], look: [0, 2.7, 0] },
@@ -38,10 +42,16 @@ export default function CameraRig() {
       // dive through the membrane
       { p: at(tu, 0.5), pos: [0, 3.2, 0.3], look: [0, 3.2, -6] },
       { p: tu.end, pos: [0, 3.2, -4], look: [0, 3.2, -10] },
-      { p: 1, pos: [0, 3.2, -4], look: [0, 3.2, -10] },
+      // hidden cut (the tunnel is opaque): land high above the dune and descend
+      { p: tu.end + 0.0005, pos: P(0, 5.5, 13 * pz), look: P(0, 1.2, 0) },
+      { p: at(pr, 0.22), pos: P(0, 2.1, 6.4 * pz), look: P(0, 1.65, 0) },
+      { p: at(pr, 0.8), pos: P(1.1, 1.8, 5.8 * pz), look: P(0, 1.65, 0) },
+      { p: pr.end, pos: P(0.4, 4.5, 4.5 * pz), look: P(0, 6, -8) },
+      { p: 1, pos: P(0.4, 4.5, 4.5 * pz), look: P(0, 6, -8) },
     ];
   }, [isMobile]);
 
+  const [ox, oy, oz] = PROJECTS_ORIGIN;
   const tmp = useMemo(
     () => ({ pos: new THREE.Vector3(), look: new THREE.Vector3(), a: new THREE.Vector3(), b: new THREE.Vector3(), m: new THREE.Vector2() }),
     [],
@@ -64,6 +74,14 @@ export default function CameraRig() {
     tmp.m.y += (sceneState.mouse.y * f - tmp.m.y) * Math.min(1, dt * 2.5);
     tmp.pos.x += tmp.m.x * 0.45;
     tmp.pos.y += tmp.m.y * 0.25;
+
+    // "Discover project": push into the prism
+    if (sceneState.dive > 0) {
+      const d = sceneState.dive * sceneState.dive;
+      tmp.b.set(ox, oy + 1.7, oz + 0.6);
+      tmp.pos.lerp(tmp.b, d);
+      tmp.look.lerp(tmp.a.set(ox, oy + 1.7, oz - 2), d);
+    }
 
     // intro: settle down from above as the visitor enters
     const intro = 1 - sceneState.intro;

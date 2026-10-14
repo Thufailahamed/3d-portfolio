@@ -15,9 +15,8 @@ export default function SmoothScroll() {
     lenis = new Lenis({ autoRaf: false, lerp: reduce ? 1 : 0.085, wheelMultiplier: 0.9 });
     lenis.on("scroll", ScrollTrigger.update);
 
-    // the journey always starts at the top, and stays locked until "Enter"
+    // no browser scroll restoration: each route decides where it starts. Locked until "Enter".
     history.scrollRestoration = "manual";
-    scrollTo(0, 0);
     if (!useApp.getState().entered) lenis.stop();
     const unsub = useApp.subscribe((s, prev) => {
       if (s.entered && !prev.entered) lenis?.start();

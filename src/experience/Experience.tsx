@@ -7,7 +7,9 @@ import * as THREE from "three";
 import { useApp } from "@/store/useApp";
 import Atmosphere from "./Atmosphere";
 import CameraRig from "./CameraRig";
+import DetailBackdrop from "./chapters/DetailBackdrop";
 import Fracture from "./chapters/Fracture";
+import Projects from "./chapters/Projects";
 import Monolith from "./chapters/Monolith";
 import Tunnel from "./chapters/Tunnel";
 import { CompileGate, LoadProgress } from "./LoadTracker";
@@ -17,6 +19,7 @@ import PostFX from "./PostFX";
 /** The single, persistent WebGL canvas behind every page. */
 export default function Experience() {
   const isMobile = useApp((s) => s.isMobile);
+  const mode = useApp((s) => s.mode);
   const [frameloop, setFrameloop] = useState<"always" | "never">("always");
 
   // stop rendering entirely while the tab is hidden
@@ -64,10 +67,15 @@ export default function Experience() {
         {/* cool rim from behind separates the silhouette from the fog */}
         <directionalLight position={[-3, 6, -8]} intensity={0.8} color="#cfd8ff" />
 
-        <Monolith />
-        <Fracture />
-        <Tunnel />
-        <Atmosphere dustCount={isMobile ? 700 : 1800} />
+        {/* the journey stays mounted (and cached) while a detail page is open */}
+        <group visible={mode === "journey"}>
+          <Monolith />
+          <Fracture />
+          <Tunnel />
+          <Atmosphere dustCount={isMobile ? 700 : 1800} />
+          <Projects />
+        </group>
+        <DetailBackdrop />
         <CameraRig />
         <PostFX />
         <CompileGate />

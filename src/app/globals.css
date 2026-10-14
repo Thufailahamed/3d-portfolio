@@ -94,3 +94,18 @@ body {
   letter-spacing: 0.12em;
   color: color-mix(in oklab, var(--color-fg) 60%, transparent);
 }
+
+.hud-btn {
+  border: 1px solid color-mix(in oklab, var(--color-fg) 22%, transparent);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+.hud-btn:hover {
+  background: var(--color-fg);
+  color: var(--color-bg);
+}
