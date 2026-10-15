@@ -3,12 +3,117 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { projects } from "@/content/site";
+import { person, projects } from "@/content/site";
 import { gsap, useGSAP } from "@/lib/gsap";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 
 const pad = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * High-DPI Vector-Sharp 3D Wireframe Icosahedron Emblem
+ */
+function WireframeEmblem() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    const size = 32;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    ctx.scale(dpr, dpr);
+
+    let animId = 0;
+    let angleX = 0.25;
+    let angleY = 0;
+
+    // 12 vertices of an icosahedron
+    const phi = (1 + Math.sqrt(5)) / 2;
+    const rawVerts: [number, number, number][] = [
+      [-1, phi, 0],
+      [1, phi, 0],
+      [-1, -phi, 0],
+      [1, -phi, 0],
+      [0, -1, phi],
+      [0, 1, phi],
+      [0, -1, -phi],
+      [0, 1, -phi],
+      [phi, 0, -1],
+      [phi, 0, 1],
+      [-phi, 0, -1],
+      [-phi, 0, 1],
+    ];
+    const verts = rawVerts.map(([x, y, z]) => {
+      const len = Math.hypot(x, y, z);
+      return [x / len, y / len, z / len] as [number, number, number];
+    });
+
+    const edges: [number, number][] = [];
+    for (let i = 0; i < verts.length; i++) {
+      for (let j = i + 1; j < verts.length; j++) {
+        const d = Math.hypot(
+          verts[i][0] - verts[j][0],
+          verts[i][1] - verts[j][1],
+          verts[i][2] - verts[j][2],
+        );
+        if (Math.abs(d - 1.05146) < 0.15) {
+          edges.push([i, j]);
+        }
+      }
+    }
+
+    const render = () => {
+      angleY += 0.014;
+      angleX += 0.006;
+
+      ctx.clearRect(0, 0, size, size);
+      const cx = size / 2;
+      const cy = size / 2;
+      const r = 13.5;
+
+      const cosY = Math.cos(angleY);
+      const sinY = Math.sin(angleY);
+      const cosX = Math.cos(angleX);
+      const sinX = Math.sin(angleX);
+
+      const projected = verts.map(([x, y, z]) => {
+        const x1 = x * cosY - z * sinY;
+        const z1 = x * sinY + z * cosY;
+        const y2 = y * cosX - z1 * sinX;
+        const z2 = y * sinX + z1 * cosX;
+        return [cx + x1 * r, cy - y2 * r, z2] as [number, number, number];
+      });
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.78)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (const [i, j] of edges) {
+        ctx.moveTo(projected[i][0], projected[i][1]);
+        ctx.lineTo(projected[j][0], projected[j][1]);
+      }
+      ctx.stroke();
+
+      animId = requestAnimationFrame(render);
+    };
+
+    render();
+    return () => cancelAnimationFrame(animId);
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{ width: 32, height: 32 }}
+      className="inline-block pointer-events-auto my-1.5"
+      aria-hidden="true"
+    />
+  );
+}
 
 export default function FlowView() {
   const root = useRef<HTMLDivElement>(null);
@@ -16,6 +121,7 @@ export default function FlowView() {
   const router = useRouter();
   const flowView = useApp((s) => s.flowView);
   const flowFocus = useApp((s) => s.flowFocus);
+  const sound = useApp((s) => s.sound);
   const set = useApp((s) => s.set);
 
   const activeProject = flowFocus !== null ? projects[flowFocus] : null;
@@ -25,7 +131,7 @@ export default function FlowView() {
       pan: 0,
       tilt: 0,
       ...(view !== "hall" ? { walk: 0 } : {}),
-      duration: 0.75,
+      duration: 0.85,
       ease: "power2.out",
     });
     set({ flowView: view, flowFocus: focus });
@@ -34,33 +140,22 @@ export default function FlowView() {
   useGSAP(
     () => {
       gsap.fromTo(
-        ".flow-ui-in",
-        { autoAlpha: 0, y: -10 },
+        ".flow-cad-in",
+        { autoAlpha: 0, y: -8 },
         {
           autoAlpha: 1,
           y: 0,
-          duration: 0.65,
-          stagger: 0.04,
+          duration: 0.7,
+          stagger: 0.05,
           ease: "power3.out",
           delay: 0.1,
-        },
-      );
-      gsap.fromTo(
-        ".flow-card-in",
-        { autoAlpha: 0, y: 16 },
-        {
-          autoAlpha: 1,
-          y: 0,
-          duration: 0.55,
-          ease: "power3.out",
-          delay: 0.2,
         },
       );
     },
     { scope: root },
   );
 
-  // Support optional ?view=hall or ?showcase=1..6 query parameters on load
+  // Support optional ?view=hall or ?showcase=1..6 query parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const v = params.get("view");
@@ -75,7 +170,7 @@ export default function FlowView() {
     }
   }, [set]);
 
-  // Interactive drag-to-look, click-to-pick (portal & 6 showcases), and wheel stroll in hall
+  // Interactive drag-to-look, click-to-pick (portal & showcases), and wheel stroll
   useEffect(() => {
     const el = layer.current;
     if (!el) return;
@@ -98,7 +193,6 @@ export default function FlowView() {
     const onMove = (e: PointerEvent) => {
       const f = sceneState.flow;
       if (!down) {
-        // Hover cursor feedback over portal or showcases
         const hit = f.pick((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
         f.hover = hit;
         el.style.cursor = hit >= 0 ? "pointer" : "grab";
@@ -188,106 +282,195 @@ export default function FlowView() {
   return (
     <div
       ref={root}
-      className="fixed inset-0 z-20 flex flex-col justify-between pointer-events-none px-4 pb-4 pt-16 md:px-gutter md:pb-8 md:pt-20"
+      className="fixed inset-0 z-20 flex flex-col justify-between pointer-events-none p-6 sm:p-8 md:p-10 pb-8 sm:pb-10 md:pb-12 select-none"
       role="region"
-      aria-label="3D Exhibition Flow"
+      aria-label="Architectural CAD Blueprint Exhibition"
     >
       {/* Interactive 3D Pointer Layer for Drag-to-Look & Raycast Picking */}
       <div ref={layer} aria-hidden className="pointer-events-auto absolute inset-0 touch-none cursor-grab" />
 
-      {/* Top Header / View Presets Bar (positioned cleanly below global Header chrome) */}
-      <header className="relative z-10 flex flex-wrap items-center justify-between gap-4 pointer-events-auto">
-        <Link
-          href="/projects"
-          data-cursor="view"
-          className="flow-ui-in group inline-flex items-center gap-2 rounded-full border border-fg/20 bg-black/65 px-4 py-2 text-xs font-mono uppercase tracking-widest text-fg/90 backdrop-blur-md transition-all hover:border-fg/60 hover:bg-black/85"
-        >
-          <span className="text-accent transition-transform group-hover:-translate-x-1">←</span>
-          <span>Exit to Projects</span>
-        </Link>
+      {/* TOP HEADER: Architectural Studio Manifesto, Brand Logo, and Menu */}
+      <header className="relative z-10 flex items-start justify-between pointer-events-auto">
+        {/* Top Left: Software Architect & Studio Title & Manifesto Paragraph */}
+        <div className="flow-cad-in flex flex-col items-start gap-1 max-w-[290px] sm:max-w-xs">
+          <h1 className="text-[10.5px] sm:text-[11px] font-mono uppercase tracking-[0.22em] text-white/90 font-medium">
+            SOFTWARE ARCHITECT & STUDIO
+          </h1>
+          <WireframeEmblem />
+          <p className="text-[9.5px] sm:text-[10.5px] font-mono leading-[1.65] text-white/60 tracking-wider">
+            SynapX is an engineering studio founded by Thufail Ahamed based in Colombo.
+            We design and build end-to-end software: multi-tenant SaaS, agentic AI copilots,
+            cloud platforms, and spatial interactive 3D experiences. From schema to screen.
+          </p>
+        </div>
 
-        {/* View Switcher Pills */}
-        <div className="flow-ui-in flex flex-wrap items-center gap-1.5 rounded-full border border-fg/15 bg-black/75 p-1 backdrop-blur-md shadow-2xl">
+        {/* Top Center: Stylized Brand Logo */}
+        <div className="flow-cad-in absolute left-1/2 -translate-x-1/2 top-1 text-center pointer-events-auto">
+          <Link
+            href="/"
+            className="group inline-flex items-baseline gap-1.5 sm:gap-2 transition-opacity hover:opacity-80"
+          >
+            <span className="text-base sm:text-lg md:text-xl font-bold tracking-tight text-white font-sans uppercase">
+              Thufail
+            </span>
+            <span className="text-base sm:text-lg md:text-xl italic font-serif text-white/90 font-normal">
+              ahamed
+            </span>
+            <span className="hidden sm:inline-block text-[9.5px] font-mono text-accent tracking-widest uppercase border border-accent/40 rounded px-1.5 py-0.5 ml-1">
+              SynapX
+            </span>
+          </Link>
+        </div>
+
+        {/* Top Right: Clean Spaced MENU Trigger Button & Availability */}
+        <div className="flow-cad-in flex items-center gap-3 sm:gap-4 pointer-events-auto">
+          {person.available && (
+            <span className="hidden md:inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-white/60">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+              Available
+            </span>
+          )}
           <button
             type="button"
-            onClick={() => switchView("exterior", null)}
-            className={`rounded-full px-3.5 py-1.5 text-xs font-mono uppercase tracking-wider transition-all ${
-              flowView === "exterior"
-                ? "bg-accent text-black font-semibold shadow-[0_0_15px_rgba(200,255,61,0.4)]"
-                : "text-fg/70 hover:text-fg hover:bg-white/10"
-            }`}
+            onClick={() => useApp.getState().set({ menuOpen: true })}
+            className="text-[11px] sm:text-xs font-mono uppercase tracking-[0.3em] text-white/80 hover:text-white px-2 py-1 transition-colors"
+            aria-label="Open Site Menu"
           >
-            🏛 Exterior Plaza
+            MENU
           </button>
-          <button
-            type="button"
-            onClick={() => switchView("hall", null)}
-            className={`rounded-full px-3.5 py-1.5 text-xs font-mono uppercase tracking-wider transition-all ${
-              flowView === "hall"
-                ? "bg-accent text-black font-semibold shadow-[0_0_15px_rgba(200,255,61,0.4)]"
-                : "text-fg/70 hover:text-fg hover:bg-white/10"
-            }`}
-          >
-            🚶 Inside Hall
-          </button>
-
-          <span className="mx-1 h-3.5 w-px bg-fg/20" />
-
-          {/* Individual Project Showcase Selectors */}
-          {projects.map((p, i) => {
-            const isSelected = flowView === "showcase" && flowFocus === i;
-            return (
-              <button
-                key={p.slug}
-                type="button"
-                onClick={() => switchView("showcase", i)}
-                className={`rounded-full px-2.5 py-1.5 text-xs font-mono transition-all ${
-                  isSelected
-                    ? "bg-accent text-black font-bold shadow-[0_0_12px_rgba(200,255,61,0.4)]"
-                    : "text-fg/60 hover:text-fg hover:bg-white/10"
-                }`}
-                title={p.title}
-              >
-                {pad(i + 1)}
-              </button>
-            );
-          })}
         </div>
       </header>
 
-      {/* Center Guidance Hint when in Exterior or Hall Mode */}
-      {flowView !== "showcase" && (
-        <div className="flow-ui-in relative z-10 self-center text-center pointer-events-auto mt-auto mb-6">
+      {/* Center Left Prompt: SKIP THE INTRO */}
+      {flowView === "exterior" && (
+        <div className="flow-cad-in pointer-events-auto absolute left-6 sm:left-10 top-1/2 -translate-y-1/2 hidden md:block">
           <button
             type="button"
-            onClick={() =>
-              flowView === "exterior" ? switchView("hall", null) : switchView("showcase", 0)
-            }
-            className="label rounded-full border border-fg/20 bg-black/60 px-5 py-2.5 backdrop-blur-md text-xs tracking-widest text-fg/80 transition-all hover:border-accent/60 hover:text-fg hover:bg-black/80"
+            onClick={() => switchView("hall", null)}
+            className="text-[10px] font-mono uppercase tracking-[0.25em] text-white/35 hover:text-white transition-colors"
           >
-            {flowView === "exterior"
-              ? "← Drag to look around · Click portal or here to enter Inside Hall →"
-              : "← Drag to look · Scroll to stroll gallery · Click any showcase [01–06] →"}
+            SKIP THE INTRO →
           </button>
         </div>
       )}
 
-      {/* Bottom Showcase Inspection Card (Active Project Details) */}
-      <footer className="relative z-10 pointer-events-auto flex items-end justify-between gap-6">
-        {activeProject ? (
-          <div className="flow-card-in max-w-xl rounded-2xl border border-fg/20 bg-black/85 p-6 backdrop-blur-xl shadow-2xl">
+      {/* BOTTOM SECTION: ENTER Button, Navigation Tabs, Status prompt, and Controls */}
+      <footer className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6 pointer-events-auto">
+        {/* Bottom Left: Solid White Circular Button + Tabs + Socials */}
+        <div className="flow-cad-in flex flex-col items-start gap-4">
+          {/* Prominent Solid White Circular Button (ENTER when exterior, EXIT when inside) */}
+          <button
+            type="button"
+            onClick={() =>
+              switchView(flowView === "exterior" ? "hall" : "exterior", null)
+            }
+            className="group relative flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-full bg-white text-black font-mono text-[11px] sm:text-xs uppercase tracking-[0.22em] font-semibold shadow-[0_0_35px_rgba(255,255,255,0.4)] hover:scale-105 active:scale-95 transition-all duration-300"
+          >
+            <span className="transition-transform group-hover:scale-110">
+              {flowView === "exterior" ? "ENTER" : "EXIT"}
+            </span>
+          </button>
+
+          {/* Navigation Tabs: LOBBY, GALLERY, OFFICE, ARCHIVE */}
+          <div className="flex items-center gap-3 sm:gap-4 text-[11px] sm:text-xs font-mono uppercase tracking-[0.2em]">
+            <button
+              type="button"
+              onClick={() => switchView("exterior", null)}
+              className={`pb-0.5 transition-colors ${
+                flowView === "exterior"
+                  ? "text-white border-b border-white font-medium"
+                  : "text-white/50 hover:text-white"
+              }`}
+            >
+              LOBBY
+            </button>
+            <button
+              type="button"
+              onClick={() => switchView("hall", null)}
+              className={`pb-0.5 transition-colors ${
+                flowView === "hall"
+                  ? "text-white border-b border-white font-medium"
+                  : "text-white/50 hover:text-white"
+              }`}
+            >
+              GALLERY
+            </button>
+            <button
+              type="button"
+              onClick={() => switchView("showcase", 0)}
+              className={`pb-0.5 transition-colors ${
+                flowView === "showcase"
+                  ? "text-white border-b border-white font-medium"
+                  : "text-white/50 hover:text-white"
+              }`}
+            >
+              SHOWCASE
+            </button>
+            <Link
+              href="/projects"
+              className="text-white/50 hover:text-white pb-0.5 transition-colors"
+            >
+              ARCHIVE
+            </Link>
+          </div>
+
+          {/* Location and Social Links */}
+          <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-white/50">
+            <span title="Sri Lanka" className="text-xs">🇱🇰</span>
+            <span>COLOMBO</span>
+            <span className="text-white/20">/</span>
+            {person.socials.map((s) => (
+              <a
+                key={s.label}
+                href={s.href}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-white transition-colors"
+              >
+                {s.label.toUpperCase()}
+              </a>
+            ))}
+            <a
+              href={`mailto:${person.email}`}
+              className="hover:text-white transition-colors"
+            >
+              MAIL
+            </a>
+          </div>
+        </div>
+
+        {/* Bottom Center Prompt: Pavilion Entry / Step Outside */}
+        {flowView !== "showcase" && (
+          <div className="flow-cad-in self-center md:self-end text-center pointer-events-auto pb-1">
+            <button
+              type="button"
+              onClick={() =>
+                flowView === "exterior" ? switchView("hall", null) : switchView("exterior", null)
+              }
+              className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.22em] text-white/55 hover:text-white transition-colors"
+            >
+              {flowView === "exterior"
+                ? "THE PAVILION · CLICK TO ENTER EXHIBITION HALL"
+                : "THE PAVILION · CLICK TO STEP BACK OUTSIDE"}
+            </button>
+          </div>
+        )}
+
+        {/* Bottom Showcase Inspection Card (Active Project Details in Showcase View) */}
+        {activeProject && flowView === "showcase" && (
+          <div className="flow-cad-in max-w-lg rounded-xl border border-white/20 bg-black/90 p-5 backdrop-blur-xl shadow-2xl">
             <div className="flex items-center justify-between gap-4">
-              <span className="label text-xs uppercase tracking-widest text-accent">
+              <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-white">
                 Showcase {pad((flowFocus ?? 0) + 1)} · {activeProject.category}
               </span>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 font-mono">
                 <button
                   type="button"
                   onClick={() => {
                     const prev = (flowFocus! - 1 + projects.length) % projects.length;
                     switchView("showcase", prev);
                   }}
-                  className="rounded-full border border-fg/20 px-2.5 py-1 text-xs hover:border-fg/60"
+                  className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/80 hover:border-white hover:text-white"
                   aria-label="Previous showcase"
                 >
                   ←
@@ -298,7 +481,7 @@ export default function FlowView() {
                     const next = (flowFocus! + 1) % projects.length;
                     switchView("showcase", next);
                   }}
-                  className="rounded-full border border-fg/20 px-2.5 py-1 text-xs hover:border-fg/60"
+                  className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/80 hover:border-white hover:text-white"
                   aria-label="Next showcase"
                 >
                   →
@@ -306,7 +489,7 @@ export default function FlowView() {
                 <button
                   type="button"
                   onClick={() => switchView("hall", null)}
-                  className="rounded-full border border-fg/20 px-2.5 py-1 text-xs hover:border-fg/60"
+                  className="rounded border border-white/20 px-2 py-0.5 text-xs text-white/80 hover:border-white hover:text-white"
                   aria-label="Return to hall"
                 >
                   ✕
@@ -314,60 +497,66 @@ export default function FlowView() {
               </div>
             </div>
 
-            <h2 className="display mt-2 text-2xl md:text-3xl text-fg font-normal tracking-tight">
+            <h2 className="mt-2 text-xl md:text-2xl text-white font-normal tracking-tight font-sans">
               {activeProject.title}
             </h2>
-            <p className="mt-2 text-sm text-fg/75 line-clamp-2">{activeProject.tagline}</p>
+            <p className="mt-1.5 text-xs text-white/70 line-clamp-2 font-mono">
+              {activeProject.tagline}
+            </p>
 
             <div className="mt-3 flex flex-wrap gap-1.5">
               {activeProject.stack.slice(0, 4).map((tech) => (
                 <span
                   key={tech}
-                  className="rounded-md border border-fg/10 bg-white/5 px-2 py-0.5 text-[10px] font-mono text-fg/70"
+                  className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-mono text-white/70"
                 >
                   {tech}
                 </span>
               ))}
             </div>
 
-            <div className="mt-5 flex items-center gap-4">
+            <div className="mt-4 flex items-center gap-4 font-mono text-xs">
               <Link
                 href={`/projects/${activeProject.slug}`}
-                data-cursor="view"
-                className="label inline-flex items-center gap-1.5 text-xs text-accent underline underline-offset-4 hover:brightness-125"
+                className="text-white underline underline-offset-4 hover:brightness-125"
               >
-                Open Full Case Study ↗
+                Case Study ↗
               </Link>
               {activeProject.link && (
                 <a
                   href={activeProject.link}
                   target="_blank"
                   rel="noreferrer"
-                  className="label inline-flex items-center gap-1.5 text-xs text-fg/60 hover:text-fg underline underline-offset-4"
+                  className="text-white/55 hover:text-white underline underline-offset-4"
                 >
-                  Visit Live Site ↗
+                  Live Site ↗
                 </a>
               )}
             </div>
           </div>
-        ) : (
-          <div className="flow-ui-in max-w-sm rounded-xl border border-fg/15 bg-black/65 p-4 backdrop-blur-md">
-            <p className="text-xs font-mono uppercase tracking-widest text-accent mb-1">
-              {flowView === "exterior" ? "Exterior Colonnade" : "Grand Nave Gallery"}
-            </p>
-            <p className="text-xs text-fg/70">
-              {flowView === "exterior"
-                ? "Classical octastyle temple portico, rotunda dome, and obsidian plaza inspired by virtuallyeverafter.xyz."
-                : "36-meter coffered barrel vault with 6 custom project vitrines and Rose Window aperture."}
-            </p>
-          </div>
         )}
 
-        {/* Quick Shortcut Badge */}
-        <div className="flow-ui-in hidden md:flex flex-col items-end gap-1 text-[11px] font-mono text-fg/40">
-          <span>[1-6] Jump Showcase</span>
-          <span>[E] Exterior · [H] Inside Hall</span>
-          <span>[Esc] Step Back / Exit</span>
+        {/* Bottom Right: CONTROLS, SOUND, & Keyboard Navigation */}
+        <div className="flow-cad-in flex flex-col items-end gap-1 text-[10px] font-mono uppercase tracking-[0.2em] text-white/45">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block w-1 h-1 bg-white/70 rounded-full" />
+            <span>CONTROLS</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => set({ sound: !sound })}
+            className="flex items-center gap-1.5 hover:text-white transition-colors"
+          >
+            <span
+              className={`inline-block w-2 h-2 rounded-full border border-white/50 ${
+                sound ? "bg-white" : ""
+              }`}
+            />
+            <span>SOUND</span>
+          </button>
+          <div className="text-[9px] text-white/35 tracking-widest mt-0.5">
+            &lt; SPACE / PAGE &gt;
+          </div>
         </div>
       </footer>
     </div>

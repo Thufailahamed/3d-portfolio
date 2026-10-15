@@ -60,21 +60,23 @@ export default function Loader() {
   }, [fontsReady]);
 
   useEffect(() => {
-    if (canEnter) {
-      if (window.location.pathname === "/flow") {
-        enter();
-      } else {
-        button.current?.focus({ preventScroll: true });
-      }
+    if (canEnter && pathname !== "/flow") {
+      button.current?.focus({ preventScroll: true });
     }
-  }, [canEnter]);
+  }, [canEnter, pathname]);
 
   const enter = () => {
     if (!canEnter) return;
     useApp.getState().set({ entered: true });
+    if (!root.current) {
+      sceneState.intro = 1;
+      setGone(true);
+      return;
+    }
+    const fades = root.current.querySelectorAll(".loader-fade");
     gsap
       .timeline({ onComplete: () => setGone(true) })
-      .to(root.current!.querySelectorAll(".loader-fade"), { opacity: 0, y: -12, duration: 0.5, stagger: 0.04, ease: "power2.in" })
+      .to(fades, { opacity: 0, y: -12, duration: 0.5, stagger: 0.04, ease: "power2.in" })
       .to(root.current, { clipPath: "inset(0% 0% 100% 0%)", duration: 1.3, ease: "expo.inOut" }, 0.25)
       .to(sceneState, { intro: 1, duration: 2.6, ease: "power3.out" }, 0.45);
   };

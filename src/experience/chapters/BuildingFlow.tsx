@@ -8,11 +8,10 @@ import { FLOW_ORIGIN } from "@/lib/chapters";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { palette } from "../palette";
-import CosmicSky from "../CosmicSky";
 
 export const BUILDING_URL = "/models/building.glb";
 
-// Showcase Bay Coordinates (aligned with actual vitrine positions at x = ±4.4, y = 2.4, z = -7 / -17 / -27)
+// Showcase Bay Coordinates (aligned with actual vitrine positions at x = ±4.4, y = 2.38, z = -7 / -17 / -27)
 const SHOWCASE_CAMERAS: { pos: [number, number, number]; look: [number, number, number] }[] = [
   // 01 School System (Bay 1 Left)
   { pos: [-0.95, 2.38, -4.4], look: [-4.4, 2.28, -7.0] },
@@ -39,250 +38,186 @@ const SHOWCASE_SLUGS = [
 
 const SHOWCASE_IDS = ["01", "02", "03", "04", "05", "06"];
 
+// Architectural CAD Blueprint Ground Shader for Exterior Plaza
 const plazaVert = /* glsl */ `
-  varying vec3 vLocalPos;
+  varying vec3 vWorldPos;
   void main() {
-    vLocalPos = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz - vec3(0.0, 0.0, -480.0);
+    gl_Position = projectionMatrix * viewMatrix * wp;
   }
 `;
 
 const plazaFrag = /* glsl */ `
-  varying vec3 vLocalPos;
+  varying vec3 vWorldPos;
 
   void main() {
-    // ReflectivePlaza node is translated to (0, -0.42, 22) in flow space
-    float wx = vLocalPos.x;
-    float wz = vLocalPos.z + 22.0;
+    float wx = vWorldPos.x;
+    float wz = vWorldPos.z;
 
-    // Staggered architectural obsidian tile grid (matching building_exterior.png)
-    float row = floor(wz * 0.55);
-    float brickX = wx * 0.25 + mod(row, 2.0) * 0.5;
-    float brickZ = wz * 0.55;
+    // Fade to pure black when inside the hall (wz <= 1.0) so exterior lines never bleed inside
+    if (wz < 1.0) {
+      gl_FragColor = vec4(0.002, 0.003, 0.005, 1.0);
+      return;
+    }
 
-    vec2 f = abs(fract(vec2(brickX, brickZ) - 0.5) - 0.5);
-    vec2 df = fwidth(vec2(brickX, brickZ));
-    vec2 grid2 = 1.0 - smoothstep(df * 0.6, df * 2.1, f);
-    float line = max(grid2.x, grid2.y);
+    // Void dark blueprint base floor
+    vec3 col = vec3(0.002, 0.003, 0.005);
 
-    // Subtle dark obsidian tile variation
-    float tileHash = fract(sin(floor(brickX) * 12.9898 + row * 78.233) * 43758.5453);
-    vec3 baseTile = mix(vec3(0.008, 0.011, 0.016), vec3(0.013, 0.018, 0.026), tileHash);
-    vec3 mortarCol = vec3(0.16, 0.27, 0.42);
+    // 4-meter Architectural CAD grid
+    float gridScale = 0.25;
+    vec2 f = abs(fract(vec2(wx * gridScale, wz * gridScale) - 0.5) - 0.5);
+    vec2 df = fwidth(vec2(wx * gridScale, wz * gridScale));
+    vec2 grid2 = 1.0 - smoothstep(df * 0.4, df * 1.8, f);
+    float gridLine = max(grid2.x, grid2.y);
 
-    // Distance fade for grid lines
-    float distFade = 1.0 - smoothstep(18.0, 44.0, length(vec2(wx * 0.65, wz - 18.0)));
-    vec3 col = mix(baseTile, mortarCol, line * 0.78 * distFade);
+    // Grid distance fade towards the horizon
+    float dist = length(vec2(wx * 0.55, wz - 12.0));
+    float distFade = 1.0 - smoothstep(12.0, 52.0, dist);
 
-    // Planar wet-obsidian specular reflection streaks projected along camera-to-uplight sightlines
-    // so reflection streaks are vertical on screen directly beneath each column uplight (like building_exterior.png)
-    float camZ = 33.5;
-    float lightZ = 2.2;
-    float rayX = wx * ((camZ - lightZ) / max(camZ - wz, 3.5));
+    vec3 gridCol = vec3(0.32, 0.38, 0.46);
+    col += gridCol * gridLine * 0.40 * distFade;
 
-    float zMask = smoothstep(7.5, 9.8, wz) * (1.0 - smoothstep(24.0, 33.0, wz));
+    // Two bright perspective guide lines leading into the entrance doorway at x = ±1.8
+    float pathMask = step(2.4, wz) * (1.0 - smoothstep(22.0, 32.0, wz));
+    float pathLineL = 1.0 - smoothstep(0.02, 0.06, abs(wx + 1.8));
+    float pathLineR = 1.0 - smoothstep(0.02, 0.06, abs(wx - 1.8));
+    col += vec3(0.95, 0.98, 1.0) * (pathLineL + pathLineR) * pathMask * 0.95;
 
-    // Central portal & Enter disc reflection column at x = 0
-    float portalStreak = exp(- (rayX * rayX) / 0.55) * zMask * exp(-max(0.0, wz - 11.5) * 0.10);
-    float enterHalo = exp(- (wx * wx * 0.9 + (wz - 11.2) * (wz - 11.2) * 1.4));
-    col += vec3(1.0, 0.92, 0.78) * (portalStreak * 0.42 + enterHalo * 0.52);
+    // Subtle luminous portal threshold glow directly in front of the door (x=0, z=2.4)
+    float portalHalo = exp(- (wx * wx * 0.45 + (wz - 2.8) * (wz - 2.8) * 0.55));
+    col += vec3(0.90, 0.94, 1.0) * portalHalo * 0.45;
 
-    // 8 Colonnade uplight reflection streaks at x = ±5, ±10, ±16, ±22
-    float absRayX = abs(rayX);
-    float colReflections = 0.0;
-    colReflections += exp(- ((absRayX - 5.0) * (absRayX - 5.0)) / 0.11);
-    colReflections += exp(- ((absRayX - 10.0) * (absRayX - 10.0)) / 0.11);
-    colReflections += exp(- ((absRayX - 16.0) * (absRayX - 16.0)) / 0.13);
-    colReflections += exp(- ((absRayX - 22.0) * (absRayX - 22.0)) / 0.16);
-
-    float streakZ = smoothstep(8.2, 10.2, wz) * exp(-max(0.0, wz - 11.0) * 0.13);
-    col += vec3(1.0, 0.95, 0.85) * colReflections * streakZ * 0.62;
-
-    // Subtle column shaft dark/light rhythm reflected on the wet floor
-    float colRhythm = sin(rayX * 1.9) * 0.5 + 0.5;
-    col += vec3(0.015, 0.022, 0.032) * colRhythm * zMask * distFade;
-
-    // Outer plaza horizon fade into background
-    float edgeFade = 1.0 - smoothstep(28.0, 45.0, length(vec2(wx * 0.65, wz - 16.0)));
-    col = mix(vec3(0.005, 0.006, 0.008), col, edgeFade);
+    // Outer edge horizon fade
+    float edgeFade = 1.0 - smoothstep(32.0, 55.0, dist);
+    col = mix(vec3(0.0), col, edgeFade);
 
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 /**
- * Injects calibrated linear-space architectural lighting into ObsidianStone, ClassicalLimestone,
- * and NeroMarquinaMarble so the 54m colonnade, pediment, rotunda, 6 wall niches,
- * barrel vault, and mirror marble floor match the Blender Eevee renders (`building_exterior.png`
- * and `building_interior.png`) without exceeding WebGL light uniform limits.
+ * 3D Floating Architectural Text Label rendered via high-res Canvas 2D
  */
-function enhanceArchitecturalMaterial(mat: THREE.MeshStandardMaterial, isMarbleFloor = false) {
-  mat.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        "#include <common>",
-        /* glsl */ `
-        #include <common>
-        varying vec3 vFlowPos;
-        varying vec3 vFlowWorldNorm;
-        `,
-      )
-      .replace(
-        "#include <worldpos_vertex>",
-        /* glsl */ `
-        #include <worldpos_vertex>
-        vec4 flowWorldPosition = modelMatrix * vec4(transformed, 1.0);
-        vFlowPos = flowWorldPosition.xyz - vec3(0.0, 0.0, -480.0);
-        vFlowWorldNorm = normalize(mat3(modelMatrix) * objectNormal);
-        `,
-      );
+function ArchitecturalLabel3D({
+  text,
+  position,
+  scale = 1.0,
+  opacity = 0.92,
+  hasLeader = false,
+  leaderTo,
+  letterSpacing = 2,
+}: {
+  text: string;
+  position: [number, number, number];
+  scale?: number;
+  opacity?: number;
+  hasLeader?: boolean;
+  leaderTo?: [number, number, number];
+  letterSpacing?: number;
+}) {
+  const { texture, aspect } = useMemo(() => {
+    if (typeof document === "undefined") {
+      return { texture: null, aspect: 1 };
+    }
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { texture: null, aspect: 1 };
 
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        "#include <common>",
-        /* glsl */ `
-        #include <common>
-        varying vec3 vFlowPos;
-        varying vec3 vFlowWorldNorm;
+    const fontSize = 140;
+    const displayText = text.split("").join(" ".repeat(Math.max(0, letterSpacing)));
+    ctx.font = `600 ${fontSize}px "JetBrains Mono", "IBM Plex Mono", monospace`;
+    const metrics = ctx.measureText(displayText);
+    const pad = 48;
+    canvas.width = Math.ceil(metrics.width + pad * 2);
+    canvas.height = Math.ceil(fontSize * 1.5 + pad);
 
-        vec3 evalArchPoint(vec3 p, vec3 n, vec3 lPos, vec3 lCol, float radius, float strength) {
-          vec3 toL = lPos - p;
-          float d = length(toL);
-          vec3 dir = toL / max(d, 0.001);
-          float ndl = max(dot(n, dir), 0.0) * 0.72 + 0.28;
-          float att = exp(- (d * d) / (radius * radius));
-          return lCol * (ndl * att * strength);
-        }
-        `,
-      )
-      .replace(
-        "#include <emissivemap_fragment>",
-        /* glsl */ `
-        #include <emissivemap_fragment>
-        {
-          vec3 p = vFlowPos;
-          vec3 n = normalize(vFlowWorldNorm);
-          vec3 archLight = vec3(0.0);
+    ctx.font = `600 ${fontSize}px "JetBrains Mono", "IBM Plex Mono", monospace`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(displayText, canvas.width / 2, canvas.height / 2);
 
-          // MainFacadeWalls front face is at p.z = -0.7..+4.0; interior gallery begins at p.z < -1.25
-          if (p.z > -1.25) {
-            // --- EXTERIOR ARCHITECTURE (Portico, Wings, Pediment, Facade Wall, Steps, Rotunda) ---
-            // 1. Calibrated linear-space Moonlight key & night sky ambient (dark obsidian charcoal tone)
-            vec3 moonDir = normalize(vec3(-0.38, 0.62, 0.68));
-            float moonNdl = max(dot(n, moonDir), 0.0);
-            float rimNdl = max(dot(n, normalize(vec3(0.45, 0.35, 0.82))), 0.0);
-            archLight += vec3(0.010, 0.012, 0.016) + vec3(0.036, 0.042, 0.052) * moonNdl + vec3(0.012, 0.015, 0.020) * rimNdl;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    return { texture: tex, aspect: canvas.width / canvas.height };
+  }, [text, letterSpacing]);
 
-            // 2. Pediment raking cornice, dentil molding & portico soffit uplight
-            float pedHighlight = smoothstep(6.2, 11.5, p.y) * exp(- (p.x * p.x) / 65.0);
-            archLight += vec3(0.034, 0.040, 0.050) * pedHighlight * (max(n.z, 0.0) * 0.6 + abs(n.y) * 0.4);
+  const height = 0.65 * scale;
+  const width = height * aspect;
 
-            // Soft central portico ceiling soffit glow above doorway (matching building_exterior.png)
-            if (p.y > 6.8 && p.y < 7.8 && abs(p.x) < 2.4 && p.z > -0.5 && p.z < 4.2) {
-              float soffitSpot = exp(- (p.x * p.x) / 1.4 - ((p.z - 2.2) * (p.z - 2.2)) / 2.2);
-              archLight += vec3(0.48, 0.49, 0.52) * soffitSpot * max(-n.y, 0.25);
-            }
+  return (
+    <group position={position}>
+      {texture && (
+        <mesh>
+          <planeGeometry args={[width, height]} />
+          <meshBasicMaterial
+            map={texture}
+            transparent
+            opacity={opacity}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+      {hasLeader && leaderTo && (
+        <lineSegments>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[
+                new Float32Array([
+                  0,
+                  -height / 2 - 0.05,
+                  0,
+                  leaderTo[0] - position[0],
+                  leaderTo[1] - position[1],
+                  leaderTo[2] - position[2],
+                ]),
+                3,
+              ]}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#ffffff" transparent opacity={0.65} />
+        </lineSegments>
+      )}
+    </group>
+  );
+}
 
-            // 3. Warm Golden Portal Spill flooding out of central doorway (0, 2.8, 0.2) onto facade back wall & columns
-            if (p.y > 0.85) {
-              archLight += evalArchPoint(p, n, vec3(0.0, 2.8, 0.4), vec3(1.0, 0.90, 0.74), 6.2, 0.46);
-              archLight += evalArchPoint(p, n, vec3(0.0, 4.8, 1.6), vec3(0.95, 0.92, 0.86), 5.5, 0.22);
-            }
+/**
+ * Two slender light posts flanking the entrance at x = ±3.2, z = 7.5
+ */
+function EntranceBollards() {
+  const lineGeo = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array([0, 0, 0, 0, 3.4, 0]), 3),
+    );
+    return geo;
+  }, []);
+  const lineMat = useMemo(
+    () => new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+    [],
+  );
+  const sphereGeo = useMemo(() => new THREE.SphereGeometry(0.075, 12, 12), []);
+  const sphereMat = useMemo(() => new THREE.MeshBasicMaterial({ color: 0xffffff }), []);
 
-            // 4. 8 Colonnade Base Grazing Uplights at x = ±5, ±10, ±16, ±22 along the peristyle
-            if (p.y > 0.85 && p.z < 4.2) {
-              float absX = abs(p.x);
-              for (int i = 0; i < 4; i++) {
-                float ux = (i == 0) ? 5.0 : (i == 1) ? 10.0 : (i == 2) ? 16.0 : 22.0;
-                float uz = (i == 0) ? 2.6 : 1.3;
-                vec3 uPos = vec3(ux, 1.05, uz);
-                vec3 pSym = vec3(absX, p.y, p.z);
-                vec3 nSym = vec3(abs(n.x), n.y, n.z);
-                archLight += evalArchPoint(pSym, nSym, uPos, vec3(1.0, 0.93, 0.80), 3.4, 0.30);
-              }
-            }
-
-            // 5. East Wing Classical Rotunda Pavilion Uplight (x = 25.2, z = 1.2)
-            archLight += evalArchPoint(p, n, vec3(25.2, 4.2, 2.6), vec3(0.85, 0.91, 1.0), 7.5, 0.16);
-
-            // 6. Ceremonial Steps: crisp horizontal tread & riser contrast with aligned reflection catch-lights
-            if (p.z > 3.6 && p.y < 1.35) {
-              float isTread = step(0.6, n.y);
-              float absX = abs(p.x);
-              float stepCatch = exp(- (p.x * p.x) / 1.5);
-              stepCatch += 0.72 * exp(- ((absX - 5.0) * (absX - 5.0)) / 0.35);
-              stepCatch += 0.62 * exp(- ((absX - 10.0) * (absX - 10.0)) / 0.45);
-              float nosing = smoothstep(0.0, 1.0, fract(p.y / 0.16));
-              archLight += vec3(0.95, 0.90, 0.80) * stepCatch * (isTread * 0.24 + (1.0 - isTread) * 0.07 * nosing);
-            }
-          } else {
-            // --- INTERIOR GRAND EXHIBITION GALLERY (z from -1.25 to -37) ---
-            // 1. Central Skylight & Coffered Barrel Vault Downwash along the 36m nave
-            float skylightDist = abs(p.x);
-            float skyStrip = exp(- (skylightDist * skylightDist) / 11.0) * smoothstep(4.2, 9.5, p.y);
-            archLight += vec3(0.26, 0.30, 0.36) * skyStrip;
-
-            // Museum gallery architectural fill with subtle coffered rib rhythm
-            float ribRhythm = 0.88 + 0.12 * cos(p.z * 2.513);
-            archLight += vec3(0.038, 0.043, 0.052) * ribRhythm * (abs(n.x) * 0.45 + abs(n.y) * 0.35 + 0.2);
-
-            // 2. 6 Warm Arched Wall Niche Uplights & Showcase Spotlights at z = -7, -17, -27
-            float absX = abs(p.x);
-            for (int b = 0; b < 3; b++) {
-              float bz = (b == 0) ? -7.0 : (b == 1) ? -17.0 : -27.0;
-              vec3 pSym = vec3(absX, p.y, p.z);
-              vec3 nSym = vec3(abs(n.x), n.y, n.z);
-              // Warm wall niche grazing uplight at x = ±7.1
-              archLight += evalArchPoint(pSym, nSym, vec3(7.0, 2.2, bz), vec3(1.0, 0.93, 0.82), 4.4, 0.30);
-              // Pilaster flank grazing streaks at bz ± 2.3
-              float pilGlow = exp(- ((absX - 7.2) * (absX - 7.2)) / 0.6 - ((abs(p.z - bz) - 2.2) * (abs(p.z - bz) - 2.2)) / 0.4) * smoothstep(6.0, 1.2, p.y);
-              archLight += vec3(0.95, 0.90, 0.82) * pilGlow * 0.26;
-              // Showcase pedestal spotlight at x = ±4.4
-              archLight += evalArchPoint(pSym, nSym, vec3(4.1, 3.6, bz), vec3(0.95, 0.97, 1.0), 3.6, 0.26);
-            }
-
-            // 3. Rose Window Celestial Backlight at z = -37
-            archLight += evalArchPoint(p, n, vec3(0.0, 5.5, -35.8), vec3(0.75, 0.88, 1.0), 9.5, 0.34);
-
-            ${
-              isMarbleFloor
-                ? /* glsl */ `
-            // 4. Polished Nero Marquina Marble Floor Planar Reflections (matching building_interior.png)
-            if (n.y > 0.8) {
-              archLight *= 0.32;
-
-              // Rose Window circular reflection on the central marble aisle
-              vec2 rwUv = vec2(p.x / 3.4, (p.z + 20.5) / 5.2);
-              float rwR = length(rwUv);
-              float rwDisc = (1.0 - smoothstep(0.82, 1.04, rwR)) * smoothstep(-35.0, -24.0, p.z);
-              float rwAng = atan(rwUv.y, rwUv.x);
-              float spokes = 0.88 + 0.12 * cos(rwAng * 12.0);
-              archLight += vec3(0.84, 0.93, 1.0) * rwDisc * spokes * 0.62;
-
-              // Central glass skylight reflection runner + arch rib reflections
-              float skyRefl = exp(- (p.x * p.x) / 2.6) * (0.09 + 0.045 * cos(p.z * 1.256));
-              archLight += vec3(0.78, 0.86, 0.98) * skyRefl;
-
-              // 6 Glowing Vitrine & Kiosk reflections along left & right aisles (x = ±4.4, z = -7, -17, -27)
-              for (int b = 0; b < 3; b++) {
-                float bz = (b == 0) ? -7.0 : (b == 1) ? -17.0 : -27.0;
-                float vitRefl = exp(- ((abs(p.x) - 4.2) * (abs(p.x) - 4.2)) / 1.1 - ((p.z - bz) * (p.z - bz)) / 2.8);
-                vec3 bCol = (b == 0) ? vec3(0.68, 0.86, 1.0) : (b == 1) ? vec3(0.95, 0.88, 0.68) : vec3(0.48, 0.92, 0.82);
-                archLight += bCol * vitRefl * 0.30;
-              }
-            }
-            `
-                : ""
-            }
-          }
-
-          totalEmissiveRadiance += archLight;
-        }
-        `,
-      );
-  };
-  mat.customProgramCacheKey = () => (isMarbleFloor ? "flow-marble-v3" : "flow-stone-v3");
-  mat.needsUpdate = true;
+  return (
+    <group>
+      <group position={[-3.2, 0, 7.5]}>
+        <lineSegments geometry={lineGeo} material={lineMat} />
+        <mesh position={[0, 3.4, 0]} geometry={sphereGeo} material={sphereMat} />
+      </group>
+      <group position={[3.2, 0, 7.5]}>
+        <lineSegments geometry={lineGeo} material={lineMat} />
+        <mesh position={[0, 3.4, 0]} geometry={sphereGeo} material={sphereMat} />
+      </group>
+    </group>
+  );
 }
 
 export default function BuildingFlow() {
@@ -299,6 +234,7 @@ export default function BuildingFlow() {
 
   const { scene } = useGLTF(BUILDING_URL, "/draco/");
 
+  // Exterior Plaza Floor Shader Material
   const plazaMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -308,27 +244,100 @@ export default function BuildingFlow() {
     [],
   );
 
-  // Minimal dynamic Three.js lights (1 Hemisphere + 1 Directional) for brass/gold/artifact speculars
-  const lights = useMemo(() => {
-    const moonKey = new THREE.DirectionalLight("#dceaff", 1.8);
-    moonKey.position.set(-14, 24, 28);
-    moonKey.target.position.set(0, 3.5, -6);
-    return { moonKey };
-  }, []);
+  // 1. SOLID OCCLUDER: Solid blueprint black massing with polygonOffset to enable clean Hidden-Line Removal (HLR)
+  const solidOccluderMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: 0x020305,
+        polygonOffset: true,
+        polygonOffsetFactor: 1.0,
+        polygonOffsetUnits: 1.0,
+        depthWrite: true,
+        depthTest: true,
+      }),
+    [],
+  );
+
+  // 2. PRIMARY ARCHITECTURAL WIREFRAME: Luminous crisp off-white for silhouettes, entablatures, vitrine frames
+  const primaryWireMat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0xf5f7fa,
+        transparent: true,
+        opacity: 0.88,
+        depthTest: true,
+        depthWrite: false,
+      }),
+    [],
+  );
+
+  // 3. SECONDARY ARCHITECTURAL WIREFRAME: Elegant slate-grey for inner flutes, steps, arch ribs
+  const secondaryWireMat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0x8894a8,
+        transparent: true,
+        opacity: 0.65,
+        depthTest: true,
+        depthWrite: false,
+      }),
+    [],
+  );
+
+  // 4. EMISSIVE PORTAL & ACCENT MATERIALS
+  const portalGlowMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+      }),
+    [],
+  );
+
+  const silhouetteMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: 0x010102,
+      }),
+    [],
+  );
+
+  const glassVitrineMat = useMemo(
+    () =>
+      new THREE.MeshBasicMaterial({
+        color: 0x080a12,
+        transparent: true,
+        opacity: 0.12,
+        depthWrite: false,
+      }),
+    [],
+  );
 
   useEffect(
     () => () => {
       plazaMat.dispose();
+      solidOccluderMat.dispose();
+      primaryWireMat.dispose();
+      secondaryWireMat.dispose();
+      portalGlowMat.dispose();
+      silhouetteMat.dispose();
+      glassVitrineMat.dispose();
     },
-    [plazaMat],
+    [
+      plazaMat,
+      solidOccluderMat,
+      primaryWireMat,
+      secondaryWireMat,
+      portalGlowMat,
+      silhouetteMat,
+      glassVitrineMat,
+    ],
   );
 
-  // Prepare scene materials, replace PlazaGrid with custom shader, and register interactive meshes
+  // Prepare and curate scene geometry for authentic museum-grade architectural CAD rendering
   useEffect(() => {
     if (!scene) return;
     const anim: THREE.Object3D[] = [];
     const picks: { mesh: THREE.Mesh; code: number }[] = [];
-    const enhancedMats = new Set<THREE.Material>();
 
     scene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
@@ -336,71 +345,174 @@ export default function BuildingFlow() {
         mesh.castShadow = false;
         mesh.receiveShadow = false;
 
-        // Hide PlazaHaze, Label_LOBBY, and Plaque_01..06 (which overlapped the 3D brass pedestal titles)
+        // 1. Hide messy / redundant items
+        // - PlazaHaze & Plaque_01..06
+        // - InteractiveKiosk_... & KioskScreen_... (slanted poles that clutter plinth sides)
+        // - PlinthCornerTrim_... (prevents double-line artifacts with ShowcasePlinth)
+        // - GLB Labels (we render high-res Canvas 3D labels)
         if (
           mesh.name.startsWith("PlazaHaze") ||
-          mesh.name === "Label_LOBBY" ||
-          mesh.name.startsWith("Plaque_")
+          mesh.name.startsWith("Plaque_") ||
+          mesh.name.startsWith("Label_") ||
+          mesh.name.startsWith("InteractiveKiosk_") ||
+          mesh.name.startsWith("KioskScreen_") ||
+          mesh.name.startsWith("PlinthCornerTrim_")
         ) {
           mesh.visible = false;
           return;
         }
 
+        // 2. Exterior Plaza Floor
         if (mesh.name === "ReflectivePlaza") {
           mesh.material = plazaMat;
-        } else if (mesh.name === "GalleryApseGlass") {
-          // Make the Rose Window backlit disc luminous warm-ivory white (matching building_exterior.png & building_interior.png)
-          const apseMat = (mesh.material as THREE.MeshStandardMaterial).clone();
-          apseMat.color.set("#fffdf8");
-          apseMat.emissive.set("#fffaf0");
-          apseMat.emissiveIntensity = 3.2;
-          mesh.material = apseMat;
+          return;
+        }
+
+        // 3. Classical Frieze Inscription (hidden to use custom high-res Thufail Ahamed label)
+        if (mesh.name === "FriezeText") {
+          mesh.visible = false;
+          return;
+        }
+
+        // 4. Portal Glow Frame & Door Frame
+        if (mesh.name === "PortalGlowFrame" || mesh.name === "PortalDoorFrame") {
+          mesh.material = portalGlowMat;
+          picks.push({ mesh, code: 99 });
+          return;
+        }
+
+        // 5. Entrance Silhouette Figure
+        if (mesh.name === "PortalSilhouetteFigure") {
+          mesh.material = silhouetteMat;
+          picks.push({ mesh, code: 99 });
+          return;
+        }
+
+        // 6. Enter button click target
+        if (mesh.name === "PlazaEnterButton") {
+          mesh.visible = false;
+          picks.push({ mesh, code: 99 });
+          return;
+        }
+
+        // 7. Rose Window / Gallery Apse
+        if (mesh.name === "GalleryApseGlass") {
+          // Luminous celestial circular aperture
+          mesh.material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.95,
+          });
+          return;
+        }
+
+        if (mesh.name === "GalleryApseFrame") {
+          mesh.material = solidOccluderMat;
+          if (!mesh.userData.__wireAdded) {
+            mesh.userData.__wireAdded = true;
+            // High angle threshold (45 deg) to keep perimeter circle and main mullions without dense torus loops
+            const edges = new THREE.EdgesGeometry(mesh.geometry, 45);
+            const wire = new THREE.LineSegments(edges, primaryWireMat);
+            mesh.add(wire);
+          }
+          return;
+        }
+
+        // 8. Gallery Barrel Vault: keep smooth arch curves without diagonal triangulation
+        if (mesh.name === "GalleryBarrelVault") {
+          mesh.material = solidOccluderMat;
+          if (!mesh.userData.__wireAdded) {
+            mesh.userData.__wireAdded = true;
+            // Angle 35 deg ensures no diagonal triangulation across vault curve
+            const edges = new THREE.EdgesGeometry(mesh.geometry, 35);
+            const wire = new THREE.LineSegments(edges, secondaryWireMat);
+            mesh.add(wire);
+          }
+          return;
+        }
+
+        // 9. Vitrine Glass Panels vs Vitrine Brass Frames
+        if (mesh.name.startsWith("Vitrine_")) {
+          // Ultra-clear transparent vitrine glass panel (no wireframe lines to avoid duplicates)
+          mesh.material = glassVitrineMat;
+          return;
+        }
+
+        if (mesh.name.startsWith("VitrineFrame_")) {
+          // Single, elegant brass architectural vitrine frame
+          mesh.material = solidOccluderMat;
+          if (!mesh.userData.__wireAdded) {
+            mesh.userData.__wireAdded = true;
+            const edges = new THREE.EdgesGeometry(mesh.geometry, 15);
+            const wire = new THREE.LineSegments(edges, primaryWireMat);
+            mesh.add(wire);
+          }
+          return;
+        }
+
+        // 10. Showcase Plinths (Monolithic Beveled Stone Pedestals)
+        if (mesh.name.startsWith("ShowcasePlinth_")) {
+          mesh.material = solidOccluderMat;
+          if (!mesh.userData.__wireAdded) {
+            mesh.userData.__wireAdded = true;
+            const edges = new THREE.EdgesGeometry(mesh.geometry, 15);
+            const wire = new THREE.LineSegments(edges, primaryWireMat);
+            mesh.add(wire);
+          }
+          return;
+        }
+
+        // 11. Gallery Interior Floor & Brass Runner Inlays
+        if (mesh.name === "GalleryFloor") {
+          mesh.material = solidOccluderMat;
+          return;
+        }
+
+        if (mesh.name === "FloorBrassInlays") {
+          mesh.material = solidOccluderMat;
+          if (!mesh.userData.__wireAdded) {
+            mesh.userData.__wireAdded = true;
+            const edges = new THREE.EdgesGeometry(mesh.geometry, 15);
+            const wire = new THREE.LineSegments(edges, primaryWireMat);
+            mesh.add(wire);
+          }
+          return;
+        }
+
+        // 12. Showcase Artifact Centerpieces (Holographic Cybernetic Models)
+        if (mesh.name.startsWith("Artifact_")) {
+          anim.push(mesh);
+          mesh.material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.85,
+            blending: THREE.AdditiveBlending,
+          });
         } else {
-          const mat = mesh.material as THREE.MeshStandardMaterial;
-          if (mat && mat.isMeshStandardMaterial && !enhancedMats.has(mat)) {
-            enhancedMats.add(mat);
-            if (mat.name === "ObsidianStone" || mat.name === "ClassicalLimestone") {
-              mat.envMapIntensity = 0.04;
-              enhanceArchitecturalMaterial(mat, false);
-            } else if (mat.name === "NeroMarquinaMarble") {
-              mat.envMapIntensity = 0.08;
-              mat.roughness = 0.08;
-              enhanceArchitecturalMaterial(mat, true);
-            } else if (mat.name === "ArchitecturalBrass" || mat.name === "PureGold") {
-              mat.envMapIntensity = 0.65;
-            } else if (mat.name === "GlassVitrine") {
-              mat.transparent = true;
-              mat.opacity = 0.14;
-              mat.depthWrite = false;
-              mat.envMapIntensity = 0.35;
-              mat.needsUpdate = true;
+          // 13. General Classical Architecture (Columns, Pediment, Entablature, Arch Ribs, Stylobate)
+          mesh.material = solidOccluderMat;
+
+          if (!mesh.userData.__wireAdded) {
+            mesh.userData.__wireAdded = true;
+            try {
+              const isCol = mesh.name.includes("Col_");
+              const threshold = isCol ? 8 : 12;
+              const wireMat = isCol ? secondaryWireMat : primaryWireMat;
+              const edges = new THREE.EdgesGeometry(mesh.geometry, threshold);
+              const wireLines = new THREE.LineSegments(edges, wireMat);
+              mesh.add(wireLines);
+            } catch {
+              // Ignore degenerate geometries
             }
           }
         }
 
-        // Collect 3D showcase artifacts for continuous gentle rotation
-        if (mesh.name.startsWith("Artifact_")) {
-          anim.push(mesh);
-        }
-
-        // Register portal / Enter button for clicking in Exterior mode (code 99)
-        if (
-          mesh.name === "PlazaEnterButton" ||
-          mesh.name === "PortalGlowFrame" ||
-          mesh.name === "PortalDoorFrame" ||
-          mesh.name === "PortalSilhouetteFigure"
-        ) {
-          picks.push({ mesh, code: 99 });
-        }
-
-        // Register showcase plinths, vitrines, artifacts, and kiosks (codes 0..5)
+        // Register showcase plinths, vitrines, artifacts (codes 0..5)
         for (let i = 0; i < SHOWCASE_IDS.length; i++) {
           const id = SHOWCASE_IDS[i];
           const slug = SHOWCASE_SLUGS[i];
-          if (
-            mesh.name.includes(`_${id}`) ||
-            mesh.name.includes(`_${slug}`)
-          ) {
+          if (mesh.name.includes(`_${id}`) || mesh.name.includes(`_${slug}`)) {
             picks.push({ mesh, code: i });
             break;
           }
@@ -410,7 +522,16 @@ export default function BuildingFlow() {
 
     animatedNodes.current = anim;
     pickTargets.current = picks;
-  }, [scene, plazaMat]);
+  }, [
+    scene,
+    plazaMat,
+    solidOccluderMat,
+    primaryWireMat,
+    secondaryWireMat,
+    portalGlowMat,
+    silhouetteMat,
+    glassVitrineMat,
+  ]);
 
   // Raycast picker so clicking the portal enters the hall and clicking a showcase inspects it
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
@@ -434,9 +555,17 @@ export default function BuildingFlow() {
     };
   }, [camera, raycaster, ndc]);
 
-  // Restore default fog when leaving /flow
+  // Set deep void background and fog when in /flow
   useEffect(() => {
-    if (mode !== "flow") {
+    if (mode === "flow") {
+      threeScene.background = new THREE.Color("#000000");
+      const fog = threeScene.fog as THREE.FogExp2 | null;
+      if (fog && fog.isFogExp2) {
+        fog.color.set("#000000");
+        fog.density = 0.005;
+      }
+    } else {
+      threeScene.background = palette.bg;
       const fog = threeScene.fog as THREE.FogExp2 | null;
       if (fog && fog.isFogExp2) {
         fog.density = 0.045;
@@ -455,10 +584,10 @@ export default function BuildingFlow() {
     }
     if (!isFlowMode) return;
 
-    // Adjust scene fog density so the 54m colonnade, rotunda, and 36m hall read with depth
+    // Adjust scene fog density for exterior vs interior hall
     const fog = threeScene.fog as THREE.FogExp2 | null;
     if (fog && fog.isFogExp2) {
-      const targetDensity = flowView === "exterior" ? 0.005 : 0.0035;
+      const targetDensity = flowView === "exterior" ? 0.0055 : 0.0035;
       fog.density = THREE.MathUtils.damp(fog.density, targetDensity, 4, Math.min(dt, 0.1));
     }
 
@@ -476,20 +605,20 @@ export default function BuildingFlow() {
     const walk = sceneState.flow.walk;
 
     if (flowView === "exterior") {
-      // Wide exterior establishing shot framing "THE STUDIO", full pediment, colonnade wings, rotunda & obsidian plaza
-      const camZ = isMobile ? 37.5 : 33.5;
+      // Wide architectural establishing shot framing full octastyle portico, pediment, labels, and perspective lines
+      const camZ = isMobile ? 38.0 : 34.0;
       sceneState.flow.pos = [
         ox + pan * 8.0 + mouseX * 1.2,
-        oy + 1.95 + tilt * 2.0 + mouseY * 0.4,
+        oy + 2.3 + tilt * 1.8 + mouseY * 0.4,
         oz + camZ,
       ];
       sceneState.flow.look = [
         ox + pan * 14.0 + mouseX * 1.8,
-        oy + 4.8 + tilt * 3.5 + mouseY * 0.55,
+        oy + 5.1 + tilt * 3.2 + mouseY * 0.55,
         oz + 1.0,
       ];
     } else if (flowView === "hall") {
-      // Positioned at z = -2.4 (in front of PortalSilhouetteFigure at z = -1.65), looking down the 36m nave
+      // Positioned inside looking down the 36m nave gallery
       sceneState.flow.pos = [
         ox + pan * 1.6 + mouseX * 0.45,
         oy + 2.15 + tilt * 0.8 + mouseY * 0.25,
@@ -517,18 +646,52 @@ export default function BuildingFlow() {
 
   return (
     <group ref={group} position={FLOW_ORIGIN} visible={false}>
-      {/* Sky / Ground Architectural Hemisphere Fill */}
-      <hemisphereLight args={["#b8d0f0", "#16141c", 0.85]} />
+      {/* Subtle ambient for CAD depth contrast */}
+      <ambientLight intensity={0.15} />
 
-      {/* Directional Moonlight Key (with target mounted in local space) */}
-      <primitive object={lights.moonKey} />
-      <primitive object={lights.moonKey.target} />
-
-      {/* The Exported Architecture & Gallery Model */}
+      {/* The 3D Architecture & Exhibition Model */}
       <primitive object={scene} />
 
-      {/* Stars & Galaxies Cosmic Sky */}
-      <CosmicSky />
+      {/* Flanking Entrance Bollard Light Posts (Exterior) */}
+      {flowView === "exterior" && <EntranceBollards />}
+
+      {/* 3D Floating Architectural Blueprint Labels (Exterior) */}
+      {flowView === "exterior" && (
+        <>
+          <ArchitecturalLabel3D
+            text="SYNAPX STUDIO"
+            position={[0, 14.6, 3.2]}
+            scale={1.1}
+            opacity={0.92}
+          />
+          <ArchitecturalLabel3D
+            text="LOBBY"
+            position={[0, 11.4, 2.6]}
+            scale={0.95}
+            hasLeader={true}
+            leaderTo={[0, 9.8, 2.6]}
+          />
+          <ArchitecturalLabel3D
+            text="THE GALLERY"
+            position={[0, 10.4, 2.6]}
+            scale={0.65}
+            opacity={0.75}
+          />
+          <ArchitecturalLabel3D
+            text="ROTUNDA"
+            position={[25.2, 13.5, 1.2]}
+            scale={0.85}
+            opacity={0.88}
+          />
+          <ArchitecturalLabel3D
+            text="THUFAIL AHAMED"
+            position={[0, 8.28, 4.05]}
+            scale={0.52}
+            letterSpacing={3}
+            opacity={0.95}
+          />
+        </>
+      )}
     </group>
   );
 }

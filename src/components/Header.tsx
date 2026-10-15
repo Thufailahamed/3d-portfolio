@@ -29,6 +29,7 @@ export default function Header() {
   const menu = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const onJourney = JOURNEY.has(pathname) && !lite;
+  const onFlow = pathname === "/flow";
   // on the hero the giant name *is* the logo
   const hideLogo = onJourney && chapter === "hero";
 
@@ -78,60 +79,62 @@ export default function Header() {
 
   return (
     <>
-      <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-center justify-between px-gutter pt-5">
-        <Link
-          href={lite ? "/lite" : "/"}
-          onClick={(e) => onJourney && go(e, NAV[0])}
-          aria-label={`${person.name} — home`}
-          className={`display pointer-events-auto text-lg transition-opacity duration-500 md:text-xl ${
-            hideLogo ? "opacity-0" : "opacity-100"
-          }`}
-          tabIndex={hideLogo ? -1 : undefined}
-        >
-          {person.shortName}
-        </Link>
-
-        <div className="pointer-events-auto flex items-center gap-2">
-          {person.available && (
-            <p className="label hidden items-center gap-2 rounded-full border border-fg/15 px-3 py-2 !text-fg/80 md:flex">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-60" />
-                <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
-              </span>
-              Available
-            </p>
-          )}
-          {!lite && (
-            <button
-              type="button"
-              aria-pressed={sound}
-              aria-label={sound ? "Turn sound off" : "Turn sound on"}
-              onClick={() => useApp.getState().set({ sound: !sound })}
-              className="flex h-9 w-9 items-center justify-center gap-[2px] rounded-full border border-fg/15 transition-colors hover:border-fg/50"
-            >
-              {[0, 1, 2, 3].map((i) => (
-                <span
-                  key={i}
-                  aria-hidden
-                  className={`sound-bar w-[2px] rounded-full bg-fg ${sound ? "is-on" : ""}`}
-                  style={{ animationDelay: `${i * 0.13}s` }}
-                />
-              ))}
-            </button>
-          )}
-          <button
-            ref={toggle}
-            type="button"
-            aria-expanded={open}
-            aria-controls="site-menu"
-            aria-label={open ? "Close menu" : "Open menu"}
-            onClick={() => useApp.getState().set({ menuOpen: !open })}
-            className="label flex h-9 min-w-9 items-center justify-center rounded-full border border-fg/15 px-3 !text-fg transition-colors hover:bg-fg hover:!text-bg"
+      {!onFlow && (
+        <header className="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-center justify-between px-gutter pt-5">
+          <Link
+            href={lite ? "/lite" : "/"}
+            onClick={(e) => onJourney && go(e, NAV[0])}
+            aria-label={`${person.name} — home`}
+            className={`display pointer-events-auto text-lg transition-opacity duration-500 md:text-xl ${
+              hideLogo ? "opacity-0" : "opacity-100"
+            }`}
+            tabIndex={hideLogo ? -1 : undefined}
           >
-            {open ? "Close" : "···"}
-          </button>
-        </div>
-      </header>
+            {person.shortName}
+          </Link>
+
+          <div className="pointer-events-auto flex items-center gap-2">
+            {person.available && (
+              <p className="label hidden items-center gap-2 rounded-full border border-fg/15 px-3 py-2 !text-fg/80 md:flex">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inset-0 animate-ping rounded-full bg-accent opacity-60" />
+                  <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
+                </span>
+                Available
+              </p>
+            )}
+            {!lite && (
+              <button
+                type="button"
+                aria-pressed={sound}
+                aria-label={sound ? "Turn sound off" : "Turn sound on"}
+                onClick={() => useApp.getState().set({ sound: !sound })}
+                className="flex h-9 w-9 items-center justify-center gap-[2px] rounded-full border border-fg/15 transition-colors hover:border-fg/50"
+              >
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    aria-hidden
+                    className={`sound-bar w-[2px] rounded-full bg-fg ${sound ? "is-on" : ""}`}
+                    style={{ animationDelay: `${i * 0.13}s` }}
+                  />
+                ))}
+              </button>
+            )}
+            <button
+              ref={toggle}
+              type="button"
+              aria-expanded={open}
+              aria-controls="site-menu"
+              aria-label={open ? "Close menu" : "Open menu"}
+              onClick={() => useApp.getState().set({ menuOpen: !open })}
+              className="label flex h-9 min-w-9 items-center justify-center rounded-full border border-fg/15 px-3 !text-fg transition-colors hover:bg-fg hover:!text-bg"
+            >
+              {open ? "Close" : "···"}
+            </button>
+          </div>
+        </header>
+      )}
 
       <div
         ref={menu}
