@@ -1,3 +1,4 @@
+import { nightGlsl, valueNoiseGlsl } from "./night";
 import { snoise3 } from "./noise";
 
 /**
@@ -49,6 +50,8 @@ varying vec3 vBary;
 varying vec2 vScreen;
 varying float vY;
 ${snoise3}
+${valueNoiseGlsl}
+${nightGlsl}
 
 // crisp, pixel-width facet outline plus a soft halo
 float edgeLine(float px){
@@ -61,11 +64,15 @@ float edgeHalo(){
   return exp(-m * 22.0);
 }
 
-// soft sky/floor gradient only: flat facets would snap to white against anything sharper
+// what the glass reflects: the night sky above, the dark valley below, and the moon
 vec3 env(vec3 R){
-  float top = smoothstep(-0.2, 1.0, R.y);
-  float bounce = smoothstep(0.0, -1.0, R.y);
-  return vec3(0.75, 0.82, 0.9) * top * top * 0.12 + uTint * bounce * 0.04;
+  vec3 sky = nightSky(normalize(vec3(R.x, max(R.y, 0.0), R.z))) * 3.0;
+  vec3 ground = vec3(0.004, 0.005, 0.007) + uTint * 0.02;
+  return mix(ground, sky, smoothstep(-0.08, 0.05, R.y));
+}
+// a thin-film/dispersion rainbow for grazing facets
+vec3 spectrum(float x){
+  return clamp(abs(fract(x + vec3(0.0, 0.333, 0.667)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
 }
 
 vec3 sampleImg(vec2 uv, vec2 off){
@@ -104,25 +111,31 @@ void main(){
   float mask = 1.0 - smoothstep(0.25, 1.0, r);
   float core = exp(-r * r * 2.2);
 
-  col = img * mask * (1.0 + uPulse * 0.15);
-  col += uTint * core * (0.04 + uPulse * 0.12);
-  col *= mix(1.0, 0.45, fres);                       // grazing facets go smoky
-  col += uTint * 0.012;                              // body colour of the glass
-  col += env(reflect(-V, N)) * (0.05 + 0.7 * fres);
-  // cut-gem read: every facet catches a key light differently, a few flash a glint
-  vec3 L = normalize(vec3(-0.45, 0.8, 0.55));
-  float facet = max(dot(N, L), 0.0);
-  float glint = pow(max(dot(reflect(-V, N), L), 0.0), 28.0);
-  col += uTint * facet * facet * 0.09 + vec3(0.9, 0.95, 1.0) * glint * 0.45;
-  col += (uTint * 0.45 + 0.22) * line * 0.38 + uTint * halo * 0.03;
-  col += uTint * pow(fres, 1.5) * 0.12;
-  alpha = clamp(0.7 + fres * 0.28 + line * 0.25 + glint * 0.2, 0.0, 1.0);
+  // the project glows inside like a lit screen: bright, but never blooming into a blob
+  img = pow(img, vec3(1.2)) * 0.36;
+  col = img * mask * (1.0 + uPulse * 0.25);
+  col += uTint * core * (0.03 + uPulse * 0.12);
+  col *= mix(1.0, 0.35, fres);                       // grazing facets reflect more than they let through
+  col += uTint * 0.008;                              // body colour of the glass
+  vec3 R = reflect(-V, N);
+  col += env(R) * (0.04 + 0.96 * fres);
+  // the moon in each facet: a sharp glint where it lines up
+  float m = max(dot(R, MOON_DIR), 0.0);
+  float glint = pow(m, 300.0) * 5.0 + pow(m, 24.0) * 0.12;
+  col += MOON_LIGHT * glint;
+  // dispersion: grazing facets split the light into faint colour
+  col += spectrum(dot(N, V) * 2.2 + dot(N, vec3(0.3, 0.6, 0.1))) * pow(fres, 1.4) * 0.07;
+  // facet edges: thin, bright only where they catch light
+  col += (vec3(0.8, 0.85, 0.95) * (0.025 + glint * 0.6) + uTint * 0.035) * line;
+  col += uTint * halo * 0.015;
+  // clear quartz: the image holds the eye; elsewhere the world shows through
+  alpha = clamp(0.28 + mask * 0.45 + fres * 0.4 + line * 0.12 + glint * 0.2, 0.0, 1.0);
 #endif
 
 #ifdef LAYER_BACK
   // inner walls: dark tinted glass with faint edges catching the core's light
-  col = uTint * (0.015 + 0.03 * fres) + (uTint * 0.35 + 0.08) * line * 0.22 + uTint * halo * 0.015;
-  col += env(reflect(-V, N)) * 0.04;
+  col = uTint * (0.01 + 0.02 * fres) + (uTint * 0.3 + 0.1) * line * 0.1 + uTint * halo * 0.01;
+  col += env(reflect(-V, N)) * 0.08;
   alpha = 0.45;
 #endif
 
@@ -135,7 +148,7 @@ void main(){
 
   // keep everything but the image under the bloom threshold: no flares
 #ifdef LAYER_FRONT
-  col = min(col, vec3(0.8));
+  col = min(col, vec3(3.0));   // the moon's glints may bloom; nothing else here reaches the threshold
 #else
   col = min(col, vec3(0.3));
 #endif

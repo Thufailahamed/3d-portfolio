@@ -7,18 +7,13 @@ import * as THREE from "three";
 import { projects } from "@/content/site";
 import { chapter, PROJECTS_ORIGIN } from "@/lib/chapters";
 import { gsap } from "@/lib/gsap";
-import { perlin } from "@/lib/perlin";
-import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { CRYSTALS_URL, crystalFromMesh } from "../crystal";
-import { useCursorRay } from "../cursor";
-import { palette } from "../palette";
-import { riverInside } from "../river";
 import { crystalFrag, crystalVert, floorGlowFrag, glowFrag, glowVert, planeVert } from "../shaders/crystal";
-import { duneFrag, duneVert } from "../shaders/projects";
-import { glitterFrag, glitterVert } from "../shaders/mountains";
-import { floorVert, groundFrag, rockFrag, rockVert, streamVert, waterFrag } from "../shaders/river";
+import { skyFrag, skyVert } from "../shaders/night";
+import { bankFrag, bankVert, pineFrag, pineVert, rockFrag, rockVert, waterFrag, waterVert } from "../shaders/valley";
+import { bankGeometry, boulderGeometry, pineGeometry, scatter } from "../valley";
 import Mountains from "./Mountains";
 
 export const PRISM_Y = 1.85;
@@ -26,95 +21,70 @@ const COVERS = projects.map((p) => p.cover);
 /** World position of the crystal (lights the near mountain slopes). */
 const CRYSTAL_WORLD: [number, number, number] = [PROJECTS_ORIGIN[0], PROJECTS_ORIGIN[1] + PRISM_Y, PROJECTS_ORIGIN[2]];
 
-/** Chapter 4 — a layered crystal hovering over a rock in a mountain river, holding the active project. */
+/** Chapter 4 — a crystal hovering over a river stone in a moonlit mountain valley, holding the active project. */
 export default function Projects() {
   const group = useRef<THREE.Group>(null);
-  const isMobile = useApp((s) => s.isMobile);
-  useCursorRay();
   const visibleRange = useMemo(() => {
     const tu = chapter("tunnel");
     const pr = chapter("projects");
     return [tu.end - 0.002, pr.end + 0.004] as const;
   }, []);
 
-  useFrame(() => {
-    const p = sceneState.p;
-    if (group.current) group.current.visible = p >= visibleRange[0] && p <= visibleRange[1];
-  });
-
-  return (
-    <group ref={group} position={PROJECTS_ORIGIN} visible={false}>
-      <Mountains crystal={CRYSTAL_WORLD} />
-      <Dune count={isMobile ? 8000 : 20000} />
-      <Crystal />
-    </group>
-  );
-}
-
-function Dune({ count }: { count: number }) {
-  const dpr = useThree((s) => s.viewport.dpr);
-  const { geometry, material } = useMemo(() => {
-    const random = rng(5);
-    const pos = new Float32Array(count * 3);
-    const rnd = new Float32Array(count);
-    for (let i = 0; i < count; ) {
-      // denser near the crystal, thinning toward the horizon
-      const r = Math.pow(random(), 0.65) * 40;
-      const a = random() * Math.PI * 2;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r * 0.9 - 6;
-      // the dune lives on the banks, never on the water
-      if (riverInside(x, z) > -0.2) continue;
-      pos[i * 3] = x;
-      pos[i * 3 + 2] = z;
-      rnd[i] = random();
-      i++;
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    geometry.setAttribute("aRand", new THREE.BufferAttribute(rnd, 1));
-    const material = new THREE.ShaderMaterial({
-      vertexShader: duneVert,
-      fragmentShader: duneFrag,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      uniforms: {
-        uTime: { value: 0 },
-        uSize: { value: 22 },
-        uPixelRatio: { value: dpr },
-        uTint: { value: new THREE.Color(projects[0].tint) },
-        uOpacity: { value: 1 },
-      },
-    });
-    return { geometry, material };
-  }, [count, dpr]);
-
-  useEffect(
-    () => () => {
-      geometry.dispose();
-      material.dispose();
-    },
-    [geometry, material],
-  );
-
-  // the dune picks up the active project's tint
+  // the valley's clock and the active project's colour, shared by the sky and the ground
+  const env = useMemo(() => ({ uTime: { value: 0 }, uTint: { value: new THREE.Color(projects[0].tint) } }), []);
   useEffect(
     () =>
       useApp.subscribe((s, prev) => {
         if (s.activeProject === prev.activeProject) return;
         const c = new THREE.Color(projects[s.activeProject].tint);
-        gsap.to(material.uniforms.uTint.value, { r: c.r, g: c.g, b: c.b, duration: 1.2, ease: "power2.inOut" });
+        gsap.to(env.uTint.value, { r: c.r, g: c.g, b: c.b, duration: 1.2, ease: "power2.inOut" });
       }),
-    [material],
+    [env],
   );
 
   useFrame((_, dt) => {
-    if (!material) return;
-    material.uniforms.uTime.value += dt;
+    const p = sceneState.p;
+    const on = p >= visibleRange[0] && p <= visibleRange[1];
+    if (group.current) group.current.visible = on;
+    if (on) env.uTime.value += dt;
   });
 
-  return <points geometry={geometry} material={material} frustumCulled={false} />;
+  return (
+    <group ref={group} position={PROJECTS_ORIGIN} visible={false}>
+      <Sky env={env} />
+      <Mountains crystal={CRYSTAL_WORLD} />
+      <Valley env={env} />
+      <Crystal />
+    </group>
+  );
+}
+
+type Env = { uTime: THREE.IUniform<number>; uTint: THREE.IUniform<THREE.Color> };
+
+/** Night sky: a dome that travels with the camera, drawn behind everything. */
+function Sky({ env }: { env: Env }) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: skyVert,
+        fragmentShader: skyFrag,
+        side: THREE.BackSide,
+        depthWrite: false,
+        uniforms: { uTime: env.uTime, uTint: env.uTint },
+      }),
+    [env],
+  );
+  useEffect(() => () => material.dispose(), [material]);
+  useFrame(({ camera }) => {
+    const m = mesh.current;
+    if (m?.parent) m.position.copy(m.parent.worldToLocal(m.position.copy(camera.position)));
+  });
+  return (
+    <mesh ref={mesh} material={material} renderOrder={-10} frustumCulled={false}>
+      <sphereGeometry args={[90, 48, 32]} />
+    </mesh>
+  );
 }
 
 type Mats = ReturnType<typeof crystalMaterials>;
@@ -159,7 +129,7 @@ function crystalMaterials(shared: Record<string, THREE.IUniform>, reflect: boole
         uPulse: shared.uPulse,
         uTime: shared.uTime,
         uSize: { value: 1.25 },
-        uIntensity: { value: reflect ? 0.05 : 0.2 },
+        uIntensity: { value: reflect ? 0.02 : 0.07 },
       },
       transparent: true,
       depthWrite: false,
@@ -300,7 +270,6 @@ function Crystal() {
       <group scale={[1, -1, 1]}>
         <CrystalBody geometry={geometry} mats={mats.mirror} motion={motion} order={2} />
       </group>
-      <Riverbed shared={shared} />
       <mesh rotation-x={-Math.PI / 2} position-y={0.02} material={floorMat} renderOrder={9}>
         <planeGeometry args={[7, 7]} />
       </mesh>
@@ -353,50 +322,110 @@ function CrystalBody({
   );
 }
 
-/** Faceted stone: a jittered icosphere, squashed, with its top planed flat. */
-function rockGeometry(seed: number, scale: [number, number, number], top: number) {
-  const n = perlin(seed);
-  const g = new THREE.IcosahedronGeometry(1, 2); // non-indexed, so normals come out flat per facet
-  const p = g.attributes.position as THREE.BufferAttribute;
-  const v = new THREE.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i);
-    // displacement is a pure function of position, so shared corners stay welded
-    const d = 1 + 0.2 * n(v.x * 1.4 + v.z * 0.6 + 3, v.y * 1.4) + 0.08 * n(v.x * 4 + 1, v.z * 4 + v.y * 2);
-    v.multiplyScalar(d).multiply(new THREE.Vector3(...scale));
-    v.y = Math.min(v.y, top);
-    p.setXYZ(i, v.x, v.y, v.z);
-  }
-  g.computeVertexNormals();
-  return g;
+const floorY = PROJECTS_ORIGIN[1];
+
+/** One instanced set (real + mirrored) of rocks or trees. */
+function Scatter({
+  geometry,
+  mats,
+  items,
+  place,
+}: {
+  geometry: THREE.BufferGeometry;
+  mats: THREE.ShaderMaterial[];
+  items: ReturnType<typeof scatter>;
+  place: (it: ReturnType<typeof scatter>[number], o: THREE.Object3D) => void;
+}) {
+  const real = useRef<THREE.InstancedMesh>(null);
+  const mirrored = useRef<THREE.InstancedMesh>(null);
+  useEffect(() => {
+    const o = new THREE.Object3D();
+    for (const im of [real.current, mirrored.current]) {
+      if (!im) continue;
+      items.forEach((it, i) => {
+        o.position.set(0, 0, 0);
+        o.rotation.set(0, 0, 0);
+        o.scale.setScalar(1);
+        place(it, o);
+        o.updateMatrix();
+        im.setMatrixAt(i, o.matrix);
+      });
+      im.instanceMatrix.needsUpdate = true;
+    }
+  }, [items, place]);
+  return (
+    <>
+      <instancedMesh ref={real} args={[geometry, mats[0], items.length]} frustumCulled={false} />
+      <group scale={[1, -1, 1]}>
+        <instancedMesh ref={mirrored} args={[geometry, mats[1], items.length]} frustumCulled={false} />
+      </group>
+    </>
+  );
 }
 
-/** The river: opaque banks, a reflective water surface, and the stones the crystal hovers over. */
-function Riverbed({ shared }: { shared: Record<string, THREE.IUniform> }) {
-  // floor shaders read the group-local XZ straight from the vertices
-  const plane = useMemo(() => new THREE.PlaneGeometry(140, 80).rotateX(-Math.PI / 2).translate(0, 0, -22), []);
-  const { ground, water, rocks, rockMats } = useMemo(() => {
-    const surface = (frag: string, opts: THREE.ShaderMaterialParameters = {}) =>
-      new THREE.ShaderMaterial({
-        vertexShader: floorVert,
-        fragmentShader: frag,
-        uniforms: { uTint: shared.uTint, uBg: { value: palette.bg } },
-        ...opts,
-      });
-    const rockMat = (reflect: boolean) =>
-      new THREE.ShaderMaterial({
-        vertexShader: rockVert,
-        fragmentShader: rockFrag,
-        uniforms: {
-          uTint: shared.uTint,
-          uFloorY: shared.uFloorY,
-          uLight: { value: new THREE.Vector3(...CRYSTAL_WORLD) },
-          uReflect: { value: reflect ? 1 : 0 },
-        },
-      });
+/** The valley floor: banks, the river, the crystal's stone, boulders and pines (all mirrored in the water). */
+function Valley({ env }: { env: Env }) {
+  const isMobile = useApp((s) => s.isMobile);
+
+  const geo = useMemo(
+    () => ({
+      bank: bankGeometry(isMobile ? 170 : 300, isMobile ? 100 : 180),
+      water: new THREE.PlaneGeometry(140, 80).rotateX(-Math.PI / 2).translate(0, 0, -22),
+      stone: boulderGeometry(3, [1.0, 0.62, 0.86], 0.3, isMobile ? 4 : 5),
+      boulder: boulderGeometry(8, [1, 0.72, 0.9], Infinity, 3),
+      pine: pineGeometry(5),
+    }),
+    [isMobile],
+  );
+
+  const items = useMemo(
+    () => ({
+      // stepping stones in the shallows around the crystal's rock
+      pebbles: [
+        { x: -2.0, z: 1.2, y: 0, r: 0.2, s: 0.34 },
+        { x: 2.3, z: -0.9, y: 0, r: 0.6, s: 0.28 },
+        { x: 1.2, z: 2.2, y: 0, r: 0.9, s: 0.18 },
+        { x: -1.1, z: -2.4, y: 0, r: 0.4, s: 0.22 },
+        { x: 3.1, z: 1.6, y: 0, r: 0.1, s: 0.16 },
+      ],
+      boulders: scatter(7, isMobile ? 26 : 48, -0.2, 9, [-26, 9], 3.2),
+      pines: scatter(13, isMobile ? 110 : 220, 4, 40, [-46, -5], 8),
+    }),
+    [isMobile],
+  );
+
+  const mats = useMemo(() => {
+    const make = (vertexShader: string, fragmentShader: string, extra: Record<string, THREE.IUniform> = {}) =>
+      [0, 1].map(
+        (reflect) =>
+          new THREE.ShaderMaterial({
+            vertexShader,
+            fragmentShader,
+            defines: reflect ? { MIRROR: 1 } : {},
+            uniforms: {
+              uTime: env.uTime,
+              uTint: env.uTint,
+              uCrystal: { value: new THREE.Vector3(...CRYSTAL_WORLD) },
+              uFloorY: { value: floorY },
+              uReflect: { value: reflect },
+              ...extra,
+            },
+          }),
+      );
     return {
-      ground: surface(groundFrag),
-      water: surface(waterFrag, {
+      bank: make(bankVert, bankFrag),
+      stone: make(rockVert, rockFrag, { uPower: { value: 2.2 } }),
+      boulder: make(rockVert, rockFrag, { uPower: { value: 1.6 } }),
+      pine: make(pineVert, pineFrag),
+      water: new THREE.ShaderMaterial({
+        vertexShader: waterVert,
+        fragmentShader: waterFrag,
+        uniforms: {
+          uTime: env.uTime,
+          uTint: env.uTint,
+          uCrystal: { value: new THREE.Vector3(...CRYSTAL_WORLD) },
+          uOrigin: { value: new THREE.Vector3(...PROJECTS_ORIGIN) },
+        },
         transparent: true,
         depthWrite: false,
         blending: THREE.CustomBlending,
@@ -404,157 +433,56 @@ function Riverbed({ shared }: { shared: Record<string, THREE.IUniform> }) {
         blendSrc: THREE.OneFactor,
         blendDst: THREE.OneMinusSrcAlphaFactor,
       }),
-      rocks: [
-        { geo: rockGeometry(3, [1.0, 0.62, 0.86], 0.3), pos: [0, -0.12, 0] as const },
-        { geo: rockGeometry(8, [0.34, 0.3, 0.3], 0.16), pos: [-2.0, -0.08, 1.2] as const },
-        { geo: rockGeometry(12, [0.26, 0.22, 0.3], 0.12), pos: [2.3, -0.07, -0.9] as const },
-        { geo: rockGeometry(19, [0.18, 0.16, 0.16], 0.08), pos: [1.2, -0.05, 2.2] as const },
-      ],
-      rockMats: [rockMat(false), rockMat(true)],
     };
-  }, [shared]);
+  }, [env]);
 
   useEffect(
     () => () => {
-      plane.dispose();
-      ground.dispose();
-      water.dispose();
-      for (const r of rocks) r.geo.dispose();
-      for (const m of rockMats) m.dispose();
+      for (const g of Object.values(geo)) g.dispose();
+      for (const m of Object.values(mats)) (Array.isArray(m) ? m : [m]).forEach((x) => x.dispose());
     },
-    [plane, ground, water, rocks, rockMats],
+    [geo, mats],
   );
 
-  const stones = (mat: THREE.Material) =>
-    rocks.map((r, i) => <mesh key={i} geometry={r.geo} material={mat} position={[r.pos[0], r.pos[1], r.pos[2]]} />);
-
-  return (
-    <>
-      <mesh geometry={plane} material={ground} />
-      <mesh geometry={plane} material={water} renderOrder={8} />
-      {stones(rockMats[0])}
-      <group scale={[1, -1, 1]}>{stones(rockMats[1])}</group>
-      <RiverGlitter rocks={rocks} shared={shared} />
-    </>
-  );
-}
-
-type Rock = { geo: THREE.BufferGeometry; pos: readonly [number, number, number] };
-
-/** Glitter for the river (drifting downstream) and the stones (lit by the crystal), like the mountains. */
-function RiverGlitter({ rocks, shared }: { rocks: Rock[]; shared: Record<string, THREE.IUniform> }) {
-  const isMobile = useApp((s) => s.isMobile);
-  const dpr = useThree((s) => s.viewport.dpr);
-
-  const { streamGeo, stoneGeo } = useMemo(() => {
-    const random = rng(41);
-    const hueNoise = perlin(4);
-
-    // stream: crowded along the banks, sparse mid-stream; the shader does the flowing
-    const count = isMobile ? 6000 : 12000;
-    const sp = new Float32Array(count * 3);
-    const across = new Float32Array(count);
-    const sr = new Float32Array(count);
-    const sh = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const z = -13 + random() * 23;
-      sp[i * 3 + 2] = z;
-      across[i] = (random() < 0.5 ? -1 : 1) * Math.pow(random(), 0.45);
-      sr[i] = random();
-      sh[i] = hueNoise(across[i] * 0.4, z * 0.06) * 0.5 + 0.5;
-    }
-    const streamGeo = new THREE.BufferGeometry();
-    streamGeo.setAttribute("position", new THREE.BufferAttribute(sp, 3));
-    streamGeo.setAttribute("aAcross", new THREE.BufferAttribute(across, 1));
-    streamGeo.setAttribute("aRand", new THREE.BufferAttribute(sr, 1));
-    streamGeo.setAttribute("aHue", new THREE.BufferAttribute(sh, 1));
-
-    // stones: area-weighted points on every facet above the water, brighter where the crystal lights them
-    const light = new THREE.Vector3(0, PRISM_Y, 0);
-    const density = isMobile ? 260 : 750;
-    const pos: number[] = [];
-    const lit: number[] = [];
-    const rnd: number[] = [];
-    const hue: number[] = [];
-    const a = new THREE.Vector3();
-    const b = new THREE.Vector3();
-    const c = new THREE.Vector3();
-    const n = new THREE.Vector3();
-    const q = new THREE.Vector3();
-    const L = new THREE.Vector3();
-    for (const rock of rocks) {
-      const off = new THREE.Vector3(...rock.pos);
-      const attr = rock.geo.attributes.position as THREE.BufferAttribute;
-      for (let f = 0; f < attr.count; f += 3) {
-        a.fromBufferAttribute(attr, f).add(off);
-        b.fromBufferAttribute(attr, f + 1).add(off);
-        c.fromBufferAttribute(attr, f + 2).add(off);
-        n.crossVectors(q.subVectors(b, a), L.subVectors(c, a));
-        const area = n.length() / 2;
-        n.normalize();
-        let k = area * density;
-        for (; k > 0; k--) {
-          if (k < 1 && random() > k) break;
-          let u = random();
-          let v = random();
-          if (u + v > 1) {
-            u = 1 - u;
-            v = 1 - v;
-          }
-          q.copy(a).addScaledVector(b.clone().sub(a), u).addScaledVector(c.clone().sub(a), v);
-          if (q.y < 0.01) continue;
-          L.subVectors(light, q);
-          const d = L.length();
-          const l = Math.min(1, (Math.max(0, n.dot(L.normalize())) * 2.2) / (1 + d * d * 0.5));
-          pos.push(q.x, q.y + 0.004, q.z);
-          lit.push(0.12 + 0.88 * l);
-          rnd.push(random());
-          hue.push(hueNoise(q.x * 0.8, q.z * 0.8) * 0.5 + 0.5);
-        }
-      }
-    }
-    const stoneGeo = new THREE.BufferGeometry();
-    stoneGeo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    stoneGeo.setAttribute("aLit", new THREE.Float32BufferAttribute(lit, 1));
-    stoneGeo.setAttribute("aRand", new THREE.Float32BufferAttribute(rnd, 1));
-    stoneGeo.setAttribute("aHue", new THREE.Float32BufferAttribute(hue, 1));
-    return { streamGeo, stoneGeo };
-  }, [rocks, isMobile]);
-
-  const [streamMat, stoneMat] = useMemo(() => {
-    const points = (vertexShader: string, size: number, extra: Record<string, THREE.IUniform> = {}) =>
-      new THREE.ShaderMaterial({
-        vertexShader,
-        fragmentShader: glitterFrag,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        uniforms: {
-          uTime: shared.uTime,
-          uTint: shared.uTint,
-          uSize: { value: size },
-          uPixelRatio: { value: dpr },
-          ...extra,
-        },
-      });
-    // stones share the mountain glitter shader; uHover 0 keeps them out of the cursor effect
-    return [points(streamVert, 22), points(glitterVert, 12, { uReflect: { value: 0 }, uHover: { value: 0 } })];
-  }, [shared, dpr]);
-
-  useEffect(
-    () => () => {
-      streamGeo.dispose();
-      stoneGeo.dispose();
-      streamMat.dispose();
-      stoneMat.dispose();
+  const placePebble = useMemo(
+    () => (it: ReturnType<typeof scatter>[number], o: THREE.Object3D) => {
+      o.position.set(it.x, -0.06, it.z);
+      o.rotation.set(0, it.r * 6.28, 0);
+      o.scale.set(it.s, it.s * 0.8, it.s * 0.9);
     },
-    [streamGeo, stoneGeo, streamMat, stoneMat],
+    [],
+  );
+  const placeBoulder = useMemo(
+    () => (it: ReturnType<typeof scatter>[number], o: THREE.Object3D) => {
+      const s = 0.15 + Math.pow(it.s, 2.2) * 0.85;
+      o.position.set(it.x, it.y - s * 0.3, it.z);
+      o.rotation.set((it.r - 0.5) * 0.5, it.r * 6.28, (it.s - 0.5) * 0.4);
+      o.scale.set(s, s * (0.6 + 0.4 * it.r), s * (0.8 + 0.3 * it.s));
+    },
+    [],
+  );
+  const placePine = useMemo(
+    () => (it: ReturnType<typeof scatter>[number], o: THREE.Object3D) => {
+      const s = 0.9 + Math.pow(it.s, 1.5) * 1.6;
+      o.position.set(it.x, it.y - 0.05, it.z);
+      o.rotation.set((it.r - 0.5) * 0.06, it.r * 6.28, 0);
+      o.scale.set(s * (0.85 + 0.3 * it.r), s, s * (0.85 + 0.3 * it.r));
+    },
+    [],
   );
 
   return (
     <>
-      <points geometry={streamGeo} material={streamMat} frustumCulled={false} renderOrder={9} />
-      <points geometry={stoneGeo} material={stoneMat} frustumCulled={false} renderOrder={9} />
+      <mesh geometry={geo.bank} material={mats.bank[0]} />
+      <mesh geometry={geo.stone} material={mats.stone[0]} position={[0, -0.12, 0]} />
+      <group scale={[1, -1, 1]}>
+        <mesh geometry={geo.bank} material={mats.bank[1]} />
+        <mesh geometry={geo.stone} material={mats.stone[1]} position={[0, -0.12, 0]} />
+      </group>
+      <Scatter geometry={geo.boulder} mats={mats.boulder} items={items.pebbles} place={placePebble} />
+      <Scatter geometry={geo.boulder} mats={mats.boulder} items={items.boulders} place={placeBoulder} />
+      <Scatter geometry={geo.pine} mats={mats.pine} items={items.pines} place={placePine} />
+      <mesh geometry={geo.water} material={mats.water} renderOrder={8} />
     </>
   );
 }
