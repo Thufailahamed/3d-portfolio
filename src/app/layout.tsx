@@ -4,6 +4,7 @@ import Cursor from "@/components/Cursor";
 import Curtain from "@/components/Curtain";
 import ExperienceGate from "@/components/ExperienceGate";
 import Header from "@/components/Header";
+import WeatherSwitch from "@/components/WeatherSwitch";
 import SmoothScroll from "@/components/SmoothScroll";
 import { person } from "@/content/site";
 import Toast from "@/components/Toast";
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <SmoothScroll />
         <ExperienceGate />
         <Header />
+        <WeatherSwitch />
         <main id="main" className="relative z-10">
           {children}
         </main>

@@ -10,9 +10,11 @@ varying vec3 vN;
 varying vec3 vV;
 varying vec3 vWorld;
 varying vec3 vLocal;
+varying vec3 vWN;
 void main(){
   #include <color_vertex>
   vLocal = position;
+  vWN = normalize(mat3(modelMatrix) * normal);
   vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   vN = normalize(normalMatrix * normal);
@@ -34,10 +36,14 @@ uniform vec3 uHoverPos;
 uniform float uHoverAmt;
 uniform vec3 uRune;
 uniform float uRunesAll;
+uniform float uDay;
+uniform float uRain;
+uniform float uFlash;
 varying vec3 vN;
 varying vec3 vV;
 varying vec3 vWorld;
 varying vec3 vLocal;
+varying vec3 vWN;
 
 vec3 hash3(vec3 p){
   p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6)));
@@ -64,6 +70,18 @@ vec2 cells(vec3 x, out float id){
 void main(){
   vec3 col = vColor.rgb * uExposure;
   float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.5);
+
+  // weather. The bake is radiance, so its hue stands in for the surface colour:
+  // daylight keeps the sun and fills the shadows from the sky; the storm puts the sun out
+  float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  vec3 hue = (col + 0.003) / (lum + 0.003);
+  float sky = 0.6 + 0.4 * normalize(vWN).y;
+  vec3 day = col * 1.7 + hue * vec3(0.92, 1.0, 1.1) * 0.075 * sky;
+  vec3 storm = mix(col, vec3(lum), 0.35) * 0.3 * vec3(0.9, 0.97, 1.05) + hue * vec3(0.75, 0.85, 1.0) * 0.012 * sky;
+  storm += vec3(0.5, 0.58, 0.68) * f * 0.07;  // wet sheen at grazing angles
+  col = mix(col, day, uDay);
+  col = mix(col, storm, uRain);
+  col += hue * vec3(0.7, 0.8, 1.0) * uFlash * 0.22 * sky;
   col += uAccent * (f * uRim + uFill);
 
   // runes: woken locally by the hover, or across every stone once the ring has formed.

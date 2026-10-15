@@ -26,6 +26,11 @@ export const sceneState = {
   globeDrag: { dx: 0, dy: 0, dragging: false },
   /** city markers on the globe, projected to screen (px); facing 0 = edge-on/hidden … 1 = facing us */
   markers: [] as { x: number; y: number; facing: number }[],
+  /**
+   * The forest's weather, eased: how far toward daylight / the storm it has turned (0..1 each),
+   * and the lightning's flash. Scaled down to nothing once the journey leaves the forest.
+   */
+  weather: { day: 0, rain: 0, flash: 0 },
   /** the globe opening into the board's map, 0 (a globe) → 1 (flat on the screen) */
   unfold: { t: 0 },
   /**

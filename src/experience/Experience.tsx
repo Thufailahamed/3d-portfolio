@@ -20,6 +20,7 @@ import AdaptiveResolution from "./AdaptiveResolution";
 import { CompileGate, LoadProgress } from "./LoadTracker";
 import { palette } from "./palette";
 import PostFX from "./PostFX";
+import Weather from "./Weather";
 
 /** The single, persistent WebGL canvas behind every page. */
 export default function Experience() {
@@ -86,6 +87,7 @@ export default function Experience() {
           <Contact />
           <Fades />
         </group>
+        <Weather />
         <Board />
         <BuildingFlow />
         <DetailBackdrop />

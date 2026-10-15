@@ -8,6 +8,14 @@ let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let filter: BiquadFilterNode | null = null;
 let raf = 0;
+let rainGain: GainNode | null = null;
+
+function noise(c: AudioContext, seconds: number) {
+  const b = c.createBuffer(1, c.sampleRate * seconds, c.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
 
 function build() {
   ctx = new AudioContext();
@@ -40,10 +48,42 @@ function build() {
   depth.gain.value = 120;
   lfo.connect(depth).connect(filter.frequency);
   lfo.start();
+
+  // rain: looped noise through a band-pass, faded in with the storm
+  const hiss = ctx.createBufferSource();
+  hiss.buffer = noise(ctx, 3);
+  hiss.loop = true;
+  const band = ctx.createBiquadFilter();
+  band.type = "bandpass";
+  band.frequency.value = 2400;
+  band.Q.value = 0.5;
+  rainGain = ctx.createGain();
+  rainGain.gain.value = 0;
+  hiss.connect(band).connect(rainGain).connect(master);
+  hiss.start();
+}
+
+/** A roll of thunder, `delay` seconds after the flash. */
+export function thunder(delay: number) {
+  if (!ctx || !master || ctx.state !== "running") return;
+  const src = ctx.createBufferSource();
+  src.buffer = noise(ctx, 4);
+  const low = ctx.createBiquadFilter();
+  low.type = "lowpass";
+  low.frequency.value = 160;
+  const g = ctx.createGain();
+  const t = ctx.currentTime + delay;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(5, t + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 3.6);
+  src.connect(low).connect(g).connect(master);
+  src.start(t);
+  src.stop(t + 4);
 }
 
 const follow = () => {
   if (ctx && filter) filter.frequency.setTargetAtTime(260 + sceneState.p * 900, ctx.currentTime, 0.4);
+  if (ctx && rainGain) rainGain.gain.setTargetAtTime(sceneState.weather.rain * 0.9, ctx.currentTime, 0.5);
   raf = requestAnimationFrame(follow);
 };
 

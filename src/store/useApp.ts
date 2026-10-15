@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ChapterId } from "@/lib/chapters";
 
 type Quality = "high" | "low";
+export type Weather = "night" | "rain" | "day";
 
 type AppState = {
   quality: Quality;
@@ -26,6 +27,8 @@ type AppState = {
   /** DOM-only experience (no WebGL) */
   lite: boolean;
   sound: boolean;
+  /** the forest's sky: the original night, a storm, or daylight */
+  weather: Weather;
   menuOpen: boolean;
   toast: string | null;
   set: (s: Partial<Omit<AppState, "set">>) => void;
@@ -46,6 +49,7 @@ export const useApp = create<AppState>((set) => ({
   flowView: "exterior",
   lite: false,
   sound: false,
+  weather: "night",
   menuOpen: false,
   toast: null,
   set: (s) => set(s),

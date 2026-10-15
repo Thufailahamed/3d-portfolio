@@ -9,6 +9,7 @@ import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { dustFrag, dustVert, raysFrag, raysVert } from "../shaders/atmosphere";
+import { weatherUniforms } from "../weatherUniforms";
 import { bakedFrag, bakedVert, butterflyFrag, butterflyVert, fireflyFrag, fireflyVert } from "../shaders/forest";
 
 export const FOREST_URL = "/models/forest.glb";
@@ -29,7 +30,7 @@ const SHAFTS: { target: [number, number, number]; width: number; strength: numbe
 
 /** A baked-lighting material (optionally with the lime rim the fracture uses). */
 export function makeBakedMaterial(side: THREE.Side = THREE.FrontSide) {
-  return new THREE.ShaderMaterial({
+  const m = new THREE.ShaderMaterial({
     vertexShader: bakedVert,
     fragmentShader: bakedFrag,
     vertexColors: true,
@@ -50,6 +51,9 @@ export function makeBakedMaterial(side: THREE.Side = THREE.FrontSide) {
       },
     ]),
   });
+  // shared by reference (merge() would have copied them)
+  Object.assign(m.uniforms, weatherUniforms);
+  return m;
 }
 
 /** Chapter 1 — a ruined arch in a night forest; sun shafts, motes and fireflies. */
@@ -181,11 +185,15 @@ export default function Forest() {
     g.visible = sceneState.p < hideAt;
     if (!g.visible) return;
     const intro = sceneState.intro;
+    const { day, rain } = sceneState.weather;
     shaft.material.uniforms.uTime.value += dt;
-    shaft.material.uniforms.uIntensity.value = 0.16 * (0.35 + 0.65 * intro);
+    // stronger sunbeams by day, none under the storm clouds
+    shaft.material.uniforms.uIntensity.value = 0.16 * (0.35 + 0.65 * intro) * (1 + 0.8 * day) * (1 - rain);
     motes.m.uniforms.uTime.value += dt;
+    motes.m.uniforms.uSize.value = 20 * (1 - rain);
     flies.m.uniforms.uTime.value += dt;
-    flies.m.uniforms.uIntensity.value = intro;
+    // fireflies are a night thing; a few still glow in the rain
+    flies.m.uniforms.uIntensity.value = intro * (1 - day) * (1 - 0.6 * rain);
   });
 
   return (
@@ -311,6 +319,8 @@ export function Butterflies({ count }: { count: number }) {
     const t = clock.elapsedTime;
     material.uniforms.uTime.value = t;
     material.uniforms.uIntensity.value = 0.25 + 0.75 * sceneState.intro;
+    // the butterflies take shelter from the rain
+    const shelter = 1 - sceneState.weather.rain;
     flights.forEach((fl, i) => {
       at(fl, t, tmp.p);
       at(fl, t + 0.15, tmp.q);
@@ -320,6 +330,7 @@ export function Butterflies({ count }: { count: number }) {
       const turn = Math.sin(t * fl.f.x + fl.ph.x + 1.57);
       tmp.o.rotateZ(turn * 0.35);
       tmp.o.rotateX(-0.25 + Math.sin(t * 7 + fl.ph.x) * 0.08);
+      tmp.o.scale.setScalar(shelter);
       tmp.o.updateMatrix();
       im.setMatrixAt(i, tmp.o.matrix);
     });

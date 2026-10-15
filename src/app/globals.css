@@ -819,3 +819,9 @@ html[data-unfold] .journey > [data-chapter]:not(#ch-about) {
     animation: none;
   }
 }
+
+/* daylight behind the hero: the cream type needs a little shade to stay crisp */
+html[data-weather="day"] [data-chapter="hero"],
+html[data-weather="day"] [data-chapter="fracture"] {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.25), 0 4px 28px rgb(0 0 0 / 0.35);
+}
