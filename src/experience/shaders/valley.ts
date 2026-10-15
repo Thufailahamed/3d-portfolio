@@ -239,3 +239,106 @@ void main(){
   // premultiplied: rgb is what the surface adds, alpha how much of the reflection it hides
   gl_FragColor = vec4(col, 1.0 - refl);
 }`;
+
+/**
+ * Grass: one instanced blade, bent by its own lean, rolling gusts of wind and the cursor
+ * (blades part around the point under it). aT runs root → tip, aSide is -1 / 1 across the blade.
+ */
+export const grassVert = /* glsl */ `
+attribute float aT;
+attribute float aSide;
+attribute vec3 aRoot;
+attribute vec4 aBlade;   // height, width, yaw, random
+uniform float uTime;
+uniform vec3 uRayO;
+uniform vec3 uRayD;
+uniform float uPush;
+uniform vec3 uOrigin;
+varying float vT;
+varying float vRand;
+varying vec3 vW;
+varying vec3 vN;
+${valueNoiseGlsl}
+void main(){
+  float h = aBlade.x;
+  float r = aBlade.w;
+  vec3 root = aRoot + uOrigin;
+
+  // turn each blade partly toward the viewer, so none is seen as a sliver
+  vec2 toCam = normalize(cameraPosition.xz - root.xz);
+  vec2 face = normalize(mix(vec2(cos(aBlade.z), sin(aBlade.z)), toCam, 0.45));
+  vec3 facing = vec3(face.x, 0.0, face.y);
+  vec3 side = vec3(-face.y, 0.0, face.x);
+
+  // bend: its own lean, rolling gusts that sweep across the meadow, a quick flutter
+  vec2 lean = vec2(cos(r * 41.0), sin(r * 41.0)) * (0.15 + 0.35 * fract(r * 7.3));
+  vec2 windDir = normalize(vec2(1.0, 0.3));
+  float gust = vnoise(vec3(root.xz * 0.16 - windDir * uTime * 1.1, uTime * 0.12)) * 0.5 + 0.5;
+  vec2 bend = lean + windDir * (0.12 + gust * gust * 0.85);
+  bend += vec2(sin(uTime * 3.3 + r * 30.0), cos(uTime * 2.9 + r * 23.0)) * 0.05 * (0.5 + gust);
+
+  // the cursor: blades near the ray under it (judged at their upper half, where the eye meets
+  // them) lean away from it, as if brushed by a hand; the reach is about the same on screen
+  vec3 q = root + vec3(0.0, h * 0.65, 0.0);
+  float along = max(dot(q - uRayO, uRayD), 0.0);
+  vec3 perp = q - (uRayO + uRayD * along);
+  float d = length(perp);
+  float reach = clamp(along * 0.07, 0.35, 1.8);
+  float push = (1.0 - smoothstep(0.0, reach, d)) * uPush;
+  vec2 away = perp.xz + uRayD.xz * 0.05;
+  bend += away / max(length(away), 0.02) * push * 2.0;
+
+  // the blade arcs over by its bend while keeping roughly its length
+  float t = aT;
+  float k = min(length(bend), 1.6);
+  vec2 off = bend * t * t * h;
+  float y = h * t * (1.0 - 0.32 * k * k * t / 1.6);
+  float w = aBlade.y * (1.0 - t) * (1.0 - t * 0.15);
+  vec3 p = root + side * aSide * w + vec3(off.x, y, off.y);
+
+  // normal: the blade's face, tilted by the arc, rounded across its width
+  vec3 n = normalize(facing - vec3(bend.x, 0.0, bend.y) * t * 0.6 + vec3(0.0, 0.35 + k * t * 0.5, 0.0) + side * aSide * 0.35);
+  vT = t;
+  vRand = r;
+  vW = p;
+  vN = n;
+  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+}`;
+
+export const grassFrag = /* glsl */ `
+uniform float uTime;
+uniform vec3 uTint;
+uniform vec3 uCrystal;
+varying float vT;
+varying float vRand;
+varying vec3 vW;
+varying vec3 vN;
+${valueNoiseGlsl}
+${nightGlsl}
+void main(){
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;
+  vec3 V = normalize(cameraPosition - vW);
+
+  // green from a dark root to a paler tip; a few dry, straw-coloured blades
+  vec3 base = mix(vec3(0.01, 0.026, 0.01), vec3(0.06, 0.12, 0.035), vT);
+  base *= 0.7 + 0.6 * fract(vRand * 13.7);
+  base = mix(base, vec3(0.13, 0.11, 0.05) * (0.4 + 0.8 * vT), step(0.93, fract(vRand * 71.3)));
+
+  // lit softly from both sides (thin blades), with the moon shining through from behind
+  float lam = dot(N, MOON_DIR) * 0.5 + 0.5;
+  vec3 col = base * (MOON_LIGHT * lam * 0.9 + SKY_LIGHT * 1.4);
+  float through = pow(max(dot(-V, MOON_DIR), 0.0), 2.5);
+  col += base * MOON_LIGHT * through * 1.7 * vT;
+  // a dewy sheen along the blades
+  col += MOON_LIGHT * pow(max(dot(reflect(-MOON_DIR, N), V), 0.0), 24.0) * 0.06 * vT;
+  // the crystal's colour on the nearby grass, glowing through it too
+  vec3 toC = uCrystal - vW;
+  float dc = length(toC);
+  col += base * uTint * (max(dot(N, toC / dc), 0.0) * 0.6 + 0.6) * 4.0 / (dc * dc + 1.0);
+
+  // dense grass is dark at the roots
+  col *= 0.3 + 0.7 * smoothstep(0.0, 0.7, vT);
+  col = nightAir(col, vW);
+  gl_FragColor = vec4(col, 1.0);
+}`;

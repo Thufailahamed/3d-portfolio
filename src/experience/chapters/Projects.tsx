@@ -15,6 +15,7 @@ import { crystalFrag, crystalVert, floorGlowFrag, planeVert, RIPPLES } from "../
 import { skyFrag, skyVert } from "../shaders/night";
 import { bankFrag, bankVert, pineFrag, pineVert, rockFrag, rockVert, waterFrag, waterVert } from "../shaders/valley";
 import { bankGeometry, boulderGeometry, pineGeometry, scatter } from "../valley";
+import Grass from "./Grass";
 import Mountains from "./Mountains";
 
 export const PRISM_Y = 1.85;
@@ -54,6 +55,7 @@ export default function Projects() {
       <Sky env={env} />
       <Mountains crystal={CRYSTAL_WORLD} />
       <Valley env={env} />
+      <Grass tint={env.uTint} time={env.uTime} />
       <Crystal />
     </group>
   );
