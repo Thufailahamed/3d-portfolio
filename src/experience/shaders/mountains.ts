@@ -40,28 +40,50 @@ void main(){
   if (uReflect > 0.5) { P.y = 2.0 * uFloorY - P.y; N.y = -N.y; }
   float y = P.y - uFloorY;
 
-  // relief finer than the mesh: gullies, ledges and loose rock
-  float relief = fbm3(P * vec3(0.32, 0.5, 0.32)) * 1.4 + vnoise(P * 2.6) * 0.16;
-  vec3 Nb = bumpNormal(P, N, relief, 1.0);
+  float dist = length(cameraPosition - vW);
+  float near = 1.0 - smoothstep(30.0, 70.0, dist);     // fine detail only where it can be seen
 
-  // layered rock: banded strata, broken up
-  float strata = vnoise(vec3(P.x * 0.04, y * 0.9 + fbm3(P * 0.07) * 2.2, P.z * 0.04));
-  vec3 rock = mix(vec3(0.075, 0.072, 0.07), vec3(0.16, 0.15, 0.14), 0.5 + 0.5 * strata);
-  rock *= 0.75 + 0.5 * (vnoise(P * 0.8) * 0.5 + 0.5);
-  // dark scrub on the gentle lower slopes
-  float veg = (1.0 - smoothstep(0.8, 3.2, y + relief)) * smoothstep(0.7, 0.9, Nb.y);
-  vec3 albedo = mix(rock, vec3(0.03, 0.042, 0.03), veg);
-  // snow above a ragged line, only where the slope can hold it
-  float line = 5.2 + fbm3(P * 0.09) * 3.0;
-  float snow = smoothstep(line, line + 1.4, y) * smoothstep(0.42, 0.72, Nb.y + relief * 0.12);
-  albedo = mix(albedo, vec3(0.78, 0.82, 0.88), snow);
+  // couloirs: gullies and ribs running straight down each face. The noise is stretched along
+  // the fall line (the slope's own downhill direction), so it streaks the way erosion does.
+  // (blended between the two world axes by which way the slope faces: stable, no warping)
+  vec2 fall = N.xz * N.xz;
+  float wx = fall.x / (fall.x + fall.y + 1e-4);
+  float gz = vnoise(vec3(P.x * 0.9, y * 0.09, 1.7)) * 0.65 + vnoise(vec3(P.x * 2.6, y * 0.22, 5.1)) * 0.35;
+  float gx = vnoise(vec3(P.z * 0.9, y * 0.09, 8.3)) * 0.65 + vnoise(vec3(P.z * 2.6, y * 0.22, 2.9)) * 0.35;
+  float gully = mix(gz, gx, smoothstep(0.25, 0.75, wx));
+  float rough = vnoise(P * 0.9);
+  float relief = gully * 0.9 + rough * 0.35 + vnoise(P * 3.4) * 0.08 * near;
+  vec3 Nb = bumpNormal(P, N, relief, 1.0 * near + 0.35);
+
+  // rock: grey-brown, banded, darker down in the gullies, paler on the ribs
+  float strata = vnoise(vec3(P.x * 0.05, y * 0.8 + rough * 1.5, P.z * 0.05));
+  vec3 rock = mix(vec3(0.07, 0.066, 0.062), vec3(0.17, 0.158, 0.145), 0.5 + 0.5 * strata);
+  float cavity = smoothstep(-0.55, 0.45, gully);
+  rock *= 0.55 + 0.6 * cavity;
+  // dark scrub and turf on the gentle lower slopes
+  float veg = (1.0 - smoothstep(0.6, 3.0, y + rough)) * smoothstep(0.68, 0.88, Nb.y);
+  vec3 albedo = mix(rock, mix(vec3(0.03, 0.045, 0.028), vec3(0.06, 0.08, 0.035), uDay), veg);
+
+  // snow: above a ragged line it settles on anything flat enough, and fills the gullies below it,
+  // so the faces show long white couloirs between dark ribs of rock
+  float line = 4.8 + rough * 2.2;
+  float high = smoothstep(line - 2.5, line + 2.0, y);
+  // judged on the smooth slope (the bumped normal would scatter it into spots); the gullies
+  // only nudge it, which draws the streaks
+  float hold = N.y + (0.1 - gully) * 0.3 + high * 0.12 + (Nb.y - N.y) * 0.15;
+  float snow = high * smoothstep(0.6, 0.7, hold);
+  snow = max(snow, smoothstep(line + 5.0, line + 8.0, y) * smoothstep(0.4, 0.52, hold));
+  vec3 snowCol = vec3(0.8, 0.84, 0.9) * (0.9 + 0.1 * rough);
+  albedo = mix(albedo, snowCol, snow);
 
   vec3 col = nightLight(albedo, Nb);
-  // snow glints in the moonlight
+  // the ribs shade the gullies a little (cheap occlusion), snow most of all keeps its light
+  col *= mix(0.65 + 0.35 * cavity, 1.0, snow * 0.7);
+  // snow glints
   vec3 V = normalize(cameraPosition - P);
   float g = vhash(floor(P * 26.0));
-  float glint = step(0.985, g) * pow(max(dot(reflect(-MOON_DIR, Nb), V), 0.0), 2.0);
-  col += vec3(0.6, 0.7, 0.9) * glint * snow * (0.6 + 0.4 * sin(uTime * 3.0 + g * 80.0));
+  float glint = step(0.985, g) * pow(max(dot(reflect(-MOON_DIR, Nb), V), 0.0), 2.0) * near;
+  col += MOON_LIGHT * 0.6 * glint * snow * (0.6 + 0.4 * sin(uTime * 3.0 + g * 80.0));
 
   // the crystal's light on the near slopes
   vec3 toC = uCrystal - P;

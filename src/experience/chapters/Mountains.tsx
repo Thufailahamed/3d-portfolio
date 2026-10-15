@@ -221,6 +221,46 @@ function* buildMountains(isMobile: boolean): Generator<void, Built> {
   return { ridgeGeo, ridgeVariants };
 }
 
+/**
+ * A distant range behind every design: taller, softer, and deep in the haze, so the valley
+ * has layers of mountains rather than a single wall. It never changes.
+ */
+function farRange(isMobile: boolean) {
+  const n = perlin(57);
+  const segX = isMobile ? 120 : 200;
+  const segZ = 26;
+  const g = new THREE.PlaneGeometry(300, 44, segX, segZ).rotateX(-Math.PI / 2).translate(0, 0, -(FAR_Z + 26));
+  const p = g.attributes.position as THREE.BufferAttribute;
+  const ridge = (x: number, z: number) => {
+    let s = 0;
+    let a = 1;
+    let f = 1;
+    for (let i = 0; i < 5; i++) {
+      const v = 1 - Math.abs(n(x * f, z * f));
+      s += v * v * a;
+      a *= 0.5;
+      f *= 2.1;
+    }
+    return s;
+  };
+  const h = new Float32Array(p.count);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i);
+    const z = p.getZ(i);
+    const rise = smooth(-FAR_Z - 4, -FAR_Z - 18, z);
+    // peaks of 6–14 m at 60–100 m: they rise just over the near range, never fill the sky
+    h[i] = (Math.pow(ridge(x * 0.018 + 4.2, z * 0.03) / 1.9, 1.8) * 13 + 1.5) * rise - 0.5;
+    p.setY(i, h[i]);
+  }
+  g.computeVertexNormals();
+  const nrm = (g.getAttribute("normal") as THREE.BufferAttribute).array as Float32Array;
+  g.setAttribute("aHA", new THREE.BufferAttribute(h, 1));
+  g.setAttribute("aHB", new THREE.BufferAttribute(h, 1));
+  g.setAttribute("aNA", new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute("aNB", new THREE.BufferAttribute(nrm, 3));
+  return g;
+}
+
 /** Runs a generator a few milliseconds at a time in idle callbacks; returns its result when done. */
 function useIdleBuild<T>(make: () => Generator<void, T>, key: unknown) {
   const [result, setResult] = useState<{ key: unknown; value: T } | null>(null);
@@ -259,6 +299,8 @@ export default function Mountains({ crystal }: { crystal: [number, number, numbe
 
   // built in the background; nothing renders until it is ready (the chapter is far from the start)
   const built = useIdleBuild(() => buildMountains(isMobile), isMobile);
+  const far = useMemo(() => farRange(isMobile), [isMobile]);
+  useEffect(() => () => far.dispose(), [far]);
 
   const uniforms = useMemo(
     () => ({
@@ -360,6 +402,7 @@ export default function Mountains({ crystal }: { crystal: [number, number, numbe
     <group ref={root}>
       {/* after the valley floor (which hides much of it), then its reflection after that */}
       <mesh geometry={built.ridgeGeo} material={mats[0]} frustumCulled={false} renderOrder={1} />
+      <mesh geometry={far} material={mats[0]} frustumCulled={false} renderOrder={1} />
       {/* the range mirrored in the river (the ground hides it everywhere else) */}
       <group scale={[1, -1, 1]}>
         <mesh geometry={built.ridgeGeo} material={mats[1]} frustumCulled={false} renderOrder={2} />

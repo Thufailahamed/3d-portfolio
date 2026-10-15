@@ -27,8 +27,8 @@ const LOOKS = {
     zenith: c(0.07, 0.17, 0.48),
     horizon: c(0.42, 0.52, 0.64),
     glow: c(0.32, 0.26, 0.16),
-    haze: 0.016,
-    mist: 0.3,
+    haze: 0.011,
+    mist: 0.16,
   },
   // overcast and pouring: no direct light, a low grey sky, thick air
   rain: {
