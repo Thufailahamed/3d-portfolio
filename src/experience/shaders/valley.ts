@@ -195,9 +195,9 @@ varying vec3 vW;
 
 float waves(vec2 p){
   vec2 flow = vec2(0.0, uTime * 0.35);   // downstream is +z, toward the camera
-  return vnoise(vec3(p * vec2(1.3, 0.55) - flow * 0.6, uTime * 0.18)) * 0.55
-       + vnoise(vec3(p * vec2(3.4, 1.6) - flow * 1.1, uTime * 0.35)) * 0.3
-       + vnoise(vec3(p * 9.0 - flow * 2.0, uTime * 0.7)) * 0.15;
+  return vnoise(vec3(p * vec2(1.3, 0.55) - flow * 0.6, uTime * 0.18)) * 0.4
+       + vnoise(vec3(p * vec2(3.4, 1.6) - flow * 1.1, uTime * 0.35)) * 0.33
+       + vnoise(vec3(p * vec2(9.0, 6.0) - flow * 2.0, uTime * 0.7)) * 0.27;
 }
 
 void main(){
@@ -231,7 +231,7 @@ void main(){
   vec3 L = normalize(uCrystal - vW);
   float c = max(dot(R, L), 0.0);
   float near = 1.0 / (1.0 + dot(local, local) * 0.06);
-  col += uTint * (pow(c, 60.0) * 1.2 + pow(c, 8.0) * 0.05) * near;
+  col += uTint * (pow(c, 500.0) * 0.5 + pow(c, 40.0) * 0.03) * near;
 
   float air = 1.0 - exp(-pow(dist * 0.024, 1.5));
   vec3 haze = nightSky(normalize(vec3(-V.x, 0.0, -V.z)));
