@@ -10,7 +10,8 @@ import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { valleyLight } from "../shaders/night";
 import { grassFrag, grassVert } from "../shaders/valley";
-import { bankHeight } from "../valley";
+import { bankHeight, type Cluster } from "../valley";
+import type { Cursor } from "./Meadow";
 
 const SEGMENTS = 5;
 const raycaster = new THREE.Raycaster();
@@ -46,11 +47,25 @@ function bladeGeometry() {
  * A meadow on the river banks (local units): clumps of tall grass, thicker toward the water's
  * edge and the camera, sparse up the hills. Blades sway in the wind and part around the cursor.
  */
-export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color>; time: THREE.IUniform<number> }) {
+export default function Grass({
+  tint,
+  time,
+  cursor,
+  clearings = [],
+}: {
+  tint: THREE.IUniform<THREE.Color>;
+  time: THREE.IUniform<number>;
+  /** the cursor's ray, kept up to date here and shared with the rest of the meadow */
+  cursor: Cursor;
+  /** places the grass leaves open (the mushroom clusters) */
+  clearings?: Cluster[];
+}) {
   const isMobile = useApp((s) => s.isMobile);
+  // the performance monitor's low quality: half the meadow
+  const low = useApp((s) => s.quality === "low");
 
   const geometry = useMemo(() => {
-    const count = isMobile ? 30000 : 75000;
+    const count = (isMobile ? 30000 : 75000) * (low ? 0.5 : 1);
     const random = rng(83);
     const clumps = perlin(91);
     const roots = new Float32Array(count * 3);
@@ -69,6 +84,7 @@ export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color
       // steep ground stays bare
       const slope = Math.hypot(bankHeight(x + 0.3, z) - y, bankHeight(x, z + 0.3) - y) / 0.3;
       if (slope > 0.9) continue;
+      if (clearings.some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 0.2)) continue;
       roots.set([x, y - 0.02, z], n * 3);
       const tall = 0.32 + random() * 0.38 + c * 0.35;
       blades.set([tall, 0.025 + random() * 0.03, random() * Math.PI * 2, random()], n * 4);
@@ -79,7 +95,7 @@ export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color
     g.setAttribute("aBlade", new THREE.InstancedBufferAttribute(blades.subarray(0, n * 4), 4));
     g.instanceCount = n;
     return g;
-  }, [isMobile]);
+  }, [isMobile, low, clearings]);
 
   const material = useMemo(
     () =>
@@ -93,12 +109,10 @@ export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color
           uTint: tint,
           uCrystal: { value: new THREE.Vector3(PROJECTS_ORIGIN[0], PROJECTS_ORIGIN[1] + 1.85, PROJECTS_ORIGIN[2]) },
           uOrigin: { value: new THREE.Vector3(...PROJECTS_ORIGIN) },
-          uRayO: { value: new THREE.Vector3() },
-          uRayD: { value: new THREE.Vector3(0, -1, 0) },
-          uPush: { value: 0 },
+          ...cursor,
         },
       }),
-    [time, tint],
+    [time, tint, cursor],
   );
 
   useEffect(
@@ -124,9 +138,9 @@ export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color
     s.energy += (target - s.energy) * Math.min(1, dt * (target > s.energy ? 6 : 1.5));
     ndc.set(s.x, s.y);
     raycaster.setFromCamera(ndc, camera);
-    material.uniforms.uRayO.value.copy(raycaster.ray.origin);
-    material.uniforms.uRayD.value.copy(raycaster.ray.direction);
-    material.uniforms.uPush.value = s.energy;
+    cursor.uRayO.value.copy(raycaster.ray.origin);
+    cursor.uRayD.value.copy(raycaster.ray.direction);
+    cursor.uPush.value = s.energy;
   });
 
   // drawn before the ground, so the ground hidden behind the blades is never shaded

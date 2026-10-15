@@ -258,25 +258,65 @@ void main(){
 }`;
 
 /**
- * Grass: one instanced blade, bent by its own lean, rolling gusts of wind and the cursor
- * (blades part around the point under it). aT runs root → tip, aSide is -1 / 1 across the blade.
+ * What moves the meadow (shared by grass and flowers): each stem's lean, gusts rolling across the
+ * banks (harder in a storm), a flutter, and the cursor brushing stems aside. Also the cursor's
+ * nearness on its own, for the mushrooms.
  */
-export const grassVert = /* glsl */ `
-attribute float aT;
-attribute float aSide;
-attribute vec3 aRoot;
-attribute vec4 aBlade;   // height, width, yaw, random
+export const meadowGlsl = /* glsl */ `
 uniform float uTime;
 uniform vec3 uRayO;
 uniform vec3 uRayD;
 uniform float uPush;
 uniform vec3 uOrigin;
 uniform float uWet;
+
+/** How close the cursor's ray passes to q (1 = right over it), and which way is away from it. */
+float cursorNear(vec3 q, out vec2 away){
+  float along = max(dot(q - uRayO, uRayD), 0.0);
+  vec3 perp = q - (uRayO + uRayD * along);
+  float reach = clamp(along * 0.07, 0.35, 1.8);
+  away = perp.xz + uRayD.xz * 0.05;
+  away /= max(length(away), 0.02);
+  return (1.0 - smoothstep(0.0, reach, length(perp))) * uPush;
+}
+
+vec2 meadowBend(vec3 root, float h, float r, out float push){
+  vec2 lean = vec2(cos(r * 41.0), sin(r * 41.0)) * (0.15 + 0.35 * fract(r * 7.3));
+  vec2 windDir = normalize(vec2(1.0, 0.3));
+  // two crossing wave trains: cheap, and they read as gusts rolling over the meadow
+  float wa = dot(root.xz, windDir) * 0.32 - uTime * 1.5;
+  float gust = 0.5 + 0.3 * sin(wa + sin(root.z * 0.21 + uTime * 0.3) * 1.6) + 0.2 * sin(wa * 2.3 + root.x * 0.4);
+  // the storm blows harder (and the blades are heavy with water)
+  vec2 bend = lean + windDir * (0.12 + gust * gust * (0.85 + uWet * 0.6) + uWet * 0.15);
+  bend += vec2(sin(uTime * 3.3 + r * 30.0), cos(uTime * 2.9 + r * 23.0)) * 0.05 * (0.5 + gust);
+  // the cursor, judged at the upper part of the stem (where the eye meets it)
+  vec2 away;
+  push = cursorNear(root + vec3(0.0, h * 0.65, 0.0), away);
+  return bend + away * push * 2.0;
+}
+
+/** A stem of height h bent by \`bend\`: where its point at t (0 root … 1 tip) ends up. */
+vec3 stemPoint(vec3 root, float h, vec2 bend, float t){
+  float k = min(length(bend), 1.6);
+  vec2 off = bend * t * t * h;
+  return root + vec3(off.x, h * t * (1.0 - 0.32 * k * k * t / 1.6), off.y);
+}
+`;
+
+/**
+ * Grass: one instanced blade, bent by its own lean, rolling gusts of wind and the cursor
+ * (blades part around it). aT runs root → tip, aSide is -1 / 1 across the blade.
+ */
+export const grassVert = /* glsl */ `
+attribute float aT;
+attribute float aSide;
+attribute vec3 aRoot;
+attribute vec4 aBlade;   // height, width, yaw, random
 varying float vT;
 varying float vRand;
 varying vec3 vW;
 varying vec3 vN;
-${valueNoiseGlsl}
+${meadowGlsl}
 void main(){
   float h = aBlade.x;
   float r = aBlade.w;
@@ -288,34 +328,12 @@ void main(){
   vec3 facing = vec3(face.x, 0.0, face.y);
   vec3 side = vec3(-face.y, 0.0, face.x);
 
-  // bend: its own lean, rolling gusts that sweep across the meadow, a quick flutter
-  vec2 lean = vec2(cos(r * 41.0), sin(r * 41.0)) * (0.15 + 0.35 * fract(r * 7.3));
-  vec2 windDir = normalize(vec2(1.0, 0.3));
-  // two crossing wave trains: cheap, and they read as gusts rolling over the meadow
-  float wa = dot(root.xz, windDir) * 0.32 - uTime * 1.5;
-  float gust = 0.5 + 0.3 * sin(wa + sin(root.z * 0.21 + uTime * 0.3) * 1.6) + 0.2 * sin(wa * 2.3 + root.x * 0.4);
-  // the storm blows harder (and the blades are heavy with water)
-  vec2 bend = lean + windDir * (0.12 + gust * gust * (0.85 + uWet * 0.6) + uWet * 0.15);
-  bend += vec2(sin(uTime * 3.3 + r * 30.0), cos(uTime * 2.9 + r * 23.0)) * 0.05 * (0.5 + gust);
-
-  // the cursor: blades near the ray under it (judged at their upper half, where the eye meets
-  // them) lean away from it, as if brushed by a hand; the reach is about the same on screen
-  vec3 q = root + vec3(0.0, h * 0.65, 0.0);
-  float along = max(dot(q - uRayO, uRayD), 0.0);
-  vec3 perp = q - (uRayO + uRayD * along);
-  float d = length(perp);
-  float reach = clamp(along * 0.07, 0.35, 1.8);
-  float push = (1.0 - smoothstep(0.0, reach, d)) * uPush;
-  vec2 away = perp.xz + uRayD.xz * 0.05;
-  bend += away / max(length(away), 0.02) * push * 2.0;
-
-  // the blade arcs over by its bend while keeping roughly its length
+  float push;
+  vec2 bend = meadowBend(root, h, r, push);
   float t = aT;
   float k = min(length(bend), 1.6);
-  vec2 off = bend * t * t * h;
-  float y = h * t * (1.0 - 0.32 * k * k * t / 1.6);
   float w = aBlade.y * (1.0 - t) * (1.0 - t * 0.15);
-  vec3 p = root + side * aSide * w + vec3(off.x, y, off.y);
+  vec3 p = stemPoint(root, h, bend, t) + side * aSide * w;
 
   // normal: the blade's face, tilted by the arc, rounded across its width
   vec3 n = normalize(facing - vec3(bend.x, 0.0, bend.y) * t * 0.6 + vec3(0.0, 0.35 + k * t * 0.5, 0.0) + side * aSide * 0.35);

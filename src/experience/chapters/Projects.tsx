@@ -14,8 +14,9 @@ import { CRYSTALS_URL, crystalFromMesh, tessellate } from "../crystal";
 import { crystalFrag, crystalVert, floorGlowFrag, planeVert, RIPPLES } from "../shaders/crystal";
 import { skyFrag, skyVert, valleyLight } from "../shaders/night";
 import { bankFrag, bankVert, pineFrag, pineVert, rockFrag, rockVert, waterFrag, waterVert } from "../shaders/valley";
-import { bankGeometry, boulderGeometry, pineGeometry, scatter } from "../valley";
+import { bankGeometry, boulderGeometry, mushroomClusters, pineGeometry, scatter } from "../valley";
 import Grass from "./Grass";
+import Meadow from "./Meadow";
 import Mountains from "./Mountains";
 
 export const PRISM_Y = 1.85;
@@ -30,6 +31,14 @@ export default function Projects() {
     const pr = chapter("projects");
     return [tu.end - 0.002, pr.end + 0.004] as const;
   }, []);
+
+  const isMobile = useApp((s) => s.isMobile);
+  // the cursor's ray over the meadow (the grass keeps it current) and the mushrooms' clearings
+  const cursor = useMemo(
+    () => ({ uRayO: { value: new THREE.Vector3() }, uRayD: { value: new THREE.Vector3(0, -1, 0) }, uPush: { value: 0 } }),
+    [],
+  );
+  const clusters = useMemo(() => mushroomClusters(isMobile ? 10 : 18), [isMobile]);
 
   // the valley's clock and the active project's colour, shared by the sky and the ground
   const env = useMemo(() => ({ uTime: { value: 0 }, uTint: { value: new THREE.Color(projects[0].tint) } }), []);
@@ -55,7 +64,8 @@ export default function Projects() {
       <Sky env={env} />
       <Mountains crystal={CRYSTAL_WORLD} />
       <Valley env={env} />
-      <Grass tint={env.uTint} time={env.uTime} />
+      <Grass tint={env.uTint} time={env.uTime} cursor={cursor} clearings={clusters} />
+      <Meadow env={env} cursor={cursor} clusters={clusters} />
       <Crystal />
     </group>
   );
@@ -268,7 +278,8 @@ function Crystal() {
     const w = Math.max(2, Math.round(tmp.res.x * 0.42));
     const h = Math.max(2, Math.round(tmp.res.y * 0.42));
     const resized = target.width !== w || target.height !== h;
-    if (!resized && tmp.frame++ % 2) return;
+    // low quality: every third frame
+    if (!resized && tmp.frame++ % (useApp.getState().quality === "low" ? 3 : 2)) return;
     if (target.width !== w || target.height !== h) target.setSize(w, h);
     const bodies = [realBody.current, mirrorBody.current];
     bodies.forEach((b) => b && (b.visible = false));
@@ -347,11 +358,14 @@ function Scatter({
   mats,
   items,
   place,
+  mirror = true,
 }: {
   geometry: THREE.BufferGeometry;
   mats: THREE.ShaderMaterial[];
   items: ReturnType<typeof scatter>;
   place: (it: ReturnType<typeof scatter>[number], o: THREE.Object3D) => void;
+  /** also draw the reflection in the water */
+  mirror?: boolean;
 }) {
   const real = useRef<THREE.InstancedMesh>(null);
   const mirrored = useRef<THREE.InstancedMesh>(null);
@@ -373,9 +387,11 @@ function Scatter({
   return (
     <>
       <instancedMesh ref={real} args={[geometry, mats[0], items.length]} frustumCulled={false} />
-      <group scale={[1, -1, 1]}>
-        <instancedMesh ref={mirrored} args={[geometry, mats[1], items.length]} frustumCulled={false} renderOrder={2} />
-      </group>
+      {mirror && (
+        <group scale={[1, -1, 1]}>
+          <instancedMesh ref={mirrored} args={[geometry, mats[1], items.length]} frustumCulled={false} renderOrder={2} />
+        </group>
+      )}
     </>
   );
 }
@@ -383,6 +399,7 @@ function Scatter({
 /** The valley floor: banks, the river, the crystal's stone, boulders and pines (all mirrored in the water). */
 function Valley({ env }: { env: Env }) {
   const isMobile = useApp((s) => s.isMobile);
+  const low = useApp((s) => s.quality === "low");
 
   const geo = useMemo(
     () => ({
@@ -500,8 +517,8 @@ function Valley({ env }: { env: Env }) {
         <mesh geometry={geo.stone} material={mats.stone[1]} position={[0, -0.12, 0]} renderOrder={2} />
       </group>
       <Scatter geometry={geo.boulder} mats={mats.boulder} items={items.pebbles} place={placePebble} />
-      <Scatter geometry={geo.boulder} mats={mats.boulder} items={items.boulders} place={placeBoulder} />
-      <Scatter geometry={geo.pine} mats={mats.pine} items={items.pines} place={placePine} />
+      <Scatter geometry={geo.boulder} mats={mats.boulder} items={items.boulders} place={placeBoulder} mirror={!low} />
+      <Scatter geometry={geo.pine} mats={mats.pine} items={items.pines} place={placePine} mirror={!low} />
       <mesh geometry={geo.water} material={mats.water} renderOrder={8} />
     </>
   );

@@ -268,8 +268,24 @@ function butterflyGeometry() {
 
 type Flight = { c: THREE.Vector3; amp: THREE.Vector3; f: THREE.Vector3; ph: THREE.Vector3 };
 
-/** Small blue butterflies flitting around the arch: wandering paths, flapping, now and then gliding. */
-export function Butterflies({ count }: { count: number }) {
+type Area = { centre: [number, number, number]; spread: [number, number, number] };
+const ARCH: Area = { centre: [0, 1.9, 0.5], spread: [5, 1.8, 3] };
+const forestWeather = () => ({ shelter: sceneState.weather.rain, glow: 0.25 + 0.75 * sceneState.intro });
+
+/**
+ * Small blue butterflies flitting about (around the arch, unless given another area): wandering
+ * paths, flapping, now and then gliding. They take shelter from the rain.
+ */
+export function Butterflies({
+  count,
+  area = ARCH,
+  weather = forestWeather,
+}: {
+  count: number;
+  area?: Area;
+  /** how far they have sheltered (0 … 1) and how brightly they show */
+  weather?: () => { shelter: number; glow: number };
+}) {
   const mesh = useRef<THREE.InstancedMesh>(null);
 
   const { geometry, material, flights } = useMemo(() => {
@@ -286,14 +302,18 @@ export function Butterflies({ count }: { count: number }) {
       uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uIntensity: { value: 0 } }]),
     });
     const flights: Flight[] = Array.from({ length: count }, () => ({
-      // loiter around the arch, the ferns and the sunbeam
-      c: new THREE.Vector3((random() - 0.5) * 5, 1 + random() * 1.8, (random() - 0.5) * 3 + 0.5),
+      // loiter about the area (the arch, the ferns and the sunbeam in the forest)
+      c: new THREE.Vector3(
+        area.centre[0] + (random() - 0.5) * area.spread[0],
+        area.centre[1] + (random() - 0.5) * area.spread[1],
+        area.centre[2] + (random() - 0.5) * area.spread[2],
+      ),
       amp: new THREE.Vector3(0.8 + random() * 1.4, 0.3 + random() * 0.5, 0.6 + random() * 1.0),
       f: new THREE.Vector3(0.07 + random() * 0.08, 0.11 + random() * 0.1, 0.06 + random() * 0.07),
       ph: new THREE.Vector3(random() * 6.28, random() * 6.28, random() * 6.28),
     }));
     return { geometry, material, flights };
-  }, [count]);
+  }, [count, area]);
 
   useEffect(
     () => () => {
@@ -318,9 +338,10 @@ export function Butterflies({ count }: { count: number }) {
     if (im.parent?.parent && !im.parent.parent.visible) return;
     const t = clock.elapsedTime;
     material.uniforms.uTime.value = t;
-    material.uniforms.uIntensity.value = 0.25 + 0.75 * sceneState.intro;
+    const w = weather();
+    material.uniforms.uIntensity.value = w.glow;
     // the butterflies take shelter from the rain
-    const shelter = 1 - sceneState.weather.rain;
+    const shelter = 1 - w.shelter;
     flights.forEach((fl, i) => {
       at(fl, t, tmp.p);
       at(fl, t + 0.15, tmp.q);

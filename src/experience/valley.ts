@@ -128,3 +128,21 @@ export function scatter(seed: number, count: number, minBank: number, maxBank: n
   }
   return out;
 }
+
+export type Cluster = { x: number; z: number; y: number; r: number; n: number; seed: number };
+
+/** Where the mushrooms grow: small clearings on the banks (the grass leaves room for them). */
+export function mushroomClusters(count: number): Cluster[] {
+  const random = rng(101);
+  const out: Cluster[] = [];
+  for (let tries = 0; out.length < count && tries < count * 80; tries++) {
+    const x = (random() - 0.5) * 30;
+    const z = 2 - random() * 16;
+    const d = -riverInside(x, z);
+    if (d < 0.7 || d > 9) continue;
+    if (z > -3 && Math.abs(x) < 4.5) continue;
+    if (out.some((c) => Math.hypot(c.x - x, c.z - z) < 2)) continue;
+    out.push({ x, z, y: bankHeight(x, z), r: 0.3 + random() * 0.35, n: 3 + Math.floor(random() * 5), seed: random() });
+  }
+  return out;
+}
