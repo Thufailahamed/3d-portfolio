@@ -93,7 +93,8 @@ vec3 spectrum(float x){
 }
 vec3 env(vec3 R){
   // the night sky, a little brighter than the eye sees it directly, and the moon's glow
-  vec3 sky = nightSky(normalize(vec3(R.x, max(R.y, 0.0), R.z))) * 5.0
+  // (the night sky is lifted so the facets read; daylight needs no help)
+  vec3 sky = nightSky(normalize(vec3(R.x, max(R.y, 0.0), R.z))) * mix(5.0, 1.1, uDay)
            + MOON_LIGHT * pow(max(dot(R, MOON_DIR), 0.0), 8.0) * 0.22;
   vec3 ground = vec3(0.004, 0.005, 0.007) + uTint * 0.01;
   return mix(ground, sky, smoothstep(-0.08, 0.05, R.y));

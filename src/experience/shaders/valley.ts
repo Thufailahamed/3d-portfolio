@@ -74,12 +74,14 @@ void main(){
   albedo *= 1.0 - 0.45 * (1.0 - smoothstep(0.0, 0.08, y));      // wet at the waterline
   // frost on the open ground, thickening up the hills
   float frost = smoothstep(0.55, 0.95, Nb.y) * smoothstep(0.2, 0.75, turf + y * 0.12) * (1.0 - shore);
-  albedo = mix(albedo, vec3(0.5, 0.54, 0.6), frost * 0.55);
+  albedo = mix(albedo, vec3(0.5, 0.54, 0.6), frost * 0.55 * (1.0 - uDay) * (1.0 - uWet));
+  albedo *= 1.0 - 0.4 * uWet;                                    // soaked
 
   vec3 col = nightLight(albedo, Nb) + crystalLight(albedo, P, Nb, 3.2);
   // a wet sheen on the stones by the water
   vec3 V = normalize(cameraPosition - P);
-  col += MOON_LIGHT * pow(max(dot(reflect(-MOON_DIR, Nb), V), 0.0), 24.0) * shore * 0.025;
+  col += MOON_LIGHT * pow(max(dot(reflect(-MOON_DIR, Nb), V), 0.0), 24.0) * (shore * 0.025 + uWet * 0.04);
+  col += nightSky(reflect(-V, Nb)) * uWet * 0.12 * pow(1.0 - max(dot(Nb, V), 0.0), 3.0);  // puddled sheen
   col = nightAir(col, vW);
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -100,7 +102,7 @@ void main(){
   // pale lichen patches on the upper faces
   float lichen = smoothstep(0.3, 0.55, vnoise(vL * 6.0) * 0.6 + grain * 0.6) * smoothstep(0.2, 0.7, Nb.y);
   albedo = mix(albedo, vec3(0.26, 0.27, 0.2), lichen * 0.5);
-  float wet = exp(-y * 7.0);
+  float wet = max(exp(-y * 7.0), uWet * 0.8);
   albedo *= 1.0 - 0.55 * wet;
 
   vec3 V = normalize(cameraPosition - P);
@@ -158,7 +160,7 @@ void main(){
   float tip = smoothstep(0.05, 0.4, length(vL.xz) / (0.55 - vUp * 0.4));
   vec3 albedo = vec3(0.016, 0.026, 0.02) * (0.6 + 0.8 * needles) * (0.35 + 0.65 * tip) * (0.55 + 0.45 * vUp);
   if (length(vL.xz) < 0.07 && vL.y < 0.4) albedo = vec3(0.04, 0.032, 0.026);   // trunk
-  float snow = smoothstep(0.7, 0.95, N.y + needles * 0.35) * smoothstep(0.25, 0.6, tip) * 0.45;
+  float snow = smoothstep(0.7, 0.95, N.y + needles * 0.35) * smoothstep(0.25, 0.6, tip) * 0.45 * (1.0 - 0.6 * uDay) * (1.0 - 0.7 * uWet);
   albedo = mix(albedo, vec3(0.6, 0.64, 0.7), snow);
   vec3 col = nightLight(albedo, N);
   // the moon behind the tree: light bleeds through the outer twigs
@@ -214,6 +216,21 @@ void main(){
   float amp = 0.075 * (1.0 - smoothstep(10.0, 40.0, dist));
   vec3 N = normalize(vec3(-(hx - h0) / e * amp, 1.0, -(hz - h0) / e * amp));
 
+  // rain: every drop that lands opens a little ring
+  if (uWet > 0.01){
+    vec2 rp = local * 2.6;
+    for (int k = 0; k < 2; k++){
+      vec2 cell = floor(rp);
+      vec2 rnd = fract(sin(vec2(dot(cell, vec2(127.1, 311.7)), dot(cell, vec2(269.5, 183.3)))) * 43758.5453);
+      vec2 f = fract(rp) - 0.5 - (rnd - 0.5) * 0.6;
+      float ph = fract(uTime * (0.9 + rnd.y * 0.5) + rnd.x * 9.0);
+      float d = length(f);
+      float ring = exp(-pow((d - ph * 0.42) * 26.0, 2.0)) * (1.0 - ph) * (1.0 - smoothstep(10.0, 25.0, dist));
+      N = normalize(N + vec3(f.x, 0.0, f.y) / max(d, 1e-3) * ring * 0.55 * uWet);
+      rp = rp * 1.7 + 3.3;
+    }
+  }
+
   float cosV = max(dot(N, V), 0.0);
   float F = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
   // the mirrored world shows through by F (a little more, so the night has reflections)
@@ -254,6 +271,7 @@ uniform vec3 uRayO;
 uniform vec3 uRayD;
 uniform float uPush;
 uniform vec3 uOrigin;
+uniform float uWet;
 varying float vT;
 varying float vRand;
 varying vec3 vW;
@@ -276,7 +294,8 @@ void main(){
   // two crossing wave trains: cheap, and they read as gusts rolling over the meadow
   float wa = dot(root.xz, windDir) * 0.32 - uTime * 1.5;
   float gust = 0.5 + 0.3 * sin(wa + sin(root.z * 0.21 + uTime * 0.3) * 1.6) + 0.2 * sin(wa * 2.3 + root.x * 0.4);
-  vec2 bend = lean + windDir * (0.12 + gust * gust * 0.85);
+  // the storm blows harder (and the blades are heavy with water)
+  vec2 bend = lean + windDir * (0.12 + gust * gust * (0.85 + uWet * 0.6) + uWet * 0.15);
   bend += vec2(sin(uTime * 3.3 + r * 30.0), cos(uTime * 2.9 + r * 23.0)) * 0.05 * (0.5 + gust);
 
   // the cursor: blades near the ray under it (judged at their upper half, where the eye meets
@@ -339,6 +358,9 @@ void main(){
   float dc = length(toC);
   col += base * uTint * (max(dot(N, toC / dc), 0.0) * 0.6 + 0.6) * 4.0 / (dc * dc + 1.0);
 
+  // soaked: darker blades with a wet glint
+  col *= 1.0 - 0.35 * uWet;
+  col += nightSky(reflect(-V, N)) * uWet * 0.1 * vT;
   // dense grass is dark at the roots
   col *= 0.3 + 0.7 * smoothstep(0.0, 0.7, vT);
   col = nightAir(col, vW);

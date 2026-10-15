@@ -12,7 +12,7 @@ export default function PostFX() {
   useFrame(() => {
     const b = bloom.current;
     if (!b) return;
-    const day = sceneState.weather.day;
+    const day = Math.max(sceneState.weather.day, sceneState.valley.day);
     b.intensity = 0.9 * (1 - 0.55 * day);
     b.luminanceMaterial.threshold = 0.62 + 0.3 * day;
   });

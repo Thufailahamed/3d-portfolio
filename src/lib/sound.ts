@@ -83,7 +83,7 @@ export function thunder(delay: number) {
 
 const follow = () => {
   if (ctx && filter) filter.frequency.setTargetAtTime(260 + sceneState.p * 900, ctx.currentTime, 0.4);
-  if (ctx && rainGain) rainGain.gain.setTargetAtTime(sceneState.weather.rain * 0.9, ctx.currentTime, 0.5);
+  if (ctx && rainGain) rainGain.gain.setTargetAtTime(Math.max(sceneState.weather.rain, sceneState.valley.rain) * 0.9, ctx.currentTime, 0.5);
   raf = requestAnimationFrame(follow);
 };
 

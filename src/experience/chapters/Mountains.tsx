@@ -10,6 +10,7 @@ import { perlin } from "@/lib/perlin";
 import { rng } from "@/lib/random";
 import { useApp } from "@/store/useApp";
 import { ridgeFrag, ridgeVert } from "../shaders/mountains";
+import { valleyLight } from "../shaders/night";
 
 const smooth = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -279,6 +280,7 @@ export default function Mountains({ crystal }: { crystal: [number, number, numbe
             defines: reflect ? { MIRROR: 1 } : {},
             uniforms: {
               ...uniforms,
+              ...valleyLight,
               uCrystal: { value: new THREE.Vector3(...crystal) },
               uFloorY: { value: PROJECTS_ORIGIN[1] },
               uReflect: { value: reflect ? 1 : 0 },

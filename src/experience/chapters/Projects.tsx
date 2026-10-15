@@ -12,7 +12,7 @@ import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
 import { CRYSTALS_URL, crystalFromMesh, tessellate } from "../crystal";
 import { crystalFrag, crystalVert, floorGlowFrag, planeVert, RIPPLES } from "../shaders/crystal";
-import { skyFrag, skyVert } from "../shaders/night";
+import { skyFrag, skyVert, valleyLight } from "../shaders/night";
 import { bankFrag, bankVert, pineFrag, pineVert, rockFrag, rockVert, waterFrag, waterVert } from "../shaders/valley";
 import { bankGeometry, boulderGeometry, pineGeometry, scatter } from "../valley";
 import Grass from "./Grass";
@@ -73,7 +73,7 @@ function Sky({ env }: { env: Env }) {
         fragmentShader: skyFrag,
         side: THREE.BackSide,
         depthWrite: false,
-        uniforms: { uTime: env.uTime, uTint: env.uTint },
+        uniforms: { uTime: env.uTime, uTint: env.uTint, ...valleyLight },
       }),
     [env],
   );
@@ -102,7 +102,7 @@ function crystalMaterial(shared: Record<string, THREE.IUniform>, reflect: boolea
   return new THREE.ShaderMaterial({
     vertexShader: crystalVert,
     fragmentShader: crystalFrag,
-    uniforms: { ...shared, uRot: { value: new THREE.Matrix3() }, uReflect: { value: reflect ? 1 : 0 } },
+    uniforms: { ...shared, ...valleyLight, uRot: { value: new THREE.Matrix3() }, uReflect: { value: reflect ? 1 : 0 } },
   });
 }
 
@@ -420,6 +420,7 @@ function Valley({ env }: { env: Env }) {
             fragmentShader,
             defines: reflect ? { MIRROR: 1 } : {},
             uniforms: {
+              ...valleyLight,
               uTime: env.uTime,
               uTint: env.uTint,
               uCrystal: { value: new THREE.Vector3(...CRYSTAL_WORLD) },
@@ -438,6 +439,7 @@ function Valley({ env }: { env: Env }) {
         vertexShader: waterVert,
         fragmentShader: waterFrag,
         uniforms: {
+          ...valleyLight,
           uTime: env.uTime,
           uTint: env.uTint,
           uCrystal: { value: new THREE.Vector3(...CRYSTAL_WORLD) },

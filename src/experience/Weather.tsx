@@ -10,6 +10,7 @@ import { sceneState } from "@/lib/sceneState";
 import { thunder } from "@/lib/sound";
 import { useApp } from "@/store/useApp";
 import { palette } from "./palette";
+import { setValleyLight } from "./shaders/night";
 import { rainFrag, rainVert, skyFrag, skyVert } from "./shaders/weather";
 import { weatherUniforms } from "./weatherUniforms";
 
@@ -100,8 +101,9 @@ export default function Weather() {
       uniforms: {
         uTime: { value: 0 },
         uBox: { value: new THREE.Vector3(14, 10, 14) },
-        uRain: weatherUniforms.uRain,
-        uFlash: weatherUniforms.uFlash,
+        // the rain falls in the forest and in the valley
+        uRain: { value: 0 },
+        uFlash: { value: 0 },
       },
     });
     return { g, m };
@@ -131,10 +133,14 @@ export default function Weather() {
     const presence = mode === "journey" ? 1 - THREE.MathUtils.smoothstep(p, tu.start, tu.start + (tu.end - tu.start) * 0.5) : 0;
     const day = mix.day * presence;
     const wet = mix.rain * presence;
+    // the projects valley, from the tunnel's hidden cut to the end of its chapter
+    const pr = chapter("projects");
+    const inValley = mode === "journey" && p >= tu.end - 0.002 && p <= pr.end + 0.004 ? 1 : 0;
+    const anyWet = Math.max(wet, mix.rain * inValley);
 
     // lightning: now and then while it rains, a double flash
     bolt.next -= dt;
-    if (wet > 0.5 && bolt.next < 0 && bolt.t < 0) {
+    if (anyWet > 0.5 && bolt.next < 0 && bolt.t < 0) {
       bolt.t = 0;
       bolt.next = 7 + bolt.random() * 10;
       if (useApp.getState().sound) thunder(0.8 + bolt.random() * 1.6);
@@ -145,7 +151,15 @@ export default function Weather() {
       flash = Math.exp(-t * 14) + (t > 0.16 ? 0.75 * Math.exp(-(t - 0.16) * 7) : 0);
       if (t > 1.2) bolt.t = -1;
     }
+    const valleyFlash = flash * mix.rain * inValley;
     flash *= wet;
+
+    sceneState.valley.day = mix.day * inValley;
+    sceneState.valley.rain = mix.rain * inValley;
+    sceneState.valley.flash = valleyFlash;
+    setValleyLight(mix.day, mix.rain, valleyFlash);
+    rain.m.uniforms.uRain.value = anyWet;
+    rain.m.uniforms.uFlash.value = Math.max(flash, valleyFlash);
 
     sceneState.weather.day = day;
     sceneState.weather.rain = wet;
@@ -176,7 +190,7 @@ export default function Weather() {
       dome.current.visible = day + wet > 0.001;
       dome.current.position.copy(camera.position);
     }
-    if (rainMesh.current) rainMesh.current.visible = wet > 0.001;
+    if (rainMesh.current) rainMesh.current.visible = anyWet > 0.001;
     rain.m.uniforms.uTime.value += dt;
   });
 

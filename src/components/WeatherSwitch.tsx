@@ -33,7 +33,7 @@ const OPTIONS: { id: Weather; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
-/** A small switch on the right edge: night, rain or day in the forest. Only shown while the forest is. */
+/** A small switch on the right edge: night, rain or day, in the forest and the projects valley. */
 export default function WeatherSwitch() {
   const pathname = usePathname();
   const weather = useApp((s) => s.weather);
@@ -41,7 +41,8 @@ export default function WeatherSwitch() {
   const entered = useApp((s) => s.entered);
   const lite = useApp((s) => s.lite);
   const group = useRef<HTMLDivElement>(null);
-  const shown = entered && !lite && pathname === "/" && (chapter === "hero" || chapter === "fracture");
+  const shown =
+    entered && !lite && (pathname === "/" || pathname === "/projects") && (chapter === "hero" || chapter === "fracture" || chapter === "projects");
 
   // remember the visitor's sky
   useEffect(() => {

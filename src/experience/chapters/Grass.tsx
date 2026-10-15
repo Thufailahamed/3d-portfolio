@@ -8,6 +8,7 @@ import { perlin } from "@/lib/perlin";
 import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
+import { valleyLight } from "../shaders/night";
 import { grassFrag, grassVert } from "../shaders/valley";
 import { bankHeight } from "../valley";
 
@@ -87,6 +88,7 @@ export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color
         fragmentShader: grassFrag,
         side: THREE.DoubleSide,
         uniforms: {
+          ...valleyLight,
           uTime: time,
           uTint: tint,
           uCrystal: { value: new THREE.Vector3(PROJECTS_ORIGIN[0], PROJECTS_ORIGIN[1] + 1.85, PROJECTS_ORIGIN[2]) },

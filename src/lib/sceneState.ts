@@ -31,6 +31,8 @@ export const sceneState = {
    * and the lightning's flash. Scaled down to nothing once the journey leaves the forest.
    */
   weather: { day: 0, rain: 0, flash: 0 },
+  /** the same weather in the projects valley (0 once the journey is elsewhere) */
+  valley: { day: 0, rain: 0, flash: 0 },
   /** the globe opening into the board's map, 0 (a globe) → 1 (flat on the screen) */
   unfold: { t: 0 },
   /**
