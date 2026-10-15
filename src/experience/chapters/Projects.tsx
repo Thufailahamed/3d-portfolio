@@ -1,23 +1,23 @@
 "use client";
 
-import { useGLTF, useTexture } from "@react-three/drei";
+import { useGLTF } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { projects } from "@/content/site";
 import { chapter, PROJECTS_ORIGIN } from "@/lib/chapters";
 import { gsap } from "@/lib/gsap";
+import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
-import { CRYSTALS_URL, crystalFromMesh } from "../crystal";
-import { crystalFrag, crystalVert, floorGlowFrag, glowFrag, glowVert, planeVert } from "../shaders/crystal";
+import { CRYSTALS_URL, crystalFromMesh, tessellate } from "../crystal";
+import { crystalFrag, crystalVert, floorGlowFrag, planeVert, RIPPLES } from "../shaders/crystal";
 import { skyFrag, skyVert } from "../shaders/night";
 import { bankFrag, bankVert, pineFrag, pineVert, rockFrag, rockVert, waterFrag, waterVert } from "../shaders/valley";
 import { bankGeometry, boulderGeometry, pineGeometry, scatter } from "../valley";
 import Mountains from "./Mountains";
 
 export const PRISM_Y = 1.85;
-const COVERS = projects.map((p) => p.cover);
 /** World position of the crystal (lights the near mountain slopes). */
 const CRYSTAL_WORLD: [number, number, number] = [PROJECTS_ORIGIN[0], PROJECTS_ORIGIN[1] + PRISM_Y, PROJECTS_ORIGIN[2]];
 
@@ -87,7 +87,6 @@ function Sky({ env }: { env: Env }) {
   );
 }
 
-type Mats = ReturnType<typeof crystalMaterials>;
 type Motion = { spin: number; pulse: number; scale: number; hover: number };
 
 const raycaster = new THREE.Raycaster();
@@ -95,92 +94,57 @@ const ndc = new THREE.Vector2();
 const centre = new THREE.Vector3();
 const canHover = typeof matchMedia !== "undefined" && matchMedia("(hover: hover) and (pointer: fine)").matches;
 
-/** Every layer (and the floor reflection) shares the same uniform objects. */
-function crystalMaterials(shared: Record<string, THREE.IUniform>, reflect: boolean) {
-  const layer = (define: string, glow: number, opts: THREE.ShaderMaterialParameters) =>
-    new THREE.ShaderMaterial({
-      vertexShader: crystalVert,
-      fragmentShader: crystalFrag,
-      defines: { [define]: 1 },
-      uniforms: { ...shared, uReflect: { value: reflect ? 1 : 0 }, uGlow: { value: glow } },
-      transparent: true,
-      depthWrite: false,
-      toneMapped: false,
-      ...opts,
-    });
-  // premultiplied "glass": rgb is emitted light, alpha is how much of what's behind it hides
-  const glass: THREE.ShaderMaterialParameters = {
-    blending: THREE.CustomBlending,
-    blendEquation: THREE.AddEquation,
-    blendSrc: THREE.OneFactor,
-    blendDst: THREE.OneMinusSrcAlphaFactor,
-  };
-  const additive: THREE.ShaderMaterialParameters = { blending: THREE.AdditiveBlending, side: THREE.DoubleSide };
-  return {
-    back: layer("LAYER_BACK", 1, { ...glass, side: THREE.BackSide }),
-    front: layer("LAYER_FRONT", 1, { ...glass, side: THREE.FrontSide }),
-    phantom: layer("LAYER_PHANTOM", 0.22, additive),
-    heart: layer("LAYER_PHANTOM", 0.45, additive),
-    glow: new THREE.ShaderMaterial({
-      vertexShader: glowVert,
-      fragmentShader: glowFrag,
-      uniforms: {
-        uTint: shared.uTint,
-        uPulse: shared.uPulse,
-        uTime: shared.uTime,
-        uSize: { value: 1.25 },
-        uIntensity: { value: reflect ? 0.02 : 0.07 },
-      },
-      transparent: true,
-      depthWrite: false,
-      toneMapped: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  };
+/** The real crystal and its reflection share everything but their placement. */
+function crystalMaterial(shared: Record<string, THREE.IUniform>, reflect: boolean) {
+  return new THREE.ShaderMaterial({
+    vertexShader: crystalVert,
+    fragmentShader: crystalFrag,
+    uniforms: { ...shared, uRot: { value: new THREE.Matrix3() }, uReflect: { value: reflect ? 1 : 0 } },
+  });
 }
 
-/** A layered "phantom" crystal: smoky outer glass, two nested growth shells and a glowing core. */
+/** Clear quartz hovering over the stone. The cursor sets ripples running across it, like a hand over water. */
 function Crystal() {
-  const textures = useTexture(COVERS);
   const motion = useRef<Motion>({ spin: 0, pulse: 0, scale: 1, hover: 0 });
   const pickMesh = useRef<THREE.Mesh>(null);
+  const realBody = useRef<THREE.Group>(null);
+  const mirrorBody = useRef<THREE.Group>(null);
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const { nodes } = useGLTF(CRYSTALS_URL) as unknown as { nodes: Record<string, THREE.Mesh> };
 
-  useMemo(() => {
-    for (const t of textures) {
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.anisotropy = 4;
-    }
-  }, [textures]);
-
-  // one Blender cut per project (cycled if there are more projects than cuts)
+  // one Blender cut per project (cycled if there are more projects than cuts), finely divided for the ripples
   const cuts = useMemo(() => {
     const meshes = Object.values(nodes)
       .filter((n) => n.isMesh && /^Crystal_\d+$/.test(n.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return meshes.map((m) => crystalFromMesh(m.geometry));
+    return meshes.map((m) => {
+      const base = crystalFromMesh(m.geometry);
+      const fine = tessellate(base, 10);
+      base.dispose();
+      return fine;
+    });
   }, [nodes]);
   const [shown, setShown] = useState(() => useApp.getState().activeProject);
   const geometry = cuts[shown % cuts.length];
   const swap = useRef<gsap.core.Timeline | null>(null);
 
+  // what the crystal refracts: the valley behind it, drawn without the crystal at half resolution
+  const target = useMemo(() => new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType }), []);
   const shared = useMemo<Record<string, THREE.IUniform>>(
     () => ({
-      uTexA: { value: textures[0] },
-      uTexB: { value: textures[0] },
-      uMix: { value: 0 },
       uTime: { value: 0 },
       uPulse: { value: 0 },
       uTint: { value: new THREE.Color(projects[0].tint) },
-      uFloorY: { value: PROJECTS_ORIGIN[1] },
-      // view-space size of the 16:10 image inside the crystal (cover-fitted to the core)
-      uScreen: { value: new THREE.Vector2(2.7, 1.69) },
+      uScene: { value: target.texture },
+      uRes: { value: new THREE.Vector2(1, 1) },
+      uRipDepth: { value: 0.022 },
+      uRip: { value: Array.from({ length: RIPPLES }, () => new THREE.Vector4(0, 0, 0, -100)) },
+      uRipAmp: { value: new Array<number>(RIPPLES).fill(0) },
     }),
-    [textures],
+    [target],
   );
-  const mats = useMemo(() => ({ main: crystalMaterials(shared, false), mirror: crystalMaterials(shared, true) }), [shared]);
+  const mats = useMemo(() => ({ main: crystalMaterial(shared, false), mirror: crystalMaterial(shared, true) }), [shared]);
   const floorMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -197,25 +161,29 @@ function Crystal() {
   useEffect(
     () => () => {
       floorMat.dispose();
-      for (const set of [mats.main, mats.mirror]) for (const m of Object.values(set)) m.dispose();
+      mats.main.dispose();
+      mats.mirror.dispose();
+      target.dispose();
     },
-    [mats, floorMat],
+    [mats, floorMat, target],
   );
-  useEffect(() => () => cuts.forEach((g) => g.dispose()), [cuts]
-  );
+  useEffect(() => () => cuts.forEach((g) => g.dispose()), [cuts]);
 
-  // project switch: morph to the next cut, dissolve the image, retint and give it a turn
+  // ripples: a ring buffer of where (crystal space) and when each one started
+  const rip = useMemo(() => ({ next: 0, last: new THREE.Vector3(1e3, 0, 0), lastT: -1, idle: 1.5, random: rng(61) }), []);
+  const spawn = (x: number, y: number, z: number, amp: number) => {
+    const k = rip.next++ % RIPPLES;
+    (shared.uRip.value as THREE.Vector4[])[k].set(x, y, z, shared.uTime.value);
+    (shared.uRipAmp.value as number[])[k] = amp;
+  };
+
+  // project switch: morph to the next cut, retint and give it a turn
   useEffect(() => {
     return useApp.subscribe((s, prev) => {
       if (s.activeProject === prev.activeProject) return;
       const next = s.activeProject;
       const dir = next > prev.activeProject ? 1 : -1;
       const tint = new THREE.Color(projects[next].tint);
-
-      // whatever is on screen now becomes A; fade to B
-      shared.uTexA.value = shared.uMix.value > 0.5 ? shared.uTexB.value : shared.uTexA.value;
-      shared.uTexB.value = textures[next];
-      gsap.fromTo(shared.uMix, { value: 0 }, { value: 1, duration: 1.15, ease: "power2.inOut", overwrite: true });
       gsap.to(shared.uTint.value, { r: tint.r, g: tint.g, b: tint.b, duration: 1.1, ease: "power2.inOut" });
 
       // the crystal spins down to a spark, changes cut, and grows back as the next one
@@ -228,13 +196,13 @@ function Crystal() {
       gsap.to(motion.current, { spin: `+=${(Math.PI * 2 * dir) / 3}`, duration: 1.4, ease: "expo.out" });
       gsap.fromTo(motion.current, { pulse: 1 }, { pulse: 0, duration: 1.3, ease: "power3.out" });
     });
-  }, [shared, textures]);
+  }, [shared]);
 
   // clicking the crystal enters the project: the HUD asks the scene whether a tap hit it
   useEffect(() => {
     const hit = (x: number, y: number) => {
       const mesh = pickMesh.current;
-      if (!mesh || !mesh.parent?.parent?.visible) return false;
+      if (!mesh || !mesh.parent?.parent?.parent?.visible) return false;
       ndc.set(x, y);
       raycaster.setFromCamera(ndc, camera);
       return raycaster.intersectObject(mesh, false).length > 0;
@@ -246,53 +214,92 @@ function Crystal() {
     };
   }, [camera]);
 
-  useFrame(({ clock }, dt) => {
-    shared.uTime.value = clock.elapsedTime;
+  const tmp = useMemo(() => ({ v: new THREE.Vector3(), res: new THREE.Vector2() }), []);
+
+  useFrame(({ clock, gl, scene }, dt) => {
+    const time = clock.elapsedTime;
+    shared.uTime.value = time;
     const m = motion.current;
-    const live = !!pickMesh.current?.parent?.parent?.visible && sceneState.dive === 0;
-    const over = live && canHover && sceneState.crystal.pick(sceneState.mouse.x, sceneState.mouse.y);
+    const mesh = pickMesh.current;
+    const live = !!mesh?.parent?.parent?.parent?.visible && sceneState.dive === 0;
+
+    // the cursor over the crystal: ripples spread from under it as it moves
+    ndc.set(sceneState.mouse.x, sceneState.mouse.y);
+    raycaster.setFromCamera(ndc, camera);
+    const hit = live && canHover && mesh ? raycaster.intersectObject(mesh, false)[0] : undefined;
+    const over = !!hit;
+    if (hit && mesh) {
+      const local = mesh.worldToLocal(tmp.v.copy(hit.point));
+      const moved = local.distanceTo(rip.last);
+      if (!sceneState.crystal.hover || moved > 0.09) {
+        spawn(local.x, local.y, local.z, sceneState.crystal.hover ? Math.min(0.9, 0.35 + moved * 2) : 1);
+        rip.last.copy(local);
+        rip.lastT = time;
+      }
+    }
     sceneState.crystal.hover = over;
     m.hover += ((over ? 1 : 0) - m.hover) * Math.min(1, dt * 6);
-    // entering: the core flares as the camera pushes in
-    shared.uPulse.value = m.pulse + m.hover * 0.5 + sceneState.dive * 2.5;
-    // the crystal's centre on screen: the dive's curtain opens from here
-    if (pickMesh.current) {
-      pickMesh.current.getWorldPosition(centre).project(camera);
+
+    // left alone, now and then a drop lands somewhere on it
+    rip.idle -= dt;
+    if (live && mesh && rip.idle < 0 && time - rip.lastT > 2) {
+      const pos = mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const i = Math.floor(rip.random() * pos.count);
+      spawn(pos.getX(i), pos.getY(i), pos.getZ(i), 0.3 + rip.random() * 0.25);
+      rip.idle = 2.5 + rip.random() * 3.5;
+    }
+
+    // entering: the heart flares as the camera pushes in
+    shared.uPulse.value = m.pulse + m.hover * 0.06 + sceneState.dive * 2.5;
+    if (mesh) {
+      mesh.getWorldPosition(centre).project(camera);
       sceneState.crystal.x = (centre.x * 0.5 + 0.5) * size.width;
       sceneState.crystal.y = (-centre.y * 0.5 + 0.5) * size.height;
     }
+
+    // the refraction source: everything but the crystal (and its reflection), at half resolution
+    if (!mesh?.parent?.parent?.parent?.visible) return;
+    gl.getDrawingBufferSize(tmp.res);
+    shared.uRes.value.copy(tmp.res);
+    const w = Math.max(2, Math.round(tmp.res.x * 0.5));
+    const h = Math.max(2, Math.round(tmp.res.y * 0.5));
+    if (target.width !== w || target.height !== h) target.setSize(w, h);
+    const bodies = [realBody.current, mirrorBody.current];
+    bodies.forEach((b) => b && (b.visible = false));
+    const prev = gl.getRenderTarget();
+    gl.setRenderTarget(target);
+    gl.render(scene, camera);
+    gl.setRenderTarget(prev);
+    bodies.forEach((b) => b && (b.visible = true));
   });
 
   return (
     <>
-      {/* draw order: reflection → water surface → floor glow → crystal */}
-      <CrystalBody geometry={geometry} mats={mats.main} motion={motion} order={10} pickRef={pickMesh} />
-      <group scale={[1, -1, 1]}>
-        <CrystalBody geometry={geometry} mats={mats.mirror} motion={motion} order={2} />
+      <group ref={realBody}>
+        <CrystalBody geometry={geometry} material={mats.main} motion={motion} pickRef={pickMesh} />
+      </group>
+      <group ref={mirrorBody} scale={[1, -1, 1]}>
+        <CrystalBody geometry={geometry} material={mats.mirror} motion={motion} />
       </group>
       <mesh rotation-x={-Math.PI / 2} position-y={0.02} material={floorMat} renderOrder={9}>
         <planeGeometry args={[7, 7]} />
       </mesh>
-      <pointLight position={[0, 0.4, 1.5]} intensity={4} distance={6} color="#ffffff" />
     </>
   );
 }
 
 function CrystalBody({
   geometry,
-  mats,
+  material,
   motion,
-  order,
   pickRef,
 }: {
   geometry: THREE.BufferGeometry;
-  mats: Mats;
+  material: THREE.ShaderMaterial;
   motion: React.RefObject<Motion>;
-  order: number;
   pickRef?: React.RefObject<THREE.Mesh | null>;
 }) {
   const spin = useRef<THREE.Group>(null);
-  const heart = useRef<THREE.Mesh>(null);
 
   useFrame(({ clock }) => {
     const g = spin.current;
@@ -303,21 +310,23 @@ function CrystalBody({
     g.rotation.y = time * 0.18 + turn + sceneState.mouse.x * 0.25 + sceneState.drag * 1.4;
     g.rotation.x = sceneState.mouse.y * 0.06;
     g.position.y = PRISM_Y + Math.sin(time * 0.9) * 0.06;
-    g.scale.setScalar((1 + pulse * 0.06 + hover * 0.05) * scale);
-    // the innermost phantom drifts against the outer shell
-    if (heart.current) heart.current.rotation.y = -time * 0.32 - turn * 0.6;
+    g.scale.setScalar((1 + pulse * 0.06 + hover * 0.03) * scale);
+    // crystal space → world, rotation only (the ripples live in crystal space)
+    g.updateWorldMatrix(true, false);
+    const r = material.uniforms.uRot.value as THREE.Matrix3;
+    r.setFromMatrix4(g.matrixWorld);
+    const e = r.elements;
+    for (let c = 0; c < 3; c++) {
+      const l = Math.hypot(e[c * 3], e[c * 3 + 1], e[c * 3 + 2]) || 1;
+      e[c * 3] /= l;
+      e[c * 3 + 1] /= l;
+      e[c * 3 + 2] /= l;
+    }
   });
 
   return (
     <group ref={spin}>
-      <mesh geometry={geometry} material={mats.back} renderOrder={order} frustumCulled={false} />
-      <mesh material={mats.glow} renderOrder={order + 1} frustumCulled={false}>
-        <planeGeometry args={[2, 2]} />
-      </mesh>
-      {/* phantoms: the same cut, smaller, grown up from the base */}
-      <mesh ref={heart} geometry={geometry} material={mats.heart} scale={0.46} position-y={-0.3} renderOrder={order + 2} frustumCulled={false} />
-      <mesh geometry={geometry} material={mats.phantom} scale={0.74} position-y={-0.18} renderOrder={order + 3} frustumCulled={false} />
-      <mesh ref={pickRef} geometry={geometry} material={mats.front} renderOrder={order + 4} frustumCulled={false} />
+      <mesh ref={pickRef} geometry={geometry} material={material} frustumCulled={false} />
     </group>
   );
 }
@@ -487,5 +496,4 @@ function Valley({ env }: { env: Env }) {
   );
 }
 
-useTexture.preload(COVERS);
 useGLTF.preload(CRYSTALS_URL);

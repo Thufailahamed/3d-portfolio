@@ -66,3 +66,45 @@ export function crystalFromMesh(src: THREE.BufferGeometry) {
   g.dispose();
   return out;
 }
+
+/**
+ * Splits every facet into n × n smaller triangles (all attributes interpolated), so ripples can
+ * move the surface. Flat normals and the edge barycentrics carry over unchanged.
+ */
+export function tessellate(src: THREE.BufferGeometry, n: number) {
+  const names = Object.keys(src.attributes);
+  const attrs = names.map((k) => src.getAttribute(k) as THREE.BufferAttribute);
+  const tris = attrs[0].count / 3;
+  const per = n * n * 3;
+  const out = attrs.map((a) => new Float32Array(tris * per * a.itemSize));
+  let o = 0;
+  const put = (t: number, u: number, v: number) => {
+    const w = 1 - u - v;
+    attrs.forEach((a, k) => {
+      for (let c = 0; c < a.itemSize; c++) {
+        const val =
+          a.getComponent(t * 3, c) * w + a.getComponent(t * 3 + 1, c) * u + a.getComponent(t * 3 + 2, c) * v;
+        out[k][o * a.itemSize + c] = val;
+      }
+    });
+    o++;
+  };
+  for (let t = 0; t < tris; t++) {
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n - i; j++) {
+        const [u0, v0, u1, v1] = [i / n, j / n, (i + 1) / n, (j + 1) / n];
+        put(t, u0, v0);
+        put(t, u1, v0);
+        put(t, u0, v1);
+        if (j < n - i - 1) {
+          put(t, u1, v0);
+          put(t, u1, v1);
+          put(t, u0, v1);
+        }
+      }
+  }
+  const g = new THREE.BufferGeometry();
+  names.forEach((k, i) => g.setAttribute(k, new THREE.BufferAttribute(out[i].subarray(0, o * attrs[i].itemSize), attrs[i].itemSize)));
+  g.boundingSphere = src.boundingSphere?.clone() ?? null;
+  return g;
+}
