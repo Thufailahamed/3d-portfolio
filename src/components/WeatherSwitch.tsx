@@ -52,12 +52,14 @@ export default function WeatherSwitch() {
   }, []);
   useEffect(() => {
     document.documentElement.dataset.weather = weather;
-    try {
-      localStorage.setItem(KEY, weather);
-    } catch {}
   }, [weather]);
 
-  const pick = (w: Weather) => useApp.getState().set({ weather: w });
+  const pick = (w: Weather) => {
+    useApp.getState().set({ weather: w });
+    try {
+      localStorage.setItem(KEY, w);
+    } catch {}
+  };
   const onKey = (e: React.KeyboardEvent) => {
     const step = e.key === "ArrowDown" || e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 0;
     if (!step) return;
