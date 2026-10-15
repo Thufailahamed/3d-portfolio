@@ -129,8 +129,12 @@ export default function Weather() {
     const { mode } = useApp.getState();
     const tu = chapter("tunnel");
     const p = sceneState.p;
-    // the forest is on screen until the tunnel has covered it
-    const presence = mode === "journey" ? 1 - THREE.MathUtils.smoothstep(p, tu.start, tu.start + (tu.end - tu.start) * 0.5) : 0;
+    // the forest is on screen until the tunnel has covered it; its clearing returns for contact
+    // (arriving behind the dip to black that hides the cut)
+    const ct = chapter("contact");
+    const forest = 1 - THREE.MathUtils.smoothstep(p, tu.start, tu.start + (tu.end - tu.start) * 0.5);
+    const clearing = THREE.MathUtils.smoothstep(p, ct.start - 0.015, ct.start);
+    const presence = mode === "journey" ? Math.max(forest, clearing) : 0;
     const day = mix.day * presence;
     const wet = mix.rain * presence;
     // the projects valley, from the tunnel's hidden cut to the end of its chapter

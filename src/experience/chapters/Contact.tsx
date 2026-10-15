@@ -240,9 +240,15 @@ export default function Contact() {
     if (u.uHoverAmt.value < 0.01 && hover.hit) u.uHoverPos.value.copy(hover.target);
     u.uHoverPos.value.lerp(hover.target, Math.min(1, dt * 10));
     u.uHoverAmt.value += ((hover.hit ? 1 : 0) - u.uHoverAmt.value) * Math.min(1, dt * (hover.hit ? 5 : 2.5));
+    // the weather, as in the intro: a stronger shaft by day and none in the rain; the blue
+    // motes are a night thing; the dust is beaten down by the rain
+    const { day, rain } = sceneState.weather;
     shaft.material.uniforms.uTime.value += dt;
+    shaft.material.uniforms.uIntensity.value = 0.16 * (1 + 0.8 * day) * (1 - rain);
     dust.m.uniforms.uTime.value += dt;
+    dust.m.uniforms.uSize.value = 16 * (1 - rain);
     motes.m.uniforms.uTime.value += dt;
+    motes.m.uniforms.uIntensity.value = 0.8 * (1 - day) * (1 - 0.6 * rain);
   });
 
   // the contact camera sits close: the clearing is shown at a smaller scale. Desktop sets the
