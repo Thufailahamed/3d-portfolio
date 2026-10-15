@@ -273,7 +273,9 @@ void main(){
   // bend: its own lean, rolling gusts that sweep across the meadow, a quick flutter
   vec2 lean = vec2(cos(r * 41.0), sin(r * 41.0)) * (0.15 + 0.35 * fract(r * 7.3));
   vec2 windDir = normalize(vec2(1.0, 0.3));
-  float gust = vnoise(vec3(root.xz * 0.16 - windDir * uTime * 1.1, uTime * 0.12)) * 0.5 + 0.5;
+  // two crossing wave trains: cheap, and they read as gusts rolling over the meadow
+  float wa = dot(root.xz, windDir) * 0.32 - uTime * 1.5;
+  float gust = 0.5 + 0.3 * sin(wa + sin(root.z * 0.21 + uTime * 0.3) * 1.6) + 0.2 * sin(wa * 2.3 + root.x * 0.4);
   vec2 bend = lean + windDir * (0.12 + gust * gust * 0.85);
   bend += vec2(sin(uTime * 3.3 + r * 30.0), cos(uTime * 2.9 + r * 23.0)) * 0.05 * (0.5 + gust);
 

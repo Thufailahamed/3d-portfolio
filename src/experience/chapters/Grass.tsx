@@ -49,7 +49,7 @@ export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color
   const isMobile = useApp((s) => s.isMobile);
 
   const geometry = useMemo(() => {
-    const count = isMobile ? 32000 : 95000;
+    const count = isMobile ? 30000 : 75000;
     const random = rng(83);
     const clumps = perlin(91);
     const roots = new Float32Array(count * 3);
@@ -127,5 +127,6 @@ export default function Grass({ tint, time }: { tint: THREE.IUniform<THREE.Color
     material.uniforms.uPush.value = s.energy;
   });
 
-  return <mesh geometry={geometry} material={material} frustumCulled={false} />;
+  // drawn before the ground, so the ground hidden behind the blades is never shaded
+  return <mesh geometry={geometry} material={material} frustumCulled={false} renderOrder={-1} />;
 }

@@ -83,7 +83,8 @@ function Sky({ env }: { env: Env }) {
     if (m?.parent) m.position.copy(m.parent.worldToLocal(m.position.copy(camera.position)));
   });
   return (
-    <mesh ref={mesh} material={material} renderOrder={-10} frustumCulled={false}>
+    // drawn after the land, on the far plane: only the sky that's actually visible gets shaded
+    <mesh ref={mesh} material={material} renderOrder={3} frustumCulled={false}>
       <sphereGeometry args={[90, 48, 32]} />
     </mesh>
   );
@@ -216,7 +217,7 @@ function Crystal() {
     };
   }, [camera]);
 
-  const tmp = useMemo(() => ({ v: new THREE.Vector3(), res: new THREE.Vector2() }), []);
+  const tmp = useMemo(() => ({ v: new THREE.Vector3(), res: new THREE.Vector2(), frame: 0 }), []);
 
   useFrame(({ clock, gl, scene }, dt) => {
     const time = clock.elapsedTime;
@@ -259,12 +260,15 @@ function Crystal() {
       sceneState.crystal.y = (-centre.y * 0.5 + 0.5) * size.height;
     }
 
-    // the refraction source: everything but the crystal (and its reflection), at half resolution
+    // the refraction source: everything but the crystal (and its reflection), at reduced
+    // resolution and every other frame (what's behind it barely moves; the eye can't tell)
     if (!mesh?.parent?.parent?.parent?.visible) return;
     gl.getDrawingBufferSize(tmp.res);
     shared.uRes.value.copy(tmp.res);
-    const w = Math.max(2, Math.round(tmp.res.x * 0.5));
-    const h = Math.max(2, Math.round(tmp.res.y * 0.5));
+    const w = Math.max(2, Math.round(tmp.res.x * 0.42));
+    const h = Math.max(2, Math.round(tmp.res.y * 0.42));
+    const resized = target.width !== w || target.height !== h;
+    if (!resized && tmp.frame++ % 2) return;
     if (target.width !== w || target.height !== h) target.setSize(w, h);
     const bodies = [realBody.current, mirrorBody.current];
     bodies.forEach((b) => b && (b.visible = false));
@@ -281,7 +285,7 @@ function Crystal() {
         <CrystalBody geometry={geometry} material={mats.main} motion={motion} pickRef={pickMesh} />
       </group>
       <group ref={mirrorBody} scale={[1, -1, 1]}>
-        <CrystalBody geometry={geometry} material={mats.mirror} motion={motion} />
+        <CrystalBody geometry={geometry} material={mats.mirror} motion={motion} order={2} />
       </group>
       <mesh rotation-x={-Math.PI / 2} position-y={0.02} material={floorMat} renderOrder={9}>
         <planeGeometry args={[7, 7]} />
@@ -295,11 +299,13 @@ function CrystalBody({
   material,
   motion,
   pickRef,
+  order = 0,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.ShaderMaterial;
   motion: React.RefObject<Motion>;
   pickRef?: React.RefObject<THREE.Mesh | null>;
+  order?: number;
 }) {
   const spin = useRef<THREE.Group>(null);
 
@@ -328,7 +334,7 @@ function CrystalBody({
 
   return (
     <group ref={spin}>
-      <mesh ref={pickRef} geometry={geometry} material={material} frustumCulled={false} />
+      <mesh ref={pickRef} geometry={geometry} material={material} frustumCulled={false} renderOrder={order} />
     </group>
   );
 }
@@ -368,7 +374,7 @@ function Scatter({
     <>
       <instancedMesh ref={real} args={[geometry, mats[0], items.length]} frustumCulled={false} />
       <group scale={[1, -1, 1]}>
-        <instancedMesh ref={mirrored} args={[geometry, mats[1], items.length]} frustumCulled={false} />
+        <instancedMesh ref={mirrored} args={[geometry, mats[1], items.length]} frustumCulled={false} renderOrder={2} />
       </group>
     </>
   );
@@ -486,9 +492,10 @@ function Valley({ env }: { env: Env }) {
     <>
       <mesh geometry={geo.bank} material={mats.bank[0]} />
       <mesh geometry={geo.stone} material={mats.stone[0]} position={[0, -0.12, 0]} />
+      {/* reflections draw after the real world, so whatever the banks hide is never shaded */}
       <group scale={[1, -1, 1]}>
-        <mesh geometry={geo.bank} material={mats.bank[1]} />
-        <mesh geometry={geo.stone} material={mats.stone[1]} position={[0, -0.12, 0]} />
+        <mesh geometry={geo.bank} material={mats.bank[1]} renderOrder={2} />
+        <mesh geometry={geo.stone} material={mats.stone[1]} position={[0, -0.12, 0]} renderOrder={2} />
       </group>
       <Scatter geometry={geo.boulder} mats={mats.boulder} items={items.pebbles} place={placePebble} />
       <Scatter geometry={geo.boulder} mats={mats.boulder} items={items.boulders} place={placeBoulder} />

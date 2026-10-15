@@ -356,10 +356,11 @@ export default function Mountains({ crystal }: { crystal: [number, number, numbe
   if (!built) return null;
   return (
     <group ref={root}>
-      <mesh geometry={built.ridgeGeo} material={mats[0]} frustumCulled={false} />
+      {/* after the valley floor (which hides much of it), then its reflection after that */}
+      <mesh geometry={built.ridgeGeo} material={mats[0]} frustumCulled={false} renderOrder={1} />
       {/* the range mirrored in the river (the ground hides it everywhere else) */}
       <group scale={[1, -1, 1]}>
-        <mesh geometry={built.ridgeGeo} material={mats[1]} frustumCulled={false} />
+        <mesh geometry={built.ridgeGeo} material={mats[1]} frustumCulled={false} renderOrder={2} />
       </group>
     </group>
   );
