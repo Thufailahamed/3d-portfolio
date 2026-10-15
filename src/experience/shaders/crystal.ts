@@ -40,6 +40,8 @@ varying vec3 vWorld;
 varying vec3 vN;
 varying vec3 vLocal;
 varying vec3 vBary;
+varying vec2 vScreen;
+varying float vDepth;
 ${rippleGlsl}
 void main(){
   vec3 n = normalize(normal);
@@ -54,7 +56,12 @@ void main(){
   vN = normalize(mat3(modelMatrix) * n);
   vLocal = position;
   vBary = aBary;
-  gl_Position = projectionMatrix * viewMatrix * w;
+  // where this point sits relative to the crystal's centre, as seen from the camera
+  vec4 v = viewMatrix * w;
+  vec4 c = viewMatrix * modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  vScreen = v.xy - c.xy;
+  vDepth = v.z - c.z;
+  gl_Position = projectionMatrix * v;
 }`;
 
 /**
@@ -74,6 +81,8 @@ varying vec3 vWorld;
 varying vec3 vN;
 varying vec3 vLocal;
 varying vec3 vBary;
+varying vec2 vScreen;
+varying float vDepth;
 ${rippleGlsl}
 ${valueNoiseGlsl}
 ${nightGlsl}
@@ -131,49 +140,75 @@ void main(){
   vec2 off = Nv.xy * 0.04 + Iv.xy * 0.025;
   vec3 through = vec3(scene(uv + off * 0.93).r, scene(uv + off).g, scene(uv + off * 1.08).b);
 
-  // the body colour: pale, deeper where the path through the stone is longer
-  vec3 bodyTint = mix(vec3(1.0), uTint, 0.22);
+  // smoky quartz: most of the light through it is swallowed; what's left is faintly tinted
+  vec3 smoke = mix(vec3(0.16, 0.15, 0.18), uTint * 0.22, 0.25);
   float thick = 0.7 + 0.9 * cosV;
-  through *= pow(bodyTint, vec3(thick * 1.4)) * 0.85;
-  // part of what comes back out has bounced off an inner face: pieces of the sky, mirrored inside
+  through *= pow(smoke, vec3(0.35 + thick * 0.5)) * 0.9;
   vec3 bounce = reflect(Rin, innerW);
-  through += env(bounce) * bodyTint * 0.85;
+  through += env(bounce) * smoke * 0.6;
 
-  // inside: milky veils and a faint glow at the heart, marched along the refracted ray
+  // the heart: a cloud of light hanging in the middle of the stone. The view refracts in
+  // through the facet and meets it on a plane through the centre, so it shifts with the
+  // angle like something really inside.
+  vec3 Rv = normalize((viewMatrix * vec4(Rin, 0.0)).xyz);
+  float travel = max(vDepth, 0.0) / max(-Rv.z, 0.25);
+  vec2 hit = vScreen + Rv.xy * travel;
+  vec2 q = hit / vec2(0.36, 0.52);
+  float r = length(q);
+  // every project's colour glows equally bright (lime would otherwise outshine violet)
+  vec3 hue = uTint * (0.5 / max(dot(uTint, vec3(0.2126, 0.7152, 0.0722)), 0.2));
+  // slow currents and fine bright filaments drifting through it
+  float t = uTime * 0.12;
+  float swirl = fbm3(vec3(q * 1.8 + vec2(sin(t * 1.3), cos(t)) * 0.3, t));
+  float fil = vnoise(vec3(q * 8.0 + swirl * 1.4, t * 2.0));
+  fil = pow(1.0 - abs(fil), 10.0);
+  float body = exp(-r * r * 3.6);
+  float power = 1.0 + uPulse * 0.6;
+  float energy = body * (0.6 + 0.4 * smoothstep(-0.4, 0.6, swirl)) + fil * body * body * 0.3;
+  // white-hot at the centre, the project's colour toward the edges of the glow
+  vec3 heart = mix(hue, vec3(1.0), exp(-r * r * 12.0) * 0.5 + fil * 0.1);
+  float coreMask = smoothstep(1.4, 0.0, r);
+  vec3 core = heart * energy * 1.25 * power;
+  // its light fills the stone around it, fading toward the faces
+  core += hue * exp(-r * r * 1.6) * 0.06 * power;
+  core += hue * exp(-r * r * 0.3) * 0.012;
+
+  // inside: smoky veils, lit by the core
   vec3 inside = vec3(0.0);
   vec3 p = vLocal;
-  float veilSum = 0.0;
-  for (int i = 0; i < 6; i++){
-    p += RinL * 0.11;
-    float veil = smoothstep(0.35, 0.75, vnoise(p * vec3(2.4, 0.9, 2.4) + 3.1) * 0.6 + vnoise(p * 7.0) * 0.4 + 0.25);
-    float core = exp(-dot(p.xz, p.xz) * 7.0 - p.y * p.y * 0.9);
-    veilSum += veil;
-    inside += (MOON_LIGHT * 0.06 + uTint * (0.02 + 0.25 * uPulse) * core) * veil * 0.14;
-    inside += uTint * core * (0.0025 + 0.05 * uPulse);
+  for (int i = 0; i < 5; i++){
+    p += RinL * 0.12;
+    float veil = smoothstep(0.4, 0.8, vnoise(p * vec3(2.4, 0.9, 2.4) + 3.1) * 0.6 + vnoise(p * 7.0) * 0.4 + 0.25);
+    float glow = exp(-dot(p.xz, p.xz) * 5.0 - p.y * p.y * 0.8);
+    inside += uTint * glow * veil * 0.03 * power + MOON_LIGHT * veil * 0.004;
   }
-  through = mix(through, through * 0.75, clamp(veilSum * 0.08, 0.0, 0.4));
-
-  // light bouncing off the inner faces: the gem's sparkle
+  // light bouncing off the inner faces: a few hard sparkles and their fire
   float sb = max(dot(bounce, MOON_DIR), 0.0);
-  float sparkle = pow(sb, 90.0);
-  inside += MOON_LIGHT * sparkle * 0.7 * bodyTint;
-  // fire: the bounce splits the moonlight into colour, a different hue in each inner face
-  inside += spectrum(hash33(cell).x + dot(bounce, vec3(0.7))) * pow(sb, 22.0) * 0.12;
+  inside += MOON_LIGHT * pow(sb, 120.0) * 0.6;
+  inside += spectrum(hash33(cell).x + dot(bounce, vec3(0.7))) * pow(sb, 26.0) * 0.08;
 
-  // the surface: sky and moon in every facet
+  // the surface: a deep, polished reflection of the sky, the moon or sun as a hard glint
   vec3 R = reflect(-V, N);
   float m = max(dot(R, MOON_DIR), 0.0);
-  vec3 surface = env(R) + MOON_LIGHT * (pow(m, 500.0) * 9.0 + pow(m, 40.0) * 0.1);
+  vec3 surface = env(R) * 1.4 + MOON_LIGHT * (pow(m, 600.0) * 10.0 + pow(m, 50.0) * 0.12);
 
-  vec3 col = (through + inside) * (1.0 - F) + surface * F;
-  // facet edges catch a thin line of light; wave crests glint
-  float line = edgeLine(1.2);
-  col += vec3(0.75, 0.8, 0.9) * line * (0.07 + pow(m, 30.0) * 0.6);
-  // the ripples: crests catch the sky and the moon as they run across the faces
+  vec3 col = (through + core + inside) * (1.0 - F) + surface * F;
+
+  // studio rims: a warm light from the left and a cool one from the right graze the edges,
+  // split into colour where the glass is thin
+  vec3 Nv2 = normalize((viewMatrix * vec4(N, 0.0)).xyz);
+  float rim = pow(1.0 - cosV, 4.0);
+  vec3 rimCol = mix(vec3(0.9, 0.22, 0.32), vec3(0.22, 0.5, 1.0), smoothstep(-0.35, 0.35, Nv2.x));
+  col += rimCol * rim * 0.22;
+  col += spectrum(cosV * 1.7 + Nv2.x * 0.5) * pow(rim, 1.5) * 0.06;
+  // facet edges: a fine bright line, brighter where a light catches it
+  float line = edgeLine(1.1);
+  col += (vec3(0.7, 0.75, 0.85) * (0.03 + pow(m, 30.0) * 0.6) + rimCol * rim * 0.4) * line;
+  // the ripples: crests catch the light as they run across the faces
   float wave = clamp(length(gw) * uRipDepth * 2.0, 0.0, 1.0);
   float sheen = pow(max(dot(R, normalize(vec3(-0.25, 0.75, 0.6))), 0.0), 18.0);
-  col += (MOON_LIGHT * 0.5 * sheen + env(R) * 0.6) * wave;
-  col += uTint * 0.03 * h;
+  col += (MOON_LIGHT * 0.4 * sheen + env(R) * 0.5 + rimCol * 0.15) * wave;
+  col += uTint * 0.05 * h * coreMask;
 
   if (uReflect > 0.5) col *= 0.55;
   gl_FragColor = vec4(min(col, vec3(4.0)), 1.0);
@@ -186,7 +221,8 @@ uniform float uPulse;
 varying vec2 vUv;
 void main(){
   float d = length(vUv - 0.5) * 2.0;
-  float g = exp(-d * d * 9.0) * 0.06 + exp(-d * d * 50.0) * 0.05;
+  // the core's light pooled on the water and the stone below
+  float g = exp(-d * d * 7.0) * 0.12 + exp(-d * d * 40.0) * 0.1;
   gl_FragColor = vec4(uTint * g * (1.0 + uPulse * 0.8), 1.0);
 }`;
 
