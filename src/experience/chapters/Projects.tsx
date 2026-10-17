@@ -11,8 +11,8 @@ import { gsap } from "@/lib/gsap";
 import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
-import { CRYSTALS_URL, crystalFromMesh, tessellate } from "../crystal";
-import { crystalFrag, crystalVert, floorGlowFrag, planeVert, RIPPLES } from "../shaders/crystal";
+import { CORE_LAYER, coreFromMesh, CRYSTALS_URL, crystalFromMesh, tessellate } from "../crystal";
+import { coreFrag, coreVert, crystalFrag, crystalVert, floorGlowFrag, planeVert, RIPPLES } from "../shaders/crystal";
 import { skyFrag, skyVert, valleyLight } from "../shaders/night";
 import { bankFrag, bankVert, pineFrag, pineVert, rockFrag, rockVert, waterFrag, waterVert } from "../shaders/valley";
 import { bankGeometry, boulderGeometry, mushroomClusters, pineGeometry, scatter } from "../valley";
@@ -99,6 +99,8 @@ function Sky({ env }: { env: Env }) {
 type Motion = { spin: number; pulse: number; scale: number; hover: number };
 
 const raycaster = new THREE.Raycaster();
+const black = new THREE.Color(0, 0, 0);
+const clearWas = new THREE.Color();
 const ndc = new THREE.Vector2();
 const centre = new THREE.Vector3();
 const canHover = typeof matchMedia !== "undefined" && matchMedia("(hover: hover) and (pointer: fine)").matches;
@@ -112,7 +114,7 @@ function crystalMaterial(shared: Record<string, THREE.IUniform>, reflect: boolea
   });
 }
 
-/** Clear quartz hovering over the stone. The cursor sets ripples running across it, like a hand over water. */
+/** Smoked quartz hovering over the stone, a glowing relic of the project at its heart. The cursor sets ripples running across it, like a hand over water. */
 function Crystal() {
   const motion = useRef<Motion>({ spin: 0, pulse: 0, scale: 1, hover: 0 });
   const pickMesh = useRef<THREE.Mesh>(null);
@@ -120,7 +122,7 @@ function Crystal() {
   const mirrorBody = useRef<THREE.Group>(null);
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
-  const { nodes } = useGLTF(CRYSTALS_URL) as unknown as { nodes: Record<string, THREE.Mesh> };
+  const { nodes } = useGLTF(CRYSTALS_URL, "/draco/") as unknown as { nodes: Record<string, THREE.Mesh> };
 
   // one Blender cut per project (cycled if there are more projects than cuts), finely divided for the ripples
   const cuts = useMemo(() => {
@@ -134,26 +136,56 @@ function Crystal() {
       return fine;
     });
   }, [nodes]);
+  const relics = useMemo(
+    () =>
+      Object.values(nodes)
+        .filter((n) => n.isMesh && /^Core_\d+$/.test(n.name))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((m) => coreFromMesh(m.geometry)),
+    [nodes],
+  );
   const [shown, setShown] = useState(() => useApp.getState().activeProject);
   const geometry = cuts[shown % cuts.length];
+  const relic = relics[shown % relics.length];
   const swap = useRef<gsap.core.Timeline | null>(null);
 
   // what the crystal refracts: the valley behind it, drawn without the crystal at half resolution
   const target = useMemo(() => new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType }), []);
+  // and what glows at its heart: the relic alone on black, mipmapped so its halo is a cheap blur
+  const coreTarget = useMemo(
+    () =>
+      new THREE.WebGLRenderTarget(2, 2, {
+        type: THREE.HalfFloatType,
+        generateMipmaps: true,
+        minFilter: THREE.LinearMipmapLinearFilter,
+      }),
+    [],
+  );
   const shared = useMemo<Record<string, THREE.IUniform>>(
     () => ({
       uTime: { value: 0 },
       uPulse: { value: 0 },
       uTint: { value: new THREE.Color(projects[0].tint) },
       uScene: { value: target.texture },
+      uCore: { value: coreTarget.texture },
       uRes: { value: new THREE.Vector2(1, 1) },
       uRipDepth: { value: 0.022 },
       uRip: { value: Array.from({ length: RIPPLES }, () => new THREE.Vector4(0, 0, 0, -100)) },
       uRipAmp: { value: new Array<number>(RIPPLES).fill(0) },
     }),
-    [target],
+    [target, coreTarget],
   );
   const mats = useMemo(() => ({ main: crystalMaterial(shared, false), mirror: crystalMaterial(shared, true) }), [shared]);
+  const coreMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: coreVert,
+        fragmentShader: coreFrag,
+        uniforms: { uTint: shared.uTint, uTime: shared.uTime, uPulse: shared.uPulse },
+        side: THREE.DoubleSide,
+      }),
+    [shared],
+  );
   const floorMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -170,13 +202,16 @@ function Crystal() {
   useEffect(
     () => () => {
       floorMat.dispose();
+      coreMat.dispose();
+      coreTarget.dispose();
       mats.main.dispose();
       mats.mirror.dispose();
       target.dispose();
     },
-    [mats, floorMat, target],
+    [mats, floorMat, coreMat, target, coreTarget],
   );
   useEffect(() => () => cuts.forEach((g) => g.dispose()), [cuts]);
+  useEffect(() => () => relics.forEach((g) => g.dispose()), [relics]);
 
   // ripples: a ring buffer of where (crystal space) and when each one started
   const rip = useMemo(() => ({ next: 0, last: new THREE.Vector3(1e3, 0, 0), lastT: -1, idle: 1.5, random: rng(61) }), []);
@@ -271,11 +306,33 @@ function Crystal() {
     if (!mesh?.parent?.parent?.parent?.visible) return;
     gl.getDrawingBufferSize(tmp.res);
     shared.uRes.value.copy(tmp.res);
+
+    // the relic turns with the stone, so its pass runs every frame (it's only a few thousand triangles)
+    const low = useApp.getState().quality === "low";
+    const cw = Math.max(2, Math.round(tmp.res.x * (low ? 0.5 : 1)));
+    const ch = Math.max(2, Math.round(tmp.res.y * (low ? 0.5 : 1)));
+    if (coreTarget.width !== cw || coreTarget.height !== ch) coreTarget.setSize(cw, ch);
+    const prevTarget = gl.getRenderTarget();
+    const mask = camera.layers.mask;
+    const bg = scene.background;
+    const alpha = gl.getClearAlpha();
+    gl.getClearColor(clearWas);
+    scene.background = null;
+    gl.setClearColor(black, 1);
+    camera.layers.set(CORE_LAYER);
+    gl.setRenderTarget(coreTarget);
+    gl.clear();
+    gl.render(scene, camera);
+    camera.layers.mask = mask;
+    scene.background = bg;
+    gl.setClearColor(clearWas, alpha);
+    gl.setRenderTarget(prevTarget);
+
     const w = Math.max(2, Math.round(tmp.res.x * 0.42));
     const h = Math.max(2, Math.round(tmp.res.y * 0.42));
     const resized = target.width !== w || target.height !== h;
     // low quality: every third frame
-    if (!resized && tmp.frame++ % (useApp.getState().quality === "low" ? 3 : 2)) return;
+    if (!resized && tmp.frame++ % (low ? 3 : 2)) return;
     if (target.width !== w || target.height !== h) target.setSize(w, h);
     const bodies = [realBody.current, mirrorBody.current];
     bodies.forEach((b) => b && (b.visible = false));
@@ -289,10 +346,10 @@ function Crystal() {
   return (
     <>
       <group ref={realBody}>
-        <CrystalBody geometry={geometry} material={mats.main} motion={motion} pickRef={pickMesh} />
+        <CrystalBody geometry={geometry} material={mats.main} relic={relic} relicMat={coreMat} motion={motion} pickRef={pickMesh} />
       </group>
       <group ref={mirrorBody} scale={[1, -1, 1]}>
-        <CrystalBody geometry={geometry} material={mats.mirror} motion={motion} order={2} />
+        <CrystalBody geometry={geometry} material={mats.mirror} relic={relic} relicMat={coreMat} motion={motion} order={2} />
       </group>
       <mesh rotation-x={-Math.PI / 2} position-y={0.02} material={floorMat} renderOrder={9}>
         <planeGeometry args={[7, 7]} />
@@ -304,17 +361,23 @@ function Crystal() {
 function CrystalBody({
   geometry,
   material,
+  relic,
+  relicMat,
   motion,
   pickRef,
   order = 0,
 }: {
   geometry: THREE.BufferGeometry;
   material: THREE.ShaderMaterial;
+  relic: THREE.BufferGeometry;
+  relicMat: THREE.ShaderMaterial;
   motion: React.RefObject<Motion>;
   pickRef?: React.RefObject<THREE.Mesh | null>;
   order?: number;
 }) {
   const spin = useRef<THREE.Group>(null);
+  const core = useRef<THREE.Mesh>(null);
+  useEffect(() => core.current?.layers.set(CORE_LAYER), []);
 
   useFrame(({ clock }) => {
     const g = spin.current;
@@ -342,6 +405,7 @@ function CrystalBody({
   return (
     <group ref={spin}>
       <mesh ref={pickRef} geometry={geometry} material={material} frustumCulled={false} renderOrder={order} />
+      <mesh ref={core} geometry={relic} material={relicMat} scale={1.3} frustumCulled={false} />
     </group>
   );
 }

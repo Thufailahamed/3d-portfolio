@@ -65,12 +65,14 @@ void main(){
 }`;
 
 /**
- * Clear quartz. The valley behind it (rendered without the crystal, uScene) is refracted
- * through each facet and split into faint colour; inside, the light bounces off internal
- * faces and catches on milky veils. The surface reflects the night sky and flashes the moon.
+ * Smoked quartz, rough-cut. The valley behind it (rendered without the crystal, uScene) is
+ * refracted through each facet and mostly swallowed by the dark glass; the relic at its heart
+ * (rendered alone, uCore) shines through, broken up a little by the facets and haloed in its
+ * own light. The faces catch two soft studio lights and the sky; the edges split into colour.
  */
 export const crystalFrag = /* glsl */ `
 uniform sampler2D uScene;
+uniform sampler2D uCore;
 uniform vec2 uRes;
 uniform mat3 uRot;          // crystal space → world (rotation only)
 uniform vec3 uTint;
@@ -108,8 +110,19 @@ vec3 env(vec3 R){
   vec3 ground = vec3(0.004, 0.005, 0.007) + uTint * 0.01;
   return mix(ground, sky, smoothstep(-0.08, 0.05, R.y));
 }
+/** Two big soft boxes fixed to the camera (view space): a cool one high left, a strip low right.
+ *  As the stone turns, each facet swings through them and lights up as a whole grey plane. */
+vec3 studio(vec3 Rv){
+  float key = smoothstep(0.78, 0.99, dot(Rv, normalize(vec3(-0.55, 0.65, 0.5))));
+  float strip = smoothstep(0.9, 0.995, dot(Rv, normalize(vec3(0.75, -0.1, 0.65))));
+  float top = smoothstep(0.8, 1.0, Rv.y);
+  return vec3(0.62, 0.68, 0.78) * key * 0.55 + vec3(0.8, 0.82, 0.86) * strip * 0.4 + vec3(0.35, 0.38, 0.45) * top * 0.25;
+}
 vec3 scene(vec2 uv){
   return texture2D(uScene, clamp(uv, vec2(0.001), vec2(0.999))).rgb;
+}
+vec3 relic(vec2 uv, float bias){
+  return texture2D(uCore, clamp(uv, vec2(0.001), vec2(0.999)), bias).rgb;
 }
 
 void main(){
@@ -137,94 +150,123 @@ void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   vec3 Nv = normalize((viewMatrix * vec4(N, 0.0)).xyz);
   vec3 Iv = normalize((viewMatrix * vec4(innerW, 0.0)).xyz);
-  vec2 off = Nv.xy * 0.04 + Iv.xy * 0.025;
-  vec3 through = vec3(scene(uv + off * 0.88).r, scene(uv + off).g, scene(uv + off * 1.16).b);
+  vec2 off = Nv.xy * 0.045 + Iv.xy * 0.025;
+  vec3 through = vec3(scene(uv + off * 0.86).r, scene(uv + off).g, scene(uv + off * 1.18).b);
 
-  // smoky quartz: most of the light through it is swallowed; what's left is faintly tinted
-  vec3 smoke = mix(vec3(0.42, 0.46, 0.45), uTint * 0.55, 0.35);
+  // smoked quartz: almost all the light through it is swallowed; what's left is faintly tinted
+  vec3 smoke = mix(vec3(0.3, 0.33, 0.36), uTint * 0.4, 0.25);
   float thick = 0.7 + 0.9 * cosV;
-  through *= pow(smoke, vec3(0.35 + thick * 0.5)) * 0.85;
+  through *= pow(smoke, vec3(0.6 + thick * 0.7)) * 0.5;
   vec3 bounce = reflect(Rin, innerW);
-  through += env(bounce) * smoke * 0.6;
+  through += env(bounce) * smoke * 0.25;
 
-  // the heart: a cloud of light hanging in the middle of the stone. The view refracts in
-  // through the facet and meets it on a plane through the centre, so it shifts with the
-  // angle like something really inside.
+  // every project's colour glows equally bright (lime would otherwise outshine violet)
+  vec3 hue = uTint * (0.5 / max(dot(uTint, vec3(0.2126, 0.7152, 0.0722)), 0.2));
+  float power = 1.0 + uPulse * 0.6;
+
+  // the relic: seen through the facet it's bent a little (so each face shows it slightly
+  // shifted, like a real object inside cut glass), colours parting at the shift
+  vec2 coff = Nv.xy * 0.014 + Iv.xy * 0.006;
+  vec3 holo = vec3(relic(uv + coff * 0.8, 0.0).r, relic(uv + coff, 0.0).g, relic(uv + coff * 1.25, 0.0).b);
+  // its light scatters in the glass around it: a soft halo, wider and dimmer the further out
+  vec3 halo = relic(uv + coff, 3.0) * 0.7 + relic(uv + coff, 4.5) * 0.8 + relic(uv, 6.0) * 0.6;
+
+  // a faint cloud of the same light hangs around it, where the view meets the plane through the centre
   vec3 Rv = normalize((viewMatrix * vec4(Rin, 0.0)).xyz);
   float travel = max(vDepth, 0.0) / max(-Rv.z, 0.25);
   vec2 hit = vScreen + Rv.xy * travel;
-  vec2 q = hit / vec2(0.46, 0.6);
+  vec2 q = hit / vec2(0.5, 0.62);
   float r = length(q);
-  // every project's colour glows equally bright (lime would otherwise outshine violet)
-  vec3 hue = uTint * (0.5 / max(dot(uTint, vec3(0.2126, 0.7152, 0.0722)), 0.2));
-  // slow currents and fine bright filaments drifting through it
   float t = uTime * 0.12;
-  float swirl = fbm3(vec3(q * 1.8 + vec2(sin(t * 1.3), cos(t)) * 0.3, t));
-  float fil = vnoise(vec3(q * 8.0 + swirl * 1.4, t * 2.0));
-  fil = pow(1.0 - abs(fil), 10.0);
-  // fine cellular web, like circuitry etched inside the core
-  vec2 wq = q * 5.0 + swirl * 0.8;
-  vec2 wi = floor(wq), wf = fract(wq);
-  float d1 = 9.0, d2 = 9.0;
-  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
-    vec2 o = vec2(float(i), float(j));
-    vec2 pt = 0.5 + 0.45 * sin(uTime * 0.25 + 6.2831 * hash33(vec3(wi + o, 1.0)).xy);
-    float d = length(o + pt - wf);
-    if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d;
-  }
-  float web = 1.0 - smoothstep(0.0, 0.09, d2 - d1);
-  fil = max(fil, web * 0.8);
-  float body = exp(-r * r * 2.6);
-  float power = 1.0 + uPulse * 0.6;
-  float energy = body * (0.6 + 0.4 * smoothstep(-0.4, 0.6, swirl)) + fil * body * body * 0.3;
-  // white-hot at the centre, the project's colour toward the edges of the glow
-  vec3 heart = mix(hue, vec3(1.0), exp(-r * r * 12.0) * 0.5 + fil * 0.1);
-  float coreMask = smoothstep(1.4, 0.0, r);
-  vec3 core = heart * energy * 2.1 * power;
-  core += hue * web * body * body * 0.9 * power;
-  // its light fills the stone around it, fading toward the faces
-  core += hue * exp(-r * r * 1.6) * 0.06 * power;
-  core += hue * exp(-r * r * 0.3) * 0.012;
+  float swirl = fbm3(vec3(q * 1.6 + vec2(sin(t * 1.3), cos(t)) * 0.3, t));
+  vec3 core = holo + halo * 0.6;
+  core += hue * exp(-r * r * 3.0) * (0.03 + 0.04 * smoothstep(-0.3, 0.6, swirl));
+  core += hue * exp(-r * r * 0.8) * 0.008;
+  core *= power;
 
-  // inside: smoky veils, lit by the core
+  // inside: thin smoky veils, lit by the relic
   vec3 inside = vec3(0.0);
   vec3 p = vLocal;
-  for (int i = 0; i < 5; i++){
-    p += RinL * 0.12;
-    float veil = smoothstep(0.4, 0.8, vnoise(p * vec3(2.4, 0.9, 2.4) + 3.1) * 0.6 + vnoise(p * 7.0) * 0.4 + 0.25);
-    float glow = exp(-dot(p.xz, p.xz) * 5.0 - p.y * p.y * 0.8);
-    inside += uTint * glow * veil * 0.03 * power + MOON_LIGHT * veil * 0.004;
+  for (int i = 0; i < 4; i++){
+    p += RinL * 0.14;
+    float veil = smoothstep(0.45, 0.85, vnoise(p * vec3(2.4, 0.9, 2.4) + 3.1) * 0.6 + vnoise(p * 7.0) * 0.4 + 0.25);
+    float glow = exp(-dot(p.xz, p.xz) * 4.0 - p.y * p.y * 1.2);
+    inside += hue * glow * veil * 0.02 * power + MOON_LIGHT * veil * 0.003;
   }
   // light bouncing off the inner faces: a few hard sparkles and their fire
   float sb = max(dot(bounce, MOON_DIR), 0.0);
-  inside += MOON_LIGHT * pow(sb, 120.0) * 0.6;
-  inside += spectrum(hash33(cell).x + dot(bounce, vec3(0.7))) * pow(sb, 26.0) * 0.08;
+  inside += MOON_LIGHT * pow(sb, 120.0) * 0.5;
+  inside += spectrum(hash33(cell).x + dot(bounce, vec3(0.7))) * pow(sb, 26.0) * 0.07;
 
-  // the surface: a deep, polished reflection of the sky, the moon or sun as a hard glint
+  // the surface: polished, mirroring the sky and the studio lights, the moon or sun as a hard glint
   vec3 R = reflect(-V, N);
+  vec3 Rvw = normalize((viewMatrix * vec4(R, 0.0)).xyz);
   float m = max(dot(R, MOON_DIR), 0.0);
-  vec3 surface = env(R) * 1.4 + MOON_LIGHT * (pow(m, 600.0) * 10.0 + pow(m, 50.0) * 0.12);
+  // each facet is a flat mirror: a faint per-face grain keeps them from looking like plastic
+  float grain = 0.94 + 0.12 * vnoise(vLocal * 9.0);
+  vec3 surface = (env(R) * 0.9 + studio(Rvw) * grain) + MOON_LIGHT * (pow(m, 600.0) * 10.0 + pow(m, 50.0) * 0.1);
+  // smoky glass reflects more than it lets through: a floor so every face shows a little sheen
+  float Fs = max(F, 0.09);
 
-  vec3 col = (through + core + inside) * (1.0 - F) + surface * F;
+  vec3 col = (through + core + inside) * (1.0 - Fs) + surface * Fs * 2.6;
 
-  // studio rims: a warm light from the left and a cool one from the right graze the edges,
-  // split into colour where the glass is thin
-  vec3 Nv2 = normalize((viewMatrix * vec4(N, 0.0)).xyz);
-  float rim = pow(1.0 - cosV, 4.0);
-  vec3 rimCol = mix(vec3(0.9, 0.22, 0.32), vec3(0.22, 0.5, 1.0), smoothstep(-0.35, 0.35, Nv2.x));
-  col += rimCol * rim * 0.22;
-  col += spectrum(cosV * 1.7 + Nv2.x * 0.5) * pow(rim, 1.5) * 0.06;
+  // rims: thin glass at the silhouette splits the light into colour (red one side, blue the other)
+  float rim = pow(1.0 - cosV, 3.0);
+  vec3 rimCol = mix(vec3(0.95, 0.25, 0.3), vec3(0.25, 0.5, 1.0), smoothstep(-0.35, 0.35, Nv.x));
+  col += rimCol * rim * 0.16;
+  col += spectrum(cosV * 2.2 + Nv.x * 0.6 + Nv.y * 0.3) * pow(rim, 1.3) * 0.12;
   // facet edges: a fine bright line, brighter where a light catches it
-  float line = edgeLine(1.1);
-  col += (vec3(0.7, 0.75, 0.85) * (0.03 + pow(m, 30.0) * 0.6) + rimCol * rim * 0.4) * line;
+  float line = edgeLine(1.0);
+  float catchL = max(max(dot(studio(Rvw), vec3(0.6)), pow(m, 30.0)), 0.0);
+  col += (vec3(0.65, 0.7, 0.8) * (0.025 + catchL * 0.5) + rimCol * rim * 0.3 + hue * 0.02) * line;
   // the ripples: crests catch the light as they run across the faces
   float wave = clamp(length(gw) * uRipDepth * 2.0, 0.0, 1.0);
   float sheen = pow(max(dot(R, normalize(vec3(-0.25, 0.75, 0.6))), 0.0), 18.0);
   col += (MOON_LIGHT * 0.4 * sheen + env(R) * 0.5 + rimCol * 0.15) * wave;
-  col += uTint * 0.05 * h * coreMask;
+  col += hue * 0.04 * h * exp(-r * r);
 
   if (uReflect > 0.5) col *= 0.55;
   gl_FragColor = vec4(min(col, vec3(4.0)), 1.0);
+}`;
+
+/**
+ * The relic inside: a solid little model lit like a hologram, in the project's colour, with a
+ * white-hot top light, a bright rim and fine scanlines climbing through it.
+ */
+export const coreVert = /* glsl */ `
+varying vec3 vN;
+varying vec3 vLocal;
+varying vec3 vView;
+void main(){
+  vLocal = position;
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vN = normalize(mat3(modelMatrix) * normal);
+  vView = cameraPosition - w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+
+export const coreFrag = /* glsl */ `
+uniform vec3 uTint;
+uniform float uTime;
+uniform float uPulse;
+varying vec3 vN;
+varying vec3 vLocal;
+varying vec3 vView;
+void main(){
+  vec3 N = normalize(vN);
+  vec3 V = normalize(vView);
+  if (!gl_FrontFacing) N = -N;
+  vec3 hue = uTint * (0.5 / max(dot(uTint, vec3(0.2126, 0.7152, 0.0722)), 0.2));
+  float key = max(dot(N, normalize(vec3(-0.3, 0.85, 0.45))), 0.0);
+  float fill = max(dot(N, normalize(vec3(0.6, -0.1, 0.8))), 0.0);
+  float fres = pow(1.0 - abs(dot(N, V)), 2.0);
+  float shade = 0.08 + key * 0.8 + fill * 0.25 + fres * 0.7;
+  // scanlines, and a brighter band sweeping up through the model
+  float scan = 0.82 + 0.18 * sin(vLocal.y * 260.0 - uTime * 4.0);
+  float band = exp(-pow(fract(vLocal.y * 0.6 - uTime * 0.18) - 0.5, 2.0) * 160.0);
+  vec3 col = hue * shade * scan * (1.0 + band * 0.8);
+  col += vec3(1.0) * pow(key, 8.0) * 0.4 + hue * fres * 0.3;
+  gl_FragColor = vec4(col * 0.95 * (1.0 + uPulse * 0.5), 1.0);
 }`;
 
 /** Soft pool of tinted light on the floor under the crystal. */

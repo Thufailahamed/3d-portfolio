@@ -1,13 +1,25 @@
 import * as THREE from "three";
 
 /**
- * Project crystals come from Blender (art/build_crystals.py → crystals.glb), one cut per project.
+ * Project crystals come from Blender (art/build_crystals.py → crystals.glb), one rough-cut stone per project.
  *
  * Each is rebuilt here as flat triangles with `aBary` barycentrics. Where two triangles are
  * coplanar (a quad split in two), their shared edge is pinned to 1 so the shader only
  * outlines real facet edges.
  */
 export const CRYSTALS_URL = "/models/crystals.glb";
+
+/** The relic inside each crystal (Core_n) lives on its own layer: drawn only into the pass the glass refracts. */
+export const CORE_LAYER = 7;
+
+/** A relic as flat-shaded triangles (the glb carries positions only). */
+export function coreFromMesh(src: THREE.BufferGeometry) {
+  const g = src.index ? src.toNonIndexed() : src.clone();
+  g.deleteAttribute("normal");
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}
 
 export function crystalFromMesh(src: THREE.BufferGeometry) {
   const g = src.index ? src.toNonIndexed() : src.clone();

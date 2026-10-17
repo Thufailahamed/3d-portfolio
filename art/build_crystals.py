@@ -1,11 +1,13 @@
 """
-Six project crystals, one per project, as flat-faceted meshes:
+Six project crystals, one per project, each with a miniature relic floating at its heart:
 
     /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P art/build_crystals.py [-- render]
 
-Writes public/models/crystals.glb (Crystal_0 … Crystal_5, in projects[] order), each
-fitted to the same envelope (≈2.5 tall, centred on its bounding box). With `render`,
-also writes art/renders/crystals.png. Blender Z-up; glTF turns Z into Y.
+Writes public/models/crystals.glb with Crystal_0 … Crystal_5 (rough-cut gems: a few large,
+irregular facets, like a stone split along its cleavage planes) and Core_0 … Core_5 (the
+relic inside, drawn as a hologram seen through the glass), in projects[] order.
+Every crystal fits the same envelope (≈2.5 tall), every relic a smaller one at its centre.
+With `render`, also writes art/renders/crystals.png. Blender Z-up; glTF turns Z into Y.
 """
 
 import math
@@ -15,241 +17,407 @@ import sys
 
 import bmesh
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Euler, Matrix, Vector
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "public", "models", "crystals.glb")
 HEIGHT = 2.5
-MAX_R = 0.95
+MAX_R = 1.0
+CORE_H = 1.0
+CORE_R = 0.46
 
 
 def reset():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def ring(bm, n, r, z, twist=0.0, jitter=0.0, rnd=None, squash=1.0, phase=0.0):
-    out = []
-    for i in range(n):
-        a = phase + (i + twist) / n * math.tau + (rnd.uniform(-jitter, jitter) if rnd else 0)
-        rr = r * (rnd.uniform(1 - jitter, 1 + jitter) if rnd and jitter else 1)
-        out.append(bm.verts.new((math.cos(a) * rr, math.sin(a) * rr * squash, z)))
-    return out
-
-
-def band(bm, a, b, quads=True):
-    """Join two rings. quads → planar-ish quads split in two; else an antiprism of triangles."""
-    n = len(a)
-    for i in range(n):
-        j = (i + 1) % n
-        if quads:
-            bm.faces.new((a[i], a[j], b[j], b[i]))
-        else:
-            bm.faces.new((a[i], a[j], b[i]))
-            bm.faces.new((a[j], b[j], b[i]))
-
-
-def cap(bm, ring_, apex, top=True):
-    n = len(ring_)
-    for i in range(n):
-        j = (i + 1) % n
-        bm.faces.new((ring_[i], ring_[j], apex) if top else (ring_[j], ring_[i], apex))
-
-
-def lid(bm, ring_, top=True):
-    bm.faces.new(ring_ if top else list(reversed(ring_)))
-
-
-def rough(bm, seed):
-    """Cleavage: shave corners off with random planes (as the photoreal Blender crystal does),
-    then a faint nudge so no two faces are exactly parallel."""
-    rnd = random.Random(seed)
-    for _ in range(9):
-        d = Vector((rnd.gauss(0, 1), rnd.gauss(0, 1), rnd.gauss(0, 1.25))).normalized()
-        reach = max(abs(d.dot(v.co)) for v in bm.verts)
-        geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
-        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=d * reach * rnd.uniform(0.8, 0.92), plane_no=d, clear_outer=True)
-        open_edges = [e for e in bm.edges if e.is_boundary]
-        if open_edges:
-            bmesh.ops.holes_fill(bm, edges=open_edges, sides=0)
-    bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=1e-4)
-    for v in bm.verts:
-        v.co += Vector((rnd.gauss(0, 0.008), rnd.gauss(0, 0.008), rnd.gauss(0, 0.008)))
-
-
-def finish(bm, name):
-    rough(bm, sum(map(ord, name)))
-    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
-    bmesh.ops.triangulate(bm, faces=list(bm.faces))
-    me = bpy.data.meshes.new(name)
-    bm.to_mesh(me)
-    bm.free()
-    ob = bpy.data.objects.new(name, me)
-    bpy.context.scene.collection.objects.link(ob)
-    fit(ob)
-    return ob
-
-
-def fit(ob):
-    """Centre on the bounding box and scale into the shared envelope."""
+def fit(ob, height, radius):
+    """Centre on the bounding box and scale into the envelope."""
     vs = [v.co for v in ob.data.vertices]
     lo = Vector((min(v.x for v in vs), min(v.y for v in vs), min(v.z for v in vs)))
     hi = Vector((max(v.x for v in vs), max(v.y for v in vs), max(v.z for v in vs)))
     c = (lo + hi) / 2
     ob.data.transform(Matrix.Translation(-c))
     h = hi.z - lo.z
-    r = max(math.hypot(v.x - c.x, v.y - c.y) for v in vs)
-    s = min(HEIGHT / h, MAX_R / r)
-    ob.data.transform(Matrix.Scale(s, 4))
+    r = max(math.hypot(v.co.x, v.co.y) for v in ob.data.vertices)
+    ob.data.transform(Matrix.Scale(min(height / h, radius / r), 4))
 
 
-def point(bm, rnd, base_z, length, r, sides=6, tip=0.55, lean=(0.0, 0.0), offset=(0.0, 0.0), irregular=0.12):
-    """A quartz-style point: prism + pyramidal termination, optionally leaning."""
-    ox, oy = offset
-    lx, ly = lean
-    bot = ring(bm, sides, r, base_z, jitter=0.0, rnd=None)
-    top = ring(bm, sides, r, base_z + length, jitter=0.0, rnd=None)
-    # alternating large / small faces, like natural quartz
-    for k, v in enumerate(bot + top):
-        i = k % sides
-        f = 1 + (irregular if i % 2 else -irregular * 0.5)
-        v.co.x = v.co.x * f
-        v.co.y = v.co.y * f
-    for v in bot + top:
-        h = v.co.z - base_z
-        v.co.x += ox + lx * h
-        v.co.y += oy + ly * h
-    apex_h = base_z + length + r * tip * 2.2
-    apex = bm.verts.new((ox + lx * (apex_h - base_z) + rnd.uniform(-0.03, 0.03), oy + ly * (apex_h - base_z), apex_h))
-    band(bm, bot, top)
-    cap(bm, top, apex)
-    lid(bm, bot, top=False)
+def to_object(bm, name):
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    for p in me.polygons:
+        p.use_smooth = False
+    return ob
 
 
-# ------------------------------------------------------------------ the six cuts
-def c_quartz(rnd):
-    """Halcyon — a double-terminated quartz point."""
+# ------------------------------------------------------------------ the gems
+def gem(name, seed, rx, ry, rz_top, rz_bot, cuts, chips=4, tilt=0.0):
+    """A convex stone bounded by `cuts` planes, each resting on a lopsided ellipsoid (taller above
+    than below), set at a slightly random depth so the facets come out large and unequal.
+    A few shallow chips then knock off corners."""
+    rnd = random.Random(seed)
     bm = bmesh.new()
-    sides = 6
-    lo = ring(bm, sides, 0.6, -0.75)
-    hi = ring(bm, sides, 0.6, 0.65)
-    for k, v in enumerate(lo + hi):
-        f = 1.1 if (k % sides) % 2 else 0.9
-        v.co.x *= f
-        v.co.y *= f
-    top = bm.verts.new((0.05, -0.03, 1.55))
-    bot = bm.verts.new((-0.04, 0.02, -1.4))
-    band(bm, lo, hi)
-    cap(bm, hi, top)
-    cap(bm, lo, bot, top=False)
-    return finish(bm, "Crystal_0")
+    bmesh.ops.create_cube(bm, size=8.0)
+    spin = Euler((rnd.uniform(0, 0.4), rnd.uniform(0, 0.4), rnd.uniform(0, math.tau))).to_matrix()
+
+    def support(d):
+        rz = rz_top if d.z > 0 else rz_bot
+        return math.sqrt((rx * d.x) ** 2 + (ry * d.y) ** 2 + (rz * d.z) ** 2)
+
+    def slice_(d, depth):
+        geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=d * depth, plane_no=d, clear_outer=True)
+        edges = [e for e in bm.edges if e.is_boundary]
+        if edges:
+            bmesh.ops.holes_fill(bm, edges=edges, sides=0)
+
+    golden = math.pi * (3 - math.sqrt(5))
+    for i in range(cuts):
+        z = 1 - 2 * (i + 0.5) / cuts
+        r = math.sqrt(1 - z * z)
+        d = spin @ Vector((math.cos(golden * i) * r, math.sin(golden * i) * r, z))
+        d += Vector((rnd.gauss(0, 0.14), rnd.gauss(0, 0.14), rnd.gauss(0, 0.14)))
+        d.normalize()
+        slice_(d, support(d) * rnd.uniform(0.9, 1.0))
+    for _ in range(chips):
+        d = Vector((rnd.gauss(0, 1), rnd.gauss(0, 1), rnd.gauss(0, 1.3))).normalized()
+        reach = max(d.dot(v.co) for v in bm.verts)
+        slice_(d, reach * rnd.uniform(0.86, 0.94))
+    bmesh.ops.remove_doubles(bm, verts=list(bm.verts), dist=1e-4)
+    bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(1.0), verts=list(bm.verts), edges=list(bm.edges))
+    if tilt:
+        bmesh.ops.rotate(bm, verts=list(bm.verts), cent=(0, 0, 0), matrix=Matrix.Rotation(tilt, 3, "Y"))
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    bmesh.ops.triangulate(bm, faces=list(bm.faces))
+    ob = to_object(bm, name)
+    fit(ob, HEIGHT, MAX_R)
+    return ob
 
 
-def c_spindle(rnd):
-    """Atlas of Sound — a slender eight-sided bipyramid with stepped facets."""
-    bm = bmesh.new()
-    n = 8
-    r1 = ring(bm, n, 0.42, -0.95, twist=0.5)
-    r2 = ring(bm, n, 0.78, -0.05)
-    r3 = ring(bm, n, 0.6, 0.6, twist=0.5)
-    r4 = ring(bm, n, 0.28, 1.2)
-    top = bm.verts.new((0, 0, 1.6))
-    bot = bm.verts.new((0, 0, -1.7))
-    band(bm, r1, r2, quads=False)
-    band(bm, r2, r3, quads=False)
-    band(bm, r3, r4, quads=False)
-    cap(bm, r4, top)
-    cap(bm, r1, bot, top=False)
-    return finish(bm, "Crystal_1")
+GEMS = [
+    # seed  rx    ry    top   bot   cuts chips tilt
+    (101, 0.80, 0.66, 1.45, 1.05, 18, 4, 0.06),   # School System — tall, a broken prism
+    (202, 0.86, 0.72, 1.20, 1.15, 16, 5, -0.08),  # Legal Workspace — a squat, heavy block
+    (303, 0.74, 0.60, 1.50, 1.30, 22, 3, 0.0),    # LUXE — finer cut, pointed both ends
+    (404, 0.90, 0.75, 1.15, 1.00, 14, 5, 0.1),    # GoldOS — few, broad faces
+    (505, 0.70, 0.58, 1.55, 1.10, 20, 4, -0.05),  # VYRO — a long shard
+    (606, 0.82, 0.70, 1.30, 1.25, 17, 4, 0.04),   # HealthHub — an even egg of a stone
+]
 
 
-def c_cluster(rnd):
-    """Parallel — three fused quartz points growing from one root."""
-    bm = bmesh.new()
-    point(bm, rnd, -1.0, 1.55, 0.36, tip=0.6)
-    point(bm, rnd, -0.95, 1.0, 0.24, tip=0.62, lean=(-0.42, 0.08), offset=(-0.18, 0.05))
-    point(bm, rnd, -0.95, 0.85, 0.2, tip=0.62, lean=(0.45, -0.12), offset=(0.18, -0.04))
-    # root: a low faceted boss holding the three together
-    base = ring(bm, 7, 0.5, -1.05, jitter=0.08, rnd=rnd)
-    lower = bm.verts.new((0, 0, -1.4))
-    upper = ring(bm, 7, 0.32, -0.8, twist=0.5, jitter=0.08, rnd=rnd)
-    band(bm, base, upper, quads=False)
-    cap(bm, base, lower, top=False)
-    lid(bm, upper)
-    return finish(bm, "Crystal_2")
+# ------------------------------------------------------------------ relic parts
+def M(loc=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
+    return Matrix.LocRotScale(Vector(loc), Euler(rot), Vector(scale))
 
 
-def c_brilliant(rnd):
-    """Kiln — a drop-shaped brilliant: table, star crown, long pavilion."""
-    bm = bmesh.new()
-    n = 8
-    table = ring(bm, n, 0.42, 1.0)
-    crown = ring(bm, n, 0.8, 0.62, twist=0.5)
-    girdle_a = ring(bm, n * 2, 0.92, 0.42)
-    girdle_b = ring(bm, n * 2, 0.92, 0.3)
-    mid = ring(bm, n, 0.62, -0.45, twist=0.5)
-    culet = bm.verts.new((0, 0, -1.55))
-    lid(bm, table)
-    band(bm, table, crown, quads=False)
-    # crown ring (8) → girdle (16): each crown vertex sits over an odd girdle vertex
-    def fan(row, ring8):
-        for i in range(n):
-            j = (i + 1) % n
-            g1, g2, g3 = row[2 * i + 1], row[(2 * i + 2) % (2 * n)], row[(2 * i + 3) % (2 * n)]
-            bm.faces.new((ring8[i], g1, g2))
-            bm.faces.new((ring8[i], g2, ring8[j]))
-            bm.faces.new((g2, g3, ring8[j]))
-
-    fan(girdle_a, crown)
-    band(bm, girdle_a, girdle_b)
-    # pavilion: girdle (16) → mid (8) → culet
-    fan(girdle_b, mid)
-    cap(bm, mid, culet, top=False)
-    return finish(bm, "Crystal_3")
+def box(bm, loc, size, rot=(0, 0, 0)):
+    bmesh.ops.create_cube(bm, size=1.0, matrix=M(loc, rot, size))
 
 
-def c_shard(rnd):
-    """Northbound — a tall, flattened six-sided blade with a skewed tip and a broken base."""
-    bm = bmesh.new()
-    n = 6
-    lo = ring(bm, n, 0.5, -1.0, squash=0.55)
-    m1 = ring(bm, n, 0.6, -0.2, twist=0.5, squash=0.55)
-    m2 = ring(bm, n, 0.58, 0.55, squash=0.55)
-    hi = ring(bm, n, 0.42, 1.05, twist=0.5, squash=0.55)
-    for v, dz in zip(lo, (0.14, -0.08, 0.2, -0.16, 0.06, 0.1)):
-        v.co.z += dz  # broken, uneven base
-    band(bm, lo, m1, quads=False)
-    band(bm, m1, m2, quads=False)
-    band(bm, m2, hi, quads=False)
-    cap(bm, hi, bm.verts.new((0.2, 0.02, 1.85)))
-    cap(bm, lo, bm.verts.new((-0.08, 0.03, -1.45)), top=False)
-    return finish(bm, "Crystal_4")
+def cyl(bm, loc, r, h, segs=16, rot=(0, 0, 0), r2=None):
+    bmesh.ops.create_cone(
+        bm, cap_ends=True, cap_tris=False, segments=segs, radius1=r, radius2=r if r2 is None else r2, depth=h, matrix=M(loc, rot)
+    )
 
 
-def c_twist(rnd):
-    """Glasshouse — a five-sided column twisting as it grows, pointed both ends."""
-    bm = bmesh.new()
-    n = 5
+def ball(bm, loc, r, sub=1):
+    bmesh.ops.create_icosphere(bm, subdivisions=sub, radius=r, matrix=M(loc))
+
+
+def rod(bm, p, q, r, segs=6):
+    p, q = Vector(p), Vector(q)
+    d = q - p
+    rot = Vector((0, 0, 1)).rotation_difference(d.normalized()).to_matrix().to_4x4()
+    bmesh.ops.create_cone(
+        bm, cap_ends=True, cap_tris=False, segments=segs, radius1=r, radius2=r, depth=d.length, matrix=Matrix.Translation((p + q) / 2) @ rot
+    )
+
+
+def torus(bm, loc, R, r, n=32, m=8, rot=(0, 0, 0)):
+    T = M(loc, rot)
     rings = []
-    zs = [-1.0, -0.45, 0.1, 0.65, 1.1]
-    rs = [0.45, 0.72, 0.8, 0.7, 0.42]
-    for k, (z, r) in enumerate(zip(zs, rs)):
-        rings.append(ring(bm, n, r, z, twist=k * 0.28))
-    for a, b in zip(rings, rings[1:]):
-        band(bm, a, b, quads=False)
-    cap(bm, rings[-1], bm.verts.new((0.04, 0.02, 1.75)))
-    cap(bm, rings[0], bm.verts.new((-0.03, 0.0, -1.6)), top=False)
-    return finish(bm, "Crystal_5")
+    for i in range(n):
+        a = i / n * math.tau
+        ring = []
+        for j in range(m):
+            b = j / m * math.tau
+            ring.append(bm.verts.new(T @ Vector(((R + r * math.cos(b)) * math.cos(a), (R + r * math.cos(b)) * math.sin(a), r * math.sin(b)))))
+        rings.append(ring)
+    for i in range(n):
+        for j in range(m):
+            a, b = rings[i], rings[(i + 1) % n]
+            bm.faces.new((a[j], b[j], b[(j + 1) % m], a[(j + 1) % m]))
+
+
+def prism(bm, pts, depth, y=0.0):
+    """Extrude a polygon drawn in XZ (front view) by `depth` along Y."""
+    f = [bm.verts.new((x, y - depth / 2, z)) for x, z in pts]
+    b = [bm.verts.new((x, y + depth / 2, z)) for x, z in pts]
+    bm.faces.new(f)
+    bm.faces.new(list(reversed(b)))
+    n = len(pts)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((f[j], f[i], b[i], b[j]))
+
+
+def windows(bm, x0, x1, z0, z1, cols, rows, y, depth=0.012):
+    """A grid of window frames standing proud of a wall at y."""
+    w = (x1 - x0) / cols
+    h = (z1 - z0) / rows
+    for c in range(cols):
+        for r in range(rows):
+            cx, cz = x0 + (c + 0.5) * w, z0 + (r + 0.5) * h
+            box(bm, (cx, y, cz), (w * 0.62, depth, h * 0.6))
+            box(bm, (cx, y, cz - h * 0.32), (w * 0.8, depth * 1.6, h * 0.06))  # sill
+
+
+# ------------------------------------------------------------------ the six relics
+def r_school():
+    """A little campus: a colonnaded main hall, two wings, a clock tower and a flag."""
+    bm = bmesh.new()
+    box(bm, (0, 0, 0.025), (1.25, 0.62, 0.05))
+    for k in range(3):
+        box(bm, (0, -0.33 - k * 0.025, 0.012 + k * 0.012), (0.32 - k * 0.03, 0.03, 0.024 + k * 0.024))
+    box(bm, (0, 0, 0.21), (0.62, 0.36, 0.32))
+    box(bm, (0, 0, 0.385), (0.66, 0.4, 0.03))
+    box(bm, (0, 0, 0.43), (0.56, 0.3, 0.06))
+    windows(bm, -0.29, 0.29, 0.07, 0.36, 7, 2, -0.18)
+    windows(bm, -0.29, 0.29, 0.07, 0.36, 7, 2, 0.18)
+    for s in (-1, 1):
+        box(bm, (s * 0.47, 0.03, 0.16), (0.3, 0.42, 0.22))
+        box(bm, (s * 0.47, 0.03, 0.285), (0.33, 0.45, 0.025))
+        windows(bm, s * 0.47 - 0.13, s * 0.47 + 0.13, 0.07, 0.26, 4, 2, -0.18)
+        windows(bm, s * 0.47 - 0.13, s * 0.47 + 0.13, 0.07, 0.26, 4, 2, 0.24)
+    # portico: six columns, an entablature and a pediment
+    for i in range(6):
+        x = -0.2 + i * 0.08
+        cyl(bm, (x, -0.25, 0.2), 0.017, 0.28, 10)
+        box(bm, (x, -0.25, 0.065), (0.04, 0.04, 0.02))
+        box(bm, (x, -0.25, 0.345), (0.04, 0.04, 0.015))
+    box(bm, (0, -0.25, 0.37), (0.5, 0.06, 0.035))
+    prism(bm, [(-0.26, 0.39), (0.26, 0.39), (0, 0.48)], 0.07, y=-0.25)
+    # clock tower and spire
+    box(bm, (0, 0.02, 0.56), (0.13, 0.13, 0.22))
+    box(bm, (0, 0.02, 0.68), (0.16, 0.16, 0.025))
+    cyl(bm, (0, -0.052, 0.58), 0.042, 0.012, 20, rot=(math.pi / 2, 0, 0))
+    rod(bm, (0, -0.06, 0.58), (0, -0.06, 0.61), 0.004)
+    rod(bm, (0, -0.06, 0.58), (0.022, -0.06, 0.58), 0.004)
+    for a in range(4):
+        x, y = math.cos(a * math.pi / 2 + math.pi / 4) * 0.055, math.sin(a * math.pi / 2 + math.pi / 4) * 0.055
+        cyl(bm, (x, 0.02 + y, 0.74), 0.008, 0.1, 6)
+    box(bm, (0, 0.02, 0.8), (0.15, 0.15, 0.02))
+    cyl(bm, (0, 0.02, 0.9), 0.1, 0.18, 4, rot=(0, 0, math.pi / 4), r2=0.0)
+    rod(bm, (0, 0.02, 0.99), (0, 0.02, 1.08), 0.004)
+    # flagpole
+    rod(bm, (0.5, -0.27, 0.05), (0.5, -0.27, 0.55), 0.006)
+    box(bm, (0.545, -0.27, 0.52), (0.09, 0.004, 0.055))
+    return bm
+
+
+def r_legal():
+    """Scales of justice standing on a stack of law books."""
+    bm = bmesh.new()
+    for k, (w, d, h, a) in enumerate(((0.7, 0.48, 0.07, 0.05), (0.64, 0.44, 0.06, -0.12), (0.58, 0.4, 0.065, 0.2))):
+        z = 0.035 + sum((0.07, 0.06, 0.065)[:k])
+        box(bm, (0, 0, z + 0.0), (w, d, h), rot=(0, 0, a))
+        box(bm, (0.012, 0, z), (w * 0.97, d * 1.02, h * 0.72), rot=(0, 0, a))  # page block
+        for b in (-1, 1):
+            box(bm, (0, 0, z + b * h * 0.3), (w * 1.01, d * 0.3, h * 0.08), rot=(0, 0, a))  # spine bands
+    base = 0.195
+    cyl(bm, (0, 0, base + 0.02), 0.11, 0.04, 24)
+    cyl(bm, (0, 0, base + 0.05), 0.07, 0.03, 24)
+    cyl(bm, (0, 0, base + 0.36), 0.025, 0.6, 12)
+    for z in (0.12, 0.3, 0.5):
+        cyl(bm, (0, 0, base + z), 0.035, 0.018, 16)
+    ball(bm, (0, 0, base + 0.7), 0.045, 2)
+    cyl(bm, (0, 0, base + 0.77), 0.006, 0.08, 6, r2=0.0)
+    top = base + 0.63
+    box(bm, (0, 0, top), (0.84, 0.028, 0.028))
+    box(bm, (0, 0, top), (0.08, 0.05, 0.06))
+    for s in (-1, 1):
+        end = Vector((s * 0.42, 0, top))
+        ball(bm, end, 0.022, 1)
+        pan = Vector((s * 0.42, 0, top - 0.36))
+        for i in range(3):
+            a = i / 3 * math.tau
+            rod(bm, end, pan + Vector((math.cos(a) * 0.11, math.sin(a) * 0.11, 0.02)), 0.004, 4)
+        cyl(bm, pan, 0.14, 0.035, 28, r2=0.1)
+        torus(bm, pan + Vector((0, 0, 0.02)), 0.14, 0.008, 28, 6)
+    return bm
+
+
+def r_luxe():
+    """A solitaire ring: a pavé band, a six-claw head and a brilliant-cut stone."""
+    bm = bmesh.new()
+    R = 0.3
+    torus(bm, (0, 0, 0), R, 0.035, 48, 10, rot=(math.pi / 2, 0, 0))
+    torus(bm, (0, 0.03, 0), R, 0.01, 48, 6, rot=(math.pi / 2, 0, 0))
+    torus(bm, (0, -0.03, 0), R, 0.01, 48, 6, rot=(math.pi / 2, 0, 0))
+    for i in range(15):
+        a = math.pi / 2 + (i - 7) * 0.13
+        ball(bm, (math.cos(a) * (R + 0.032), 0, math.sin(a) * (R + 0.032)), 0.016, 1)
+    # head: basket and claws
+    hz = R + 0.06
+    torus(bm, (0, 0, hz), 0.08, 0.009, 24, 6)
+    torus(bm, (0, 0, hz + 0.07), 0.12, 0.009, 24, 6)
+    for i in range(6):
+        a = i / 6 * math.tau
+        rod(bm, (math.cos(a) * 0.05, math.sin(a) * 0.05, hz - 0.04), (math.cos(a) * 0.135, math.sin(a) * 0.135, hz + 0.16), 0.011, 6)
+        ball(bm, (math.cos(a) * 0.135, math.sin(a) * 0.135, hz + 0.16), 0.014, 1)
+    # the stone: pavilion, girdle, crown, table
+    g = hz + 0.12
+    n = 16
+    culet = bm.verts.new((0, 0, hz - 0.05))
+    gl = [bm.verts.new((math.cos(i / n * math.tau) * 0.15, math.sin(i / n * math.tau) * 0.15, g)) for i in range(n)]
+    gh = [bm.verts.new((math.cos(i / n * math.tau) * 0.15, math.sin(i / n * math.tau) * 0.15, g + 0.015)) for i in range(n)]
+    cr = [bm.verts.new((math.cos((i + 0.5) / 8 * math.tau) * 0.115, math.sin((i + 0.5) / 8 * math.tau) * 0.115, g + 0.06)) for i in range(8)]
+    tb = [bm.verts.new((math.cos(i / 8 * math.tau) * 0.08, math.sin(i / 8 * math.tau) * 0.08, g + 0.085)) for i in range(8)]
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((gl[j], gl[i], culet))
+        bm.faces.new((gl[i], gl[j], gh[j], gh[i]))
+    for i in range(8):
+        j = (i + 1) % 8
+        a, b, c = gh[2 * i], gh[2 * i + 1], gh[(2 * i + 2) % n]
+        bm.faces.new((a, b, cr[i]))
+        bm.faces.new((b, c, cr[i]))
+        bm.faces.new((c, cr[j], cr[i]))
+        bm.faces.new((tb[i], cr[i], tb[j]))
+        bm.faces.new((cr[i], cr[j], tb[j]))
+    bm.faces.new(tb)
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    return bm
+
+
+def r_gold():
+    """A vault door with its locking wheel, and gold bars stacked in front."""
+    bm = bmesh.new()
+    face = (math.pi / 2, 0, 0)
+    cz = 0.5
+    cyl(bm, (0, 0.05, cz), 0.44, 0.1, 48, rot=face)
+    cyl(bm, (0, 0.0, cz), 0.38, 0.03, 48, rot=face)
+    torus(bm, (0, -0.005, cz), 0.41, 0.012, 48, 6, rot=face)
+    torus(bm, (0, -0.02, cz), 0.3, 0.01, 40, 6, rot=face)
+    for i in range(16):
+        a = i / 16 * math.tau
+        rod(bm, (math.cos(a) * 0.36, 0.05, cz + math.sin(a) * 0.36), (math.cos(a) * 0.48, 0.05, cz + math.sin(a) * 0.48), 0.018, 8)
+        ball(bm, (math.cos(a) * 0.34, -0.018, cz + math.sin(a) * 0.34), 0.012, 1)
+    # the wheel
+    cyl(bm, (0, -0.06, cz), 0.05, 0.06, 20, rot=face)
+    torus(bm, (0, -0.1, cz), 0.17, 0.014, 40, 8, rot=face)
+    for i in range(6):
+        a = i / 6 * math.tau
+        rod(bm, (0, -0.08, cz), (math.cos(a) * 0.17, -0.1, cz + math.sin(a) * 0.17), 0.011, 6)
+        ball(bm, (math.cos(a) * 0.2, -0.1, cz + math.sin(a) * 0.2), 0.02, 1)
+    # dial and hinges
+    cyl(bm, (0.22, -0.035, cz + 0.2), 0.04, 0.02, 24, rot=face)
+    for z in (-0.25, 0.25):
+        cyl(bm, (-0.45, 0.06, cz + z), 0.035, 0.12, 12)
+    # bars: a little pyramid of trapezoid ingots
+    def bar(x, y, z, a=0.0):
+        cyl(bm, (x, y, z), 0.1, 0.05, 4, rot=(0, 0, math.pi / 4 + a), r2=0.075)
+    for k, (x, y, z) in enumerate(((-0.15, -0.2, 0.025), (0.0, -0.2, 0.025), (0.15, -0.2, 0.025), (-0.075, -0.2, 0.075), (0.075, -0.2, 0.075), (0, -0.2, 0.125))):
+        bar(x, y, z)
+    for v in bm.verts:
+        if v.co.y < -0.15 and v.co.z < 0.16:
+            v.co.y = -0.2 + (v.co.y + 0.2) * 0.55  # ingots are long and narrow
+    return bm
+
+
+def r_vyro():
+    """A stack of corrugated shipping containers and a crane hook above them."""
+    bm = bmesh.new()
+
+    def container(x, y, z, a=0.0, L=0.5, W=0.2, H=0.2):
+        R = Matrix.Rotation(a, 4, "Z")
+        T = Matrix.Translation((x, y, z)) @ R
+
+        def part(loc, size):
+            bmesh.ops.create_cube(bm, size=1.0, matrix=T @ M(loc, (0, 0, 0), size))
+
+        part((0, 0, 0), (L, W, H))
+        n = 14
+        for i in range(n):
+            px = -L / 2 + (i + 0.5) * L / n
+            for s in (-1, 1):
+                part((px, s * W / 2, 0), (L / n * 0.45, 0.012, H * 0.86))
+        for s in (-1, 1):
+            for t in (-1, 1):
+                part((s * L / 2, t * W / 2, 0), (0.02, 0.02, H * 1.02))  # corner posts
+            part((0, s * W / 2, H / 2), (L, 0.02, 0.018))
+            part((0, s * W / 2, -H / 2), (L, 0.02, 0.018))
+        for t in (-0.25, 0.25):  # door bars
+            part((L / 2 + 0.006, t * W, 0), (0.008, 0.008, H * 0.9))
+
+    container(-0.14, -0.08, 0.1, 0.0)
+    container(0.26, 0.1, 0.1, 0.0)
+    container(0.05, 0.02, 0.3, 0.12)
+    container(-0.26, 0.16, 0.1, 0.0)
+    container(-0.08, 0.14, 0.5, -0.2)
+    # hook and cables
+    rod(bm, (-0.05, 0.12, 0.62), (-0.05, 0.12, 1.0), 0.006)
+    rod(bm, (-0.2, 0.12, 0.62), (-0.05, 0.12, 0.72), 0.004)
+    rod(bm, (0.1, 0.12, 0.62), (-0.05, 0.12, 0.72), 0.004)
+    box(bm, (-0.05, 0.12, 0.74), (0.06, 0.04, 0.05))
+    return bm
+
+
+def r_health():
+    """A DNA double helix with its base pairs, wrapped by a heartbeat ring."""
+    bm = bmesh.new()
+    turns, n, R, H = 2.2, 88, 0.2, 0.95
+    pts = [[], []]
+    for i in range(n + 1):
+        t = i / n
+        a = t * turns * math.tau
+        for s in (0, 1):
+            pts[s].append(Vector((math.cos(a + s * math.pi * 0.8) * R, math.sin(a + s * math.pi * 0.8) * R, t * H)))
+    for s in (0, 1):
+        for p, q in zip(pts[s], pts[s][1:]):
+            rod(bm, p, q, 0.022, 8)
+        for i in range(0, n + 1, 4):
+            ball(bm, pts[s][i], 0.032, 1)
+    for i in range(2, n - 1, 4):
+        p, q = pts[0][i], pts[1][i]
+        mid = (p + q) / 2
+        rod(bm, p, mid, 0.011, 6)
+        rod(bm, mid, q, 0.011, 6)
+        ball(bm, mid, 0.016, 1)
+    # a pulse line around the waist
+    m = 120
+    ring = []
+    for i in range(m):
+        a = i / m * math.tau
+        beat = 0.0
+        u = (i % 40) / 40
+        if 0.4 < u < 0.6:
+            beat = math.sin((u - 0.4) / 0.2 * math.tau) * 0.07 * (1 if u < 0.5 else 0.6)
+        ring.append(Vector((math.cos(a) * 0.36, math.sin(a) * 0.36, H / 2 + beat)))
+    for i in range(m):
+        rod(bm, ring[i], ring[(i + 1) % m], 0.008, 5)
+    return bm
+
+
+RELICS = [r_school, r_legal, r_luxe, r_gold, r_vyro, r_health]
 
 
 def build():
     reset()
-    rnd = random.Random(11)
-    obs = [f(rnd) for f in (c_quartz, c_spindle, c_cluster, c_brilliant, c_shard, c_twist)]
-    for o in obs:
-        for p in o.data.polygons:
-            p.use_smooth = False
+    obs = []
+    for i, (seed, rx, ry, top, bot, cuts, chips, tilt) in enumerate(GEMS):
+        obs.append(gem(f"Crystal_{i}", seed, rx, ry, top, bot, cuts, chips, tilt))
+    cores = []
+    for i, f in enumerate(RELICS):
+        ob = to_object(f(), f"Core_{i}")
+        fit(ob, CORE_H, CORE_R)
+        cores.append(ob)
     bpy.ops.object.select_all(action="DESELECT")
-    for o in obs:
+    for o in obs + cores:
         o.select_set(True)
     bpy.ops.export_scene.gltf(
         filepath=OUT,
@@ -259,53 +427,82 @@ def build():
         export_normals=False,
         export_texcoords=False,
         export_materials="NONE",
+        export_draco_mesh_compression_enable=True,
+        export_draco_position_quantization=16,
     )
     print("wrote", OUT, os.path.getsize(OUT) // 1024, "KB")
-    for o in obs:
-        print(o.name, len(o.data.polygons), "tris")
+    for o in obs + cores:
+        print(o.name, len(o.data.polygons), "faces")
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "crystals.blend"))
-    return obs
+    return obs, cores
 
 
-def render(obs):
-    """Contact sheet: the six side by side in simple dark glass."""
-    for i, o in enumerate(obs):
-        o.location = ((i - 2.5) * 2.1, 0, 0)
-    m = bpy.data.materials.new("Glass")
-    m.use_nodes = True
-    b = m.node_tree.nodes["Principled BSDF"]
-    b.inputs["Base Color"].default_value = (0.75, 0.95, 0.6, 1)
-    b.inputs["Roughness"].default_value = 0.05
+def render(obs, cores):
+    """Contact sheet: the six in dark smoked glass, each relic glowing inside, on a black mirror."""
+    tints = [(0.78, 1.0, 0.24), (0.91, 0.76, 0.48), (0.82, 0.55, 1.0), (1.0, 0.7, 0.28), (0.48, 0.66, 1.0), (0.44, 0.94, 0.78)]
+    glass = bpy.data.materials.new("Smoke")
+    glass.use_nodes = True
+    b = glass.node_tree.nodes["Principled BSDF"]
+    b.inputs["Base Color"].default_value = (0.85, 0.88, 0.92, 1)
+    b.inputs["Roughness"].default_value = 0.03
     b.inputs["Transmission Weight"].default_value = 1.0
-    b.inputs["IOR"].default_value = 1.5
-    for o in obs:
-        o.data.materials.append(m)
+    b.inputs["IOR"].default_value = 1.54
+    vol = glass.node_tree.nodes.new("ShaderNodeVolumeAbsorption")
+    vol.inputs["Color"].default_value = (0.5, 0.52, 0.56, 1)
+    vol.inputs["Density"].default_value = 1.6
+    glass.node_tree.links.new(vol.outputs["Volume"], glass.node_tree.nodes["Material Output"].inputs["Volume"])
+    for i, (o, c) in enumerate(zip(obs, cores)):
+        x = (i - 2.5) * 2.3
+        o.location = (x, 0, 1.4)
+        c.location = (x, 0, 1.4)
+        o.data.materials.append(glass)
+        e = bpy.data.materials.new(f"Holo{i}")
+        e.use_nodes = True
+        nt = e.node_tree
+        nt.nodes.clear()
+        em = nt.nodes.new("ShaderNodeEmission")
+        em.inputs["Color"].default_value = (*tints[i], 1)
+        em.inputs["Strength"].default_value = 6
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        nt.links.new(em.outputs[0], out.inputs[0])
+        c.data.materials.append(e)
+    bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 0, 0))
+    floor = bpy.context.object
+    fm = bpy.data.materials.new("Floor")
+    fm.use_nodes = True
+    fb = fm.node_tree.nodes["Principled BSDF"]
+    fb.inputs["Base Color"].default_value = (0.005, 0.005, 0.006, 1)
+    fb.inputs["Roughness"].default_value = 0.15
+    floor.data.materials.append(fm)
     cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam"))
-    cam.location = (0, -15, 0.6)
+    cam.location = (0, -15, 1.9)
     cam.rotation_euler = (math.radians(88), 0, 0)
-    cam.data.lens = 50
+    cam.data.lens = 36
     bpy.context.scene.collection.objects.link(cam)
     bpy.context.scene.camera = cam
-    for loc, e in (((-4, -6, 6), 900), ((5, -4, 3), 500), ((0, 6, 4), 700)):
+    for loc, e in (((-6, -5, 6), 500), ((7, -3, 3), 250), ((0, 6, 5), 600)):
         L = bpy.data.objects.new("L", bpy.data.lights.new("L", "AREA"))
         L.data.energy = e
-        L.data.size = 4
+        L.data.size = 5
         L.location = loc
-        L.rotation_euler = (Vector((0, 0, 0)) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()
+        L.rotation_euler = (Vector((0, 0, 1)) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()
         bpy.context.scene.collection.objects.link(L)
     w = bpy.data.worlds.new("W")
     w.use_nodes = True
-    w.node_tree.nodes["Background"].inputs["Color"].default_value = (0.01, 0.012, 0.012, 1)
+    w.node_tree.nodes["Background"].inputs["Color"].default_value = (0.004, 0.005, 0.006, 1)
     bpy.context.scene.world = w
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
-    sc.cycles.samples = 48
-    sc.render.resolution_x, sc.render.resolution_y = 1600, 520
+    sc.cycles.samples = 96
+    sc.cycles.max_bounces = 16
+    sc.cycles.transmission_bounces = 16
+    sc.view_settings.view_transform = "AgX"
+    sc.render.resolution_x, sc.render.resolution_y = 1800, 560
     sc.render.filepath = os.path.join(ROOT, "art", "renders", "crystals.png")
     bpy.ops.render.render(write_still=True)
 
 
 if __name__ == "__main__":
-    obs = build()
+    obs, cores = build()
     if "render" in (sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []):
-        render(obs)
+        render(obs, cores)
