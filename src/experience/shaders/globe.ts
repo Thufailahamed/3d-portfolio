@@ -1,6 +1,19 @@
 import { gradientNoiseGlsl } from "./ascent";
 import { valueNoiseGlsl } from "./night";
 
+/** The sun, fixed relative to the camera: behind the planet and off to the right. */
+const sunGlsl = /* glsl */ `
+vec3 sunDir(){
+  return normalize((vec4(normalize(vec3(0.82, 0.3, -0.6)), 0.0) * viewMatrix).xyz);
+}
+// colour of the air lit at sun angle sd (dot of the surface normal with the sun)
+vec3 skyColor(float sd, vec3 airglow){
+  vec3 dayBlue = vec3(0.32, 0.62, 1.0);
+  vec3 c = mix(airglow * 0.16, dayBlue, smoothstep(-0.18, 0.35, sd));
+  float t = (sd + 0.03) / 0.11;
+  return c + vec3(1.0, 0.4, 0.12) * exp(-t * t) * 0.42;
+}`;
+
 /**
  * Night-side Earth from NASA's Black Marble (2016) composite.
  *
@@ -35,6 +48,7 @@ varying vec3 vN;
 varying vec3 vW;
 varying float vPolar;
 ${valueNoiseGlsl}
+${sunGlsl}
 
 void main(){
   vec3 tex = texture2D(uMap, vUv).rgb;   // sRGB texture → linear here
@@ -62,27 +76,48 @@ void main(){
   vec3 V = normalize(cameraPosition - vW);
   float facing = max(dot(N, V), 0.0);
   float moon = 0.22 + 0.78 * smoothstep(-0.25, 0.95, dot(N, normalize(uMoon)));
-
-  // the surface: moonlit land, ice and ocean, shaded so the planet reads as a sphere
-  vec3 col = base * 1.8 * moon;
-  // the cities switch on behind the power wave
-  // (written with rising edges: smoothstep with edge0 > edge1 is undefined, and some GPUs return 0)
-  float on = 1.0 - smoothstep(uPower - 0.06, uPower, vPolar);
-  col += tex * lights * (0.06 + 2.6 * on);
-  // the wave front itself: a thin travelling band of light
-  float fd = (vPolar - uPower) / 0.022;   // (squared by hand: pow() of a negative is NaN)
-  float front = exp(-fd * fd) * step(0.001, uPower) * (1.0 - smoothstep(1.0, 1.15, uPower));
-  col += uWave * front * 0.55;
-  // a faint moon sheen on the oceans, so the dark side still has a surface
   vec3 L = normalize(uMoon);
   // (close in, judged on the blurred map: on the sharp one the darkest specks between towns pass
   // for ocean and catch the sheen, leaving the rest of the land as dark pits)
   float ocean = 1.0 - smoothstep(0.004, 0.03, mix(lum, softLum, mag));
+
+  // the sun sits behind the planet, off to the right: a thin daylit crescent on that limb
+  vec3 S = sunDir();
+  float sd = dot(N, S);
+  float day = smoothstep(-0.03, 0.25, sd);
+  float tw = sd / 0.09;
+  float dusk = exp(-tw * tw);
+
+  // the night surface: moonlit land, ice and ocean, kept dark and only faintly blue
+  vec3 night = mix(vec3(dot(base, vec3(0.2126, 0.7152, 0.0722))), base, 0.6) * 1.15 * moon;
+  // the cities switch on behind the power wave
+  // (written with rising edges: smoothstep with edge0 > edge1 is undefined, and some GPUs return 0)
+  float on = 1.0 - smoothstep(uPower - 0.06, uPower, vPolar);
+  // (washed out by daylight)
+  night += tex * lights * (0.06 + 2.6 * on) * (1.0 - 0.97 * day);
+  // the wave front itself: a thin travelling band of light
+  float fd = (vPolar - uPower) / 0.022;   // (squared by hand: pow() of a negative is NaN)
+  float front = exp(-fd * fd) * step(0.001, uPower) * (1.0 - smoothstep(1.0, 1.15, uPower));
+  night += uWave * front * 0.55;
+  // a faint moon sheen on the oceans, so the dark side still has a surface
   float sheen = pow(max(dot(reflect(-L, N), V), 0.0), 18.0);
-  col += uAtmo * sheen * ocean * 0.18;
-  // atmosphere hugging the limb, brightest on the moonlit side
-  float rim = pow(1.0 - facing, 2.6);
-  col += uAtmo * rim * (0.12 + 0.88 * moon) * 0.75;
+  night += uAtmo * sheen * ocean * 0.1;
+
+  // the day side: deep blue sea with the sun glinting off it, dusty land (the map has no day
+  // colours, so land is read from its moonlit brightness)
+  float land = smoothstep(0.004, 0.06, softLum);
+  vec3 dayCol = mix(vec3(0.006, 0.026, 0.075), vec3(0.17, 0.15, 0.105) * (0.6 + 6.0 * softLum), land * (1.0 - ocean * 0.8));
+  dayCol *= 0.35 + 1.9 * max(sd, 0.0);
+  float glint = pow(max(dot(reflect(-S, N), V), 0.0), 90.0);
+  dayCol += vec3(1.0, 0.92, 0.78) * glint * ocean * 1.6;
+  vec3 col = mix(night, dayCol, day);
+  // the ground at the terminator, lit red through a long column of air
+  col += vec3(0.32, 0.1, 0.03) * dusk * 0.05;
+
+  // the atmosphere seen against the surface near the limb: blue by day, amber at dusk, a faint
+  // cold airglow on the night side
+  float rim = pow(1.0 - facing, 5.0);
+  col += skyColor(sd, uAtmo) * rim * 0.7;
 
   // premultiplied: the planet fades in as a whole
   gl_FragColor = vec4(col * uBody, uBody);
@@ -118,6 +153,7 @@ varying vec3 vP;
 varying vec3 vN;
 varying vec3 vW;
 ${gradientNoiseGlsl}
+${sunGlsl}
 float fbmT(vec3 p){
   float s = 0.0, a = 0.5;
   for (int i = 0; i < 5; i++){ s += a * gnoise(p); p = TURN * p * 2.03 + 1.7; a *= 0.5; }
@@ -148,35 +184,55 @@ void main(){
   // with them, thick cloud only faintly
   vec3 under = texture2D(uMap, vUv, 3.0).rgb;
   float warm = smoothstep(-0.005, 0.03, under.r - under.b);
-  col += vec3(1.0, 0.74, 0.45) * under * warm * 2.4 * (0.35 + 0.65 * (1.0 - smoothstep(0.55, 0.8, body)));
+  // on the daylit crescent the tops are bright white, amber along the terminator
+  float sd = dot(N, sunDir());
+  float day = smoothstep(-0.04, 0.3, sd);
+  vec3 lit = vec3(0.86, 0.89, 0.94) * (0.25 + 1.3 * max(sd, 0.0)) * (0.65 + 0.35 * smoothstep(0.5, 0.78, body));
+  col = mix(col, lit, day);
+  float tw = (sd + 0.01) / 0.1;
+  col += vec3(0.95, 0.42, 0.15) * exp(-tw * tw) * 0.1;
+  col += vec3(1.0, 0.74, 0.45) * under * warm * 2.4 * (0.35 + 0.65 * (1.0 - smoothstep(0.55, 0.8, body))) * (1.0 - day);
 
   float a = dens * 0.92 * uCloud;
   gl_FragColor = vec4(col * a, a);
 }`;
 
-/** Soft atmosphere halo just outside the limb (back faces, additive). */
+/**
+ * The atmosphere outside the limb: for each pixel, how close its line of sight passes to the
+ * planet, with the air thinning exponentially with height. Bright blue on the sun's side, amber
+ * at the terminator, a faint airglow on the night side. (Back faces of a larger shell, additive.)
+ */
 export const atmoVert = /* glsl */ `
-varying vec3 vN;
 varying vec3 vW;
+varying vec3 vC;
+varying float vR;
+uniform float uR;      // the planet's radius over the shell's scale
 void main(){
   vec4 w = modelMatrix * vec4(position, 1.0);
   vW = w.xyz;
-  vN = normalize(mat3(modelMatrix) * normal);
+  vC = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vR = uR * length(modelMatrix[0].xyz);
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 
 export const atmoFrag = /* glsl */ `
 uniform vec3 uAtmo;
 uniform float uBody;
-varying vec3 vN;
 varying vec3 vW;
+varying vec3 vC;
+varying float vR;
+${sunGlsl}
 void main(){
-  vec3 V = normalize(cameraPosition - vW);
-  float d = dot(normalize(vN), V);                   // back faces: negative toward the limb
-  // a crisp bright edge at the limb with a long soft falloff into space
-  float k = clamp(0.7 + d, 0.0, 1.0);
-  float glow = pow(k, 9.0) * 0.75 + pow(k, 3.0) * 0.16;
-  gl_FragColor = vec4(uAtmo * glow * uBody, 1.0);
+  vec3 D = normalize(vW - cameraPosition);
+  vec3 toC = vC - cameraPosition;
+  float along = max(dot(toC, D), 0.0);
+  vec3 P = cameraPosition + D * along;          // where the line of sight passes closest
+  float h = max(length(P - vC) - vR, 0.0) / vR;  // its height above the surface, in radii
+  float dense = exp(-h / 0.016) + 0.14 * exp(-h / 0.07);
+  float sd = dot(normalize(P - vC), sunDir());
+  // the lit air: a long path through it on the day side, almost nothing on the night side
+  vec3 col = skyColor(sd, uAtmo) * mix(0.35, 1.6, smoothstep(-0.2, 0.5, sd));
+  gl_FragColor = vec4(col * dense * uBody, 1.0);
 }`;
 
 /** Country borders and coastlines: only lit as the power wave passes over them. */
@@ -303,5 +359,5 @@ uniform vec3 uColor;
 uniform float uOn;
 varying float vFront;
 void main(){
-  gl_FragColor = vec4(uColor * 0.07 * vFront * uOn, 1.0);
+  gl_FragColor = vec4(uColor * 0.045 * vFront * uOn, 1.0);
 }`;

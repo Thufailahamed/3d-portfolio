@@ -101,7 +101,9 @@ export default function GlobeLayer() {
       }
       if (hint.current) {
         hint.current.style.opacity = g.grabbable ? "1" : "0";
-        hint.current.style.transform = `translate(${g.x}px, ${g.y + g.r + 34}px) translateX(-50%)`;
+        // under the globe; on phones the headline sits there, so above it, clear of the header
+        const y = innerWidth < 768 ? Math.max(g.y - g.r - 30, 76) : g.y + g.r + 34;
+        hint.current.style.transform = `translate(${g.x}px, ${y}px) translateX(-50%)`;
       }
       const desktop = innerWidth >= 768;
       const edge = copyEdge();

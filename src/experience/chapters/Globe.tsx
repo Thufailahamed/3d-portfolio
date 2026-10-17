@@ -38,6 +38,8 @@ const asBinary = (l: THREE.Loader) => (l as THREE.FileLoader).setResponseType("a
 /** Starting turn so home (Colombo) and the arcs flying out of it face the camera. */
 const START_TURN = (175 * Math.PI) / 180;
 const AUTO_SPIN = 0.035; // rad/s
+/** The atmosphere shell, in planet radii (the air fades out well inside it). */
+const ATMO_SHELL = 1.14;
 
 /** Longitude/latitude (degrees) → point on a sphere, matching three's SphereGeometry UVs. */
 export function lonLat(lon: number, lat: number, r: number, out = new THREE.Vector3()) {
@@ -105,6 +107,72 @@ function gridGeometry() {
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   return g;
+}
+
+/**
+ * The sun, just behind the limb on the daylit side: its core is hidden by the planet (drawn
+ * first, under it), its glow and rays spill past the edge. Placed in the camera's frame each
+ * frame, where the shaders' sunDir() puts it.
+ */
+function SunGlare({ on }: { on: () => number }) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const camera = useThree((s) => s.camera);
+  const mat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        toneMapped: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: { uOn: { value: 0 } },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main(){ vUv = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: /* glsl */ `
+          uniform float uOn;
+          varying vec2 vUv;
+          void main(){
+            float r = length(vUv);
+            float a = atan(vUv.y, vUv.x);
+            float core = exp(-r * r / 0.0025) * 6.0;
+            float glow = exp(-r / 0.08) * 0.8 + exp(-r / 0.3) * 0.12;
+            // thin diffraction spikes, a long horizontal streak
+            float spikes = pow(abs(cos(a * 3.0)), 60.0) * exp(-r / 0.2) * 0.22;
+            float streak = exp(-abs(vUv.y) / 0.006) * exp(-abs(vUv.x) / 0.5) * 0.28;
+            vec3 col = vec3(1.0, 0.93, 0.82) * (core + glow + spikes) + vec3(0.55, 0.75, 1.0) * streak;
+            col *= smoothstep(1.0, 0.7, r);
+            gl_FragColor = vec4(col * uOn, 1.0);
+          }`,
+      }),
+    [],
+  );
+  useEffect(() => () => mat.dispose(), [mat]);
+  const v = useMemo(() => ({ c: new THREE.Vector3(), d: new THREE.Vector3(), x: new THREE.Vector3(), y: new THREE.Vector3() }), []);
+  useFrame(() => {
+    const m = mesh.current;
+    if (!m?.parent) return;
+    const k = on();
+    mat.uniforms.uOn.value = k;
+    m.visible = k > 0.001;
+    if (!m.visible) return;
+    m.parent.getWorldPosition(v.c);
+    const dist = v.d.copy(v.c).sub(camera.position).length();
+    v.d.normalize();
+    v.x.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    v.y.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    // just past the limb on screen, a little behind the planet
+    const R = GLOBE_R * (1 + (0.7 * GLOBE_R) / dist);
+    const world = v.c.addScaledVector(v.x, 0.92 * R).addScaledVector(v.y, 0.36 * R).addScaledVector(v.d, 0.7 * GLOBE_R);
+    m.position.copy(m.parent.worldToLocal(world));
+    m.quaternion.copy(camera.quaternion);
+    m.scale.setScalar(GLOBE_R * 3.2);
+  });
+  return (
+    <mesh ref={mesh} material={mat} renderOrder={8} frustumCulled={false}>
+      <planeGeometry args={[1, 1]} />
+    </mesh>
+  );
 }
 
 /**
@@ -217,7 +285,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
         fragmentShader: atmoFrag,
         side: THREE.BackSide,
         blending: THREE.AdditiveBlending,
-        uniforms: { uAtmo: atmo, uBody: body },
+        uniforms: { uAtmo: atmo, uBody: body, uR: { value: GLOBE_R / ATMO_SHELL } },
       }),
       borderMat: new THREE.ShaderMaterial({
         ...glass,
@@ -496,11 +564,12 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
               <points geometry={markerGeo} material={markerMat} renderOrder={13} frustumCulled={false} />
             </group>
           </group>
-          <mesh material={atmoMat} scale={1.14} renderOrder={9}>
+          <mesh material={atmoMat} scale={ATMO_SHELL} renderOrder={9}>
             <sphereGeometry args={[GLOBE_R, 64, 32]} />
           </mesh>
         </group>
       </group>
+      <SunGlare on={() => (sceneState.unfold.t > 0 ? 0 : ease((globeG(sceneState.ascent.u) - 0.55) / 0.4))} />
       <mesh ref={sheet} geometry={unfold.geometry} material={unfold.material} renderOrder={10} frustumCulled={false} visible={false} />
     </group>
   );
