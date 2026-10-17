@@ -307,10 +307,12 @@ function Crystal() {
     gl.getDrawingBufferSize(tmp.res);
     shared.uRes.value.copy(tmp.res);
 
-    // the relic turns with the stone, so its pass runs every frame (it's only a few thousand triangles)
+    // the relic turns with the stone, so its pass runs every frame (it's only a few thousand
+    // triangles). Sized by CSS pixels, not device pixels: it's seen through glass and haloed,
+    // so it needs no retina detail, and the target is mipmapped every frame
     const low = useApp.getState().quality === "low";
-    const cw = Math.max(2, Math.round(tmp.res.x * (low ? 0.5 : 1)));
-    const ch = Math.max(2, Math.round(tmp.res.y * (low ? 0.5 : 1)));
+    const cw = Math.max(2, Math.round(size.width * (low ? 0.5 : 0.8)));
+    const ch = Math.max(2, Math.round(size.height * (low ? 0.5 : 0.8)));
     if (coreTarget.width !== cw || coreTarget.height !== ch) coreTarget.setSize(cw, ch);
     const prevTarget = gl.getRenderTarget();
     const mask = camera.layers.mask;
@@ -584,4 +586,4 @@ function Valley({ env }: { env: Env }) {
   );
 }
 
-useGLTF.preload(CRYSTALS_URL);
+useGLTF.preload(CRYSTALS_URL, "/draco/");
