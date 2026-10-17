@@ -971,3 +971,25 @@ html[data-weather="day"] [data-chapter="contact"] {
 @media (prefers-reduced-motion: reduce) {
   .bp-stage-in, .bp-cta { animation: none; }
 }
+
+/* showroom: text rises in when a car is picked; the details panel slides in */
+.sr-rise {
+  animation: sr-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes sr-rise {
+  from { opacity: 0; transform: translateY(14px); filter: blur(4px); }
+}
+.sr-panel {
+  animation: sr-panel 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes sr-panel {
+  from { opacity: 0; transform: translateY(24px); }
+}
+@media (min-width: 768px) {
+  @keyframes sr-panel {
+    from { opacity: 0; transform: translateX(32px); }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sr-rise, .sr-panel { animation: none; }
+}
