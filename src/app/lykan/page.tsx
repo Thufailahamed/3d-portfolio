@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import LykanView from "@/components/lykan/LykanView";
+import Showroom from "@/components/showroom/Showroom";
+import { carBySlug } from "@/content/cars";
 
 export const metadata: Metadata = {
   title: "Lykan HyperSport",
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 export default function LykanPage() {
   return (
     <Suspense fallback={<div className="fixed inset-0 bg-bg" />}>
-      <LykanView />
+      <Showroom car={carBySlug["lykan-hypersport"]} />
     </Suspense>
   );
 }

@@ -47,8 +47,8 @@ export default function ExperienceGate() {
     else if (!useApp.getState().entered) lenis?.stop();
   }, [lite, onLitePath]);
 
-  // /lykan brings its own canvas; the journey must not render underneath it
-  if (lite || onLitePath || pathname.startsWith("/lykan")) return null;
+  // the car showrooms bring their own canvas; the journey must not render underneath them
+  if (lite || onLitePath || pathname.startsWith("/lykan") || pathname.startsWith("/cars")) return null;
   return (
     <>
       <Loader />

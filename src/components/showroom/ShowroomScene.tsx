@@ -5,8 +5,8 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
-export const LYKAN_URL = "/models/lykan.glb";
-const HOME_TARGET = new THREE.Vector3(0, 0.5, 0);
+import type { CarView } from "@/content/cars";
+
 const ACCENT = new THREE.Color("#c8ff3d");
 const GHOST = 0.18;
 
@@ -25,6 +25,8 @@ type PartRec = {
 };
 
 export type SceneProps = {
+  url: string;
+  view: CarView;
   selected: string | null;
   exploded: boolean;
   hovered: string | null;
@@ -114,11 +116,12 @@ function partOf(o: THREE.Object3D | null): string | null {
   return null;
 }
 
-function Car({ selected, exploded, hovered, onHover, onPick, onReady }: SceneProps) {
-  const { scene } = useGLTF(LYKAN_URL, "/draco/");
+function Car({ url, view, selected, exploded, hovered, onHover, onPick, onReady }: SceneProps) {
+  const { scene } = useGLTF(url, "/draco/");
+  const home = useMemo(() => new THREE.Vector3(...view.target), [view]);
   const parts = useParts(scene);
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3; update: () => void } | null;
-  const focus = useRef(HOME_TARGET.clone());
+  const focus = useRef<THREE.Vector3 | null>(null);
 
   useEffect(() => onReady([...parts.keys()]), [parts, onReady]);
 
@@ -157,7 +160,8 @@ function Car({ selected, exploded, hovered, onHover, onPick, onReady }: ScenePro
     // ease the orbit pivot onto the picked part (where it has slid to), back to the car when cleared
     const goal = selected && parts.get(selected)
       ? parts.get(selected)!.center.clone().addScaledVector(parts.get(selected)!.out, ease(parts.get(selected)!.t))
-      : HOME_TARGET;
+      : home;
+    focus.current ??= home.clone();
     focus.current.lerp(goal, k * 0.8);
     if (controls) {
       controls.target.copy(focus.current);
@@ -196,15 +200,13 @@ function Studio() {
   );
 }
 
-const START: [number, number, number] = [5.4, 2.0, 5.6];
-const START_NARROW: [number, number, number] = [8.2, 3.4, 8.6];
 
 /**
  * Wider lens on phones so the whole car fits a portrait screen. While the details panel is open the
  * view is shifted so the picked part sits in the free space: above the bottom sheet on phones, left
  * of the side panel on wider screens.
  */
-function Camera({ panel }: { panel: boolean }) {
+function Camera({ panel, view }: { panel: boolean; view: CarView }) {
   const narrow = useThree((s) => s.size.width < 768);
   const shift = useRef({ x: 0, y: 0 });
   useFrame((state, dt) => {
@@ -221,10 +223,10 @@ function Camera({ panel }: { panel: boolean }) {
     }
     cam.setViewOffset(w, h, shift.current.x, shift.current.y, w, h);
   });
-  return <PerspectiveCamera makeDefault position={narrow ? START_NARROW : START} fov={narrow ? 46 : 34} near={0.05} far={60} />;
+  return <PerspectiveCamera makeDefault position={narrow ? view.cameraNarrow : view.camera} fov={narrow ? 46 : 34} near={0.05} far={60} />;
 }
 
-export default function LykanScene(props: SceneProps) {
+export default function ShowroomScene(props: SceneProps) {
   return (
     <Canvas
       shadows={{ type: THREE.PCFShadowMap }}
@@ -246,9 +248,8 @@ export default function LykanScene(props: SceneProps) {
       </mesh>
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} minDistance={1.2} maxDistance={16}
         maxPolarAngle={Math.PI * 0.49} enablePan={false} />
-      <Camera panel={!!props.selected} />
+      <Camera panel={!!props.selected} view={props.view} />
     </Canvas>
   );
 }
 
-useGLTF.preload(LYKAN_URL, "/draco/");

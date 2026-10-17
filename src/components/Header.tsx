@@ -165,10 +165,10 @@ export default function Header() {
             {/* a page of its own, not a journey chapter; it needs WebGL so the lite site skips it */}
             {!lite && (
               <li className="overflow-hidden">
-                <Link href="/lykan" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
+                <Link href="/cars" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
                   <span className="label">{String(NAV.length + 1).padStart(2, "0")}</span>
                   <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
-                    Lykan
+                    Cars
                   </span>
                 </Link>
               </li>
