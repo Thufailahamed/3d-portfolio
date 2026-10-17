@@ -59,7 +59,23 @@ def lid(bm, ring_, top=True):
     bm.faces.new(ring_ if top else list(reversed(ring_)))
 
 
+def rough(bm, seed):
+    """Hand-cut look: chamfer the long edges into thin extra facets, then nudge every vertex so
+    no two faces are quite parallel. Reads as a rough gem rather than a CAD prism."""
+    rnd = random.Random(seed)
+    bm.edges.ensure_lookup_table()
+    long_edges = [e for e in bm.edges if e.calc_length() > 0.3 and len(e.link_faces) == 2]
+    bmesh.ops.bevel(bm, geom=long_edges, offset=0.07, segments=1, affect="EDGES")
+    k = rnd.uniform(0.9, 1.1)
+    for v in bm.verts:
+        v.co.x = v.co.x * k + rnd.gauss(0, 0.035)
+        v.co.y = v.co.y / k + rnd.gauss(0, 0.035)
+        v.co.z += rnd.gauss(0, 0.04)
+        v.co.x += v.co.z * 0.08 * (seed % 3 - 1)  # a slight lean
+
+
 def finish(bm, name):
+    rough(bm, sum(map(ord, name)))
     bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
     bmesh.ops.triangulate(bm, faces=list(bm.faces))
     me = bpy.data.meshes.new(name)

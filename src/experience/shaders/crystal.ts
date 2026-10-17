@@ -138,12 +138,12 @@ void main(){
   vec3 Nv = normalize((viewMatrix * vec4(N, 0.0)).xyz);
   vec3 Iv = normalize((viewMatrix * vec4(innerW, 0.0)).xyz);
   vec2 off = Nv.xy * 0.04 + Iv.xy * 0.025;
-  vec3 through = vec3(scene(uv + off * 0.93).r, scene(uv + off).g, scene(uv + off * 1.08).b);
+  vec3 through = vec3(scene(uv + off * 0.88).r, scene(uv + off).g, scene(uv + off * 1.16).b);
 
   // smoky quartz: most of the light through it is swallowed; what's left is faintly tinted
   vec3 smoke = mix(vec3(0.16, 0.15, 0.18), uTint * 0.22, 0.25);
   float thick = 0.7 + 0.9 * cosV;
-  through *= pow(smoke, vec3(0.35 + thick * 0.5)) * 0.9;
+  through *= pow(smoke, vec3(0.35 + thick * 0.5)) * 0.6;
   vec3 bounce = reflect(Rin, innerW);
   through += env(bounce) * smoke * 0.6;
 
@@ -153,7 +153,7 @@ void main(){
   vec3 Rv = normalize((viewMatrix * vec4(Rin, 0.0)).xyz);
   float travel = max(vDepth, 0.0) / max(-Rv.z, 0.25);
   vec2 hit = vScreen + Rv.xy * travel;
-  vec2 q = hit / vec2(0.36, 0.52);
+  vec2 q = hit / vec2(0.46, 0.6);
   float r = length(q);
   // every project's colour glows equally bright (lime would otherwise outshine violet)
   vec3 hue = uTint * (0.5 / max(dot(uTint, vec3(0.2126, 0.7152, 0.0722)), 0.2));
@@ -162,13 +162,26 @@ void main(){
   float swirl = fbm3(vec3(q * 1.8 + vec2(sin(t * 1.3), cos(t)) * 0.3, t));
   float fil = vnoise(vec3(q * 8.0 + swirl * 1.4, t * 2.0));
   fil = pow(1.0 - abs(fil), 10.0);
-  float body = exp(-r * r * 3.6);
+  // fine cellular web, like circuitry etched inside the core
+  vec2 wq = q * 5.0 + swirl * 0.8;
+  vec2 wi = floor(wq), wf = fract(wq);
+  float d1 = 9.0, d2 = 9.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+    vec2 o = vec2(float(i), float(j));
+    vec2 pt = 0.5 + 0.45 * sin(uTime * 0.25 + 6.2831 * hash33(vec3(wi + o, 1.0)).xy);
+    float d = length(o + pt - wf);
+    if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+  }
+  float web = 1.0 - smoothstep(0.0, 0.09, d2 - d1);
+  fil = max(fil, web * 0.8);
+  float body = exp(-r * r * 2.6);
   float power = 1.0 + uPulse * 0.6;
   float energy = body * (0.6 + 0.4 * smoothstep(-0.4, 0.6, swirl)) + fil * body * body * 0.3;
   // white-hot at the centre, the project's colour toward the edges of the glow
   vec3 heart = mix(hue, vec3(1.0), exp(-r * r * 12.0) * 0.5 + fil * 0.1);
   float coreMask = smoothstep(1.4, 0.0, r);
-  vec3 core = heart * energy * 1.25 * power;
+  vec3 core = heart * energy * 2.1 * power;
+  core += hue * web * body * body * 0.9 * power;
   // its light fills the stone around it, fading toward the faces
   core += hue * exp(-r * r * 1.6) * 0.06 * power;
   core += hue * exp(-r * r * 0.3) * 0.012;
