@@ -23,7 +23,7 @@ def tyre(bm, R, w, rim, segs=128):
         (R - 0.04 * h, u * 0.86), (R - 0.16 * h, u * 0.95), (rim + 0.62 * h, u * 1.0),
         (rim + 0.25 * h, u * 0.99), (rim + 0.004, u * 0.86),
     ]
-    lathe(bm, prof, segs, closed=True)
+    lathe(bm, prof, segs, closed=True, uv=True)
 
 
 def rim(bm, R, w, rim_r, spokes=10):
@@ -130,7 +130,7 @@ def wheel(pid, ax, side, front):
     bm = bmesh.new()
     tyre(bm, spec["R"], spec["w"], spec["rim"])
     bm.transform(base)
-    t = new_object(f"Tyre_{pid}", bm, "Rubber", sharp=60)
+    t = new_object(f"Tyre_{pid}", bm, "Tyre", sharp=60)
     child(t, pe)
     bm = bmesh.new()
     rim(bm, spec["R"], spec["w"], spec["rim"])

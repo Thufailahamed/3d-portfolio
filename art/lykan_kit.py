@@ -92,6 +92,7 @@ def materials():
     mat("Chrome", (0.92, 0.92, 0.93), metal=1.0, rough=0.04)
     mat("DarkChrome", (0.18, 0.18, 0.2), metal=1.0, rough=0.12)
     mat("Aluminium", (0.8, 0.8, 0.82), metal=1.0, rough=0.28)
+    mat("CastAlu", (0.6, 0.6, 0.6), metal=1.0, rough=0.48)
     mat("Gunmetal", (0.12, 0.125, 0.135), metal=1.0, rough=0.25)
     mat("WheelBlack", (0.025, 0.025, 0.027), metal=0.6, rough=0.22, coat=0.6, coat_rough=0.1)
     mat("Titanium", (0.42, 0.36, 0.33), metal=1.0, rough=0.22)
@@ -124,30 +125,6 @@ def materials():
     mat("Carpet", (0.02, 0.02, 0.02), rough=1.0)
     mat("WellLiner", (0.015, 0.015, 0.016), rough=0.9)
     honeycomb()
-    img = weave()
-    for name in ("Carbon", "CarbonMatte"):
-        textured(MATS[name], img)
-
-
-def weave(size=256, cells=8):
-    """2x2 twill: tows alternate direction on a diagonal stagger, each with a soft crown."""
-    img = bpy.data.images.new("CarbonWeave", size, size)
-    px = []
-    c = size // cells
-    for yy in range(size):
-        for xx in range(size):
-            i, j = xx // c, yy // c
-            u, v = (xx % c) / c, (yy % c) / c
-            horiz = ((i + j) // 2) % 2 == 0
-            t = v if horiz else u
-            along = u if horiz else v
-            crown = math.sin(math.pi * t) ** 0.6
-            fib = 0.85 + 0.15 * math.sin((along * 37 + t * 3) * math.pi)
-            g = 0.012 + 0.07 * crown * fib * (1.0 if horiz else 0.8)
-            px += (g, g, g * 1.08, 1.0)
-    img.pixels = px
-    img.pack()
-    return img
 
 
 def honeycomb(s=16, nx=8, ny=4):
@@ -175,6 +152,14 @@ def honeycomb(s=16, nx=8, ny=4):
             g = 0.03 + 0.05 * wall
             px += (g, g, g, wall)
     img.pixels = px
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(prefix="lykan_hc_"), "Honeycomb.png")
+    img.filepath_raw = path
+    img.file_format = "PNG"
+    img.save()
+    bpy.data.images.remove(img)
+    img = bpy.data.images.load(path)
+    img.name = "Honeycomb"
     img.pack()
     m = bpy.data.materials.new("Honeycomb")
     m.use_nodes = True
@@ -194,14 +179,33 @@ def honeycomb(s=16, nx=8, ny=4):
     MATS["Honeycomb"] = m
 
 
-def textured(m, img):
-    nt = m.node_tree
-    tex = nt.nodes.new("ShaderNodeTexImage")
-    tex.image = img
-    nt.links.new(tex.outputs["Color"], nt.nodes["Principled BSDF"].inputs["Base Color"])
+UVSCALE = {}     # material name -> box-projection tiles per metre (filled in by lykan_textures)
+
+
+def auto_uv(me):
+    """Box-project UVs for meshes that wear a tiling texture and have none of their own."""
+    if me.uv_layers:
+        return
+    for m in me.materials:
+        if m and m.name in UVSCALE:
+            box_uv(me, UVSCALE[m.name])
+            return
+
+
+def orient(ob, origin, xaxis, normal):
+    """Place an object so its local X runs along xaxis and its local Z faces along normal."""
+    z = Vector(normal).normalized()
+    x = (Vector(xaxis) - z * Vector(xaxis).dot(z)).normalized()
+    y = z.cross(x)
+    m = Matrix((x, y, z)).transposed().to_4x4()
+    m.translation = Vector(origin)
+    ob.matrix_world = m
+    return ob
 
 
 def box_uv(me, scale):
+    """Per-face box projection; faces whose material has its own UVSCALE use that density."""
+    names = [m.name if m else "" for m in me.materials]
     bm = bmesh.new()
     bm.from_mesh(me)
     uv = bm.loops.layers.uv.new("UVMap")
@@ -209,9 +213,10 @@ def box_uv(me, scale):
         n = f.normal
         a = max(range(3), key=lambda k: abs(n[k]))
         i, j = [k for k in range(3) if k != a]
+        sc = UVSCALE.get(names[f.material_index], scale) if f.material_index < len(names) else scale
         for lp in f.loops:
             co = lp.vert.co
-            lp[uv].uv = (co[i] * scale, co[j] * scale)
+            lp[uv].uv = (co[i] * sc, co[j] * sc)
     bm.to_mesh(me)
     bm.free()
 
@@ -229,8 +234,7 @@ def new_object(name, bm, material=None, smooth=True, sharp=40.0, parent=None):
             me.materials.append(MATS[m] if isinstance(m, str) else m)
     if smooth:
         shade(ob, sharp)
-    if any(m.name.startswith("Carbon") for m in me.materials):
-        box_uv(me, 25.0)
+    auto_uv(me)
     if parent is not None:
         ob.parent = parent
     return ob
@@ -314,9 +318,10 @@ def ball(bm, loc, r, sub=2, scale=(1, 1, 1)):
     return bmesh.ops.create_icosphere(bm, subdivisions=sub, radius=r, matrix=M(loc, (0, 0, 0), scale))["verts"]
 
 
-def lathe(bm, prof, segs=48, closed=False, a0=0.0, a1=2 * math.pi, cap=False, mat_index=0):
+def lathe(bm, prof, segs=48, closed=False, a0=0.0, a1=2 * math.pi, cap=False, mat_index=0, uv=False):
     """Revolve (radius, axial) profile points around the local Y axis.
-    Full turns are welded; partial arcs can be capped."""
+    Full turns are welded; partial arcs can be capped. With uv, U runs round, V along the profile."""
+    layer = bm.loops.layers.uv.verify() if uv else None
     full = abs(a1 - a0 - 2 * math.pi) < 1e-6
     n = segs if full else segs + 1
     rings = []
@@ -334,6 +339,11 @@ def lathe(bm, prof, segs=48, closed=False, a0=0.0, a1=2 * math.pi, cap=False, ma
                 f = bm.faces.new((A[k], A[k2], B[k2], B[k]))
                 f.material_index = mat_index
                 faces.append(f)
+                if layer is not None:
+                    v0, v1 = k / (np_ - 1 if not closed else np_), (k + 1) / (np_ - 1 if not closed else np_)
+                    for lp, co in zip(f.loops, ((s / segs, v0), (s / segs, v1), ((s + 1) / segs, v1),
+                                                ((s + 1) / segs, v0))):
+                        lp[layer].uv = co
             except ValueError:
                 pass
     if cap and not full and closed:
@@ -343,9 +353,14 @@ def lathe(bm, prof, segs=48, closed=False, a0=0.0, a1=2 * math.pi, cap=False, ma
     return rings, faces
 
 
-def tube(bm, pts, r, segs=12, closed_ends=True):
-    """Sweep a circle along a polyline (smoothed corners via the given points)."""
+def tube(bm, pts, r, segs=12, closed_ends=True, uv=None):
+    """Sweep a circle along a polyline (smoothed corners via the given points).
+    With uv (tiles per metre along the tube), U runs round once and V along the length."""
     pts = [Vector(p) for p in pts]
+    layer = bm.loops.layers.uv.verify() if uv else None
+    run = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        run.append(run[-1] + (b - a).length)
     rings = []
     prev_n = None
     for i, p in enumerate(pts):
@@ -364,9 +379,13 @@ def tube(bm, pts, r, segs=12, closed_ends=True):
         b = t.cross(nrm)
         rings.append([bm.verts.new(p + (nrm * math.cos(a) + b * math.sin(a)) * r)
                       for a in (2 * math.pi * k / segs for k in range(segs))])
-    for A, B in zip(rings, rings[1:]):
+    for i, (A, B) in enumerate(zip(rings, rings[1:])):
         for k in range(segs):
-            bm.faces.new((A[k], A[(k + 1) % segs], B[(k + 1) % segs], B[k]))
+            f = bm.faces.new((A[k], A[(k + 1) % segs], B[(k + 1) % segs], B[k]))
+            if layer is not None:
+                u0, u1, v0, v1 = k / segs, (k + 1) / segs, run[i] * uv, run[i + 1] * uv
+                for lp, co in zip(f.loops, ((u0, v0), (u1, v0), (u1, v1), (u0, v1))):
+                    lp[layer].uv = co
     if closed_ends:
         bm.faces.new(list(reversed(rings[0])))
         bm.faces.new(rings[-1])
@@ -544,8 +563,6 @@ def piece(name, build_fn, material, pe, sharp=40, mods=None):
     if mods:
         bake(ob)
         shade(ob, sharp)
-        if material.startswith("Carbon"):
-            box_uv(ob.data, 25.0)
     child(ob, pe)
     return ob
 

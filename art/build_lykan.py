@@ -30,6 +30,7 @@ from lykan_kit import *  # noqa: E402,F401,F403
 from lykan_cabin import interior  # noqa: E402
 from lykan_chassis import chassis, suspension, wheel  # noqa: E402
 from lykan_engine import cooling, engine, exhaust, frunk, transmission, turbos  # noqa: E402
+from lykan_textures import upgrade  # noqa: E402
 
 
 # ================================================================== the body
@@ -657,6 +658,49 @@ def skin(hidden):
             o.hide_render = hidden
 
 
+CLOSE = {   # name: (camera, target, lens, parts hidden)
+    "cabin": ((0.55, 2.3, 1.35), (-0.15, 0.15, 0.55), 30, ("door_left",)),
+    "seat": ((0.45, 1.25, 0.95), (-0.28, 0.36, 0.55), 30, ("door_left",)),
+    "dash": ((-0.30, -0.30, 0.98), (0.6, 0.25, 0.62), 22, ()),
+    "wheel": ((-0.05, 0.36, 0.85), (0.45, 0.36, 0.6), 28, ()),
+    "bay": ((-2.55, -1.2, 1.75), (-1.05, 0, 0.55), 32, ("engine_cover",)),
+    "bayside": ((-1.0, -1.9, 1.35), (-1.1, 0, 0.5), 30, ("engine_cover", "body", "aero")),
+}
+
+
+def render_close(views, samples=96, res=(1600, 900), tag=""):
+    cam = studio() if "Cam" not in bpy.data.objects else bpy.data.objects["Cam"]
+    sc = bpy.context.scene
+    sc.cycles.samples = samples
+    sc.render.resolution_x, sc.render.resolution_y = res
+    if "CabinFill" not in bpy.data.objects:
+        for name, kind, loc, e, size in (("CabinFill", "AREA", (0.4, 2.0, 1.25), 140, 1.2),
+                                         ("CabinGlow", "POINT", (-0.1, 0.0, 0.95), 10, 0.25),
+                                         ("BayFill", "AREA", (-1.0, 0.0, 2.2), 110, 1.4)):
+            L = bpy.data.objects.new(name, bpy.data.lights.new(name, kind))
+            L.data.energy = e
+            if kind == "AREA":
+                L.data.size = size
+            else:
+                L.data.shadow_soft_size = size
+            L.location = loc
+            look_at(L, (-0.1, 0.0, 0.5) if name != "BayFill" else (-1.0, 0, 0.4))
+            sc.collection.objects.link(L)
+    for v in views:
+        loc, tgt, lens, hidden = CLOSE[v]
+        for pid in hidden:
+            for o in PARTS[pid].children_recursive:
+                o.hide_render = True
+        cam.location = loc
+        cam.data.lens = lens
+        look_at(cam, tgt)
+        sc.render.filepath = os.path.join(RENDERS, f"lykan_{v}{tag}.png")
+        bpy.ops.render.render(write_still=True)
+        for pid in hidden:
+            for o in PARTS[pid].children_recursive:
+                o.hide_render = False
+
+
 def render(views, samples=96, res=(1600, 900), tag=""):
     cam = studio() if "Cam" not in bpy.data.objects else bpy.data.objects["Cam"]
     sc = bpy.context.scene
@@ -676,6 +720,7 @@ def render(views, samples=96, res=(1600, 900), tag=""):
 def build():
     reset()
     materials()
+    upgrade()
     body = body_parts()
     surface([o for k, o in body.items() if k not in ("well", "intake", "floor")])
     lights(body)
@@ -707,6 +752,7 @@ def export():
         export_extras=True,
         export_apply=True,
         export_texcoords=True,
+        export_image_format="WEBP",
         export_draco_mesh_compression_enable=True,
         export_draco_position_quantization=16,
         export_draco_normal_quantization=12,
@@ -720,6 +766,8 @@ if __name__ == "__main__":
     if "noexport" not in args:
         export()
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "lykan.blend"))
+    if "close" in args:
+        render_close(list(CLOSE), samples=32, res=(1200, 675), tag="_q")
     if "render" in args:
         if "quick" in args:
             render(["front34", "side", "rear34", "front"], samples=24, res=(1200, 675), tag="_q")
