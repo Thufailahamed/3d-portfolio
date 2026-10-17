@@ -157,7 +157,7 @@ def wheel(pid, ax, side, front):
 
 # ================================================================== chassis and suspension
 def chassis():
-    pe = part("chassis", (0, 0, -0.65))
+    pe = part("chassis", (0, -2.0, 0.0))
     # carbon monocoque tub
     piece("TubFloor", rb((0.2, 0, 0.155), (1.65, 1.5, 0.03), bevel=0.01), "CarbonMatte", pe)
     for s in (1, -1):
@@ -188,7 +188,7 @@ def chassis():
 
 
 def suspension():
-    pe = part("suspension", (0, 0, -0.35))
+    pe = part("suspension", (0, 0, 0.55))
     for ax, tr, front in ((AXLE_F, TRACK_F, True), (AXLE_R, TRACK_R, False)):
         zc = (TYRE_F if front else TYRE_R)["R"]
         for s in (1, -1):

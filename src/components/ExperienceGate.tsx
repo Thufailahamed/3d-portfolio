@@ -47,7 +47,8 @@ export default function ExperienceGate() {
     else if (!useApp.getState().entered) lenis?.stop();
   }, [lite, onLitePath]);
 
-  if (lite || onLitePath) return null;
+  // /lykan brings its own canvas; the journey must not render underneath it
+  if (lite || onLitePath || pathname.startsWith("/lykan")) return null;
   return (
     <>
       <Loader />

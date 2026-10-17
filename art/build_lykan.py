@@ -332,7 +332,7 @@ def body_parts():
         "intake": "Mesh", "door_glass": "Glass", "quarter_glass": "Glass", "windshield": "Glass", "engine_cover": "Glass",
         "headlight": "DarkChrome",
     }
-    pb = part("body", (0, 0, 0.0))
+    pb = part("body", (0, 0, 1.3))
     # reverse-dihedral doors: hinged at the rear, they swing up and forward of the cabin
     pdl = part("door_left", (-0.2, 0.4, 0.95))
     pdr = part("door_right", (-0.2, -0.4, 0.95))
@@ -441,7 +441,7 @@ def lights(body):
 
 def trim(body):
     pb = PARTS["body"]
-    pa = part("aero", (0, 0, -0.45))
+    pa = part("aero", (0, 0, 0.6))
     # front splitter following the nose plan
     def splitter(bm):
         front = []
