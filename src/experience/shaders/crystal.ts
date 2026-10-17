@@ -141,9 +141,9 @@ void main(){
   vec3 through = vec3(scene(uv + off * 0.88).r, scene(uv + off).g, scene(uv + off * 1.16).b);
 
   // smoky quartz: most of the light through it is swallowed; what's left is faintly tinted
-  vec3 smoke = mix(vec3(0.16, 0.15, 0.18), uTint * 0.22, 0.25);
+  vec3 smoke = mix(vec3(0.42, 0.46, 0.45), uTint * 0.55, 0.35);
   float thick = 0.7 + 0.9 * cosV;
-  through *= pow(smoke, vec3(0.35 + thick * 0.5)) * 0.6;
+  through *= pow(smoke, vec3(0.35 + thick * 0.5)) * 0.85;
   vec3 bounce = reflect(Rin, innerW);
   through += env(bounce) * smoke * 0.6;
 
