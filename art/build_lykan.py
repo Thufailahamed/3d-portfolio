@@ -9,7 +9,7 @@ part. Each empty carries glTF extras: `part` (its id) and `explode` (the directi
 out, in glTF Y-up metres) so the page can pull it out and look up its details.
 With `render`, also writes art/renders/lykan_*.png. Blender Z-up, car faces +X, +Y is its left.
 
-Real dimensions: 4.484 m long, 1.944 m wide, 1.168 m tall, 2.600 m wheelbase.
+Real dimensions: 4.480 m long, 1.944 m wide, 1.170 m tall, 2.625 m wheelbase.
 """
 
 import bisect
@@ -27,10 +27,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "public", "models", "lykan.glb")
 RENDERS = os.path.join(ROOT, "art", "renders")
 
-AXLE_F, AXLE_R = 1.24, -1.36
+AXLE_F, AXLE_R = 1.25, -1.375
 TRACK_F, TRACK_R = 0.835, 0.815          # half-track to the tyre centre
-TYRE_F = dict(R=0.327, w=0.245, rim=0.2413)   # 245/35 R19
-TYRE_R = dict(R=0.352, w=0.325, rim=0.254)    # 325/30 R20
+TYRE_F = dict(R=0.331, w=0.255, rim=0.2413)   # 255/35 ZR19
+TYRE_R = dict(R=0.355, w=0.335, rim=0.254)    # 335/30 ZR20
 
 
 # ------------------------------------------------------------------ helpers
@@ -105,6 +105,7 @@ def materials():
     mat("DarkChrome", (0.18, 0.18, 0.2), metal=1.0, rough=0.12)
     mat("Aluminium", (0.8, 0.8, 0.82), metal=1.0, rough=0.28)
     mat("Gunmetal", (0.12, 0.125, 0.135), metal=1.0, rough=0.25)
+    mat("WheelBlack", (0.025, 0.025, 0.027), metal=0.6, rough=0.22, coat=0.6, coat_rough=0.1)
     mat("Titanium", (0.42, 0.36, 0.33), metal=1.0, rough=0.22)
     mat("HeatBlue", (0.2, 0.22, 0.42), metal=1.0, rough=0.2)
     mat("CastIron", (0.09, 0.085, 0.08), metal=0.8, rough=0.55)
@@ -134,6 +135,7 @@ def materials():
     mat("Copper", (0.95, 0.5, 0.3), metal=1.0, rough=0.25)
     mat("Carpet", (0.02, 0.02, 0.02), rough=1.0)
     mat("WellLiner", (0.015, 0.015, 0.016), rough=0.9)
+    honeycomb()
     img = weave()
     for name in ("Carbon", "CarbonMatte"):
         textured(MATS[name], img)
@@ -158,6 +160,50 @@ def weave(size=256, cells=8):
     img.pixels = px
     img.pack()
     return img
+
+
+def honeycomb(s=16, nx=8, ny=4):
+    """Hexagon wire mesh as an alpha-masked texture that tiles (very nearly) on both axes."""
+    w, h = round(math.sqrt(3) * s * nx), 3 * s * ny
+    img = bpy.data.images.new("Honeycomb", w, h, alpha=True)
+    px = []
+    for yy in range(h):
+        for xx in range(w):
+            x, y = xx * (math.sqrt(3) * s * nx) / w, yy
+            q = (math.sqrt(3) / 3 * x - y / 3) / s
+            r = (2 / 3 * y) / s
+            cx, cz = q, r
+            cy = -cx - cz
+            rx, ry, rz = round(cx), round(cy), round(cz)
+            dx, dy, dz = abs(rx - cx), abs(ry - cy), abs(rz - cz)
+            if dx > dy and dx > dz:
+                rx = -ry - rz
+            elif dy > dz:
+                ry = -rx - rz
+            else:
+                rz = -rx - ry
+            d = max(abs(cx - rx), abs(cy - ry), abs(cz - rz))
+            wall = 1.0 if d > 0.36 else 0.0
+            g = 0.03 + 0.05 * wall
+            px += (g, g, g, wall)
+    img.pixels = px
+    img.pack()
+    m = bpy.data.materials.new("Honeycomb")
+    m.use_nodes = True
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    b.inputs["Base Color"].default_value = (0.02, 0.02, 0.022, 1)
+    b.inputs["Metallic"].default_value = 0.7
+    b.inputs["Roughness"].default_value = 0.35
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    gt = nt.nodes.new("ShaderNodeMath")
+    gt.operation = "GREATER_THAN"
+    gt.inputs[1].default_value = 0.5
+    nt.links.new(tex.outputs["Alpha"], gt.inputs[0])
+    nt.links.new(gt.outputs[0], b.inputs["Alpha"])
+    m.surface_render_method = "DITHERED"
+    MATS["Honeycomb"] = m
 
 
 def textured(m, img):
@@ -432,8 +478,8 @@ Z5 = spline([(2.25, 0.36), (2.20, 0.42), (2.10, 0.51), (1.95, 0.59), (1.75, 0.65
              (-0.8, 0.765), (-1.1, 0.805), (-1.4, 0.825), (-1.7, 0.835), (-1.98, 0.84), (-2.12, 0.845),
              (-2.22, 0.84)])
 Z6 = spline([(2.25, 0.39), (2.20, 0.46), (2.10, 0.555), (1.95, 0.635), (1.75, 0.70), (1.5, 0.74),
-             (1.25, 0.758), (1.0, 0.75), (0.8, 0.745), (0.4, 0.758), (0.0, 0.778), (-0.4, 0.815),
-             (-0.58, 0.855), (-0.8, 0.89), (-1.1, 0.918), (-1.4, 0.928), (-1.7, 0.918), (-1.98, 0.906),
+             (1.25, 0.758), (1.0, 0.75), (0.8, 0.735), (0.4, 0.725), (0.0, 0.735), (-0.4, 0.765),
+             (-0.58, 0.80), (-0.8, 0.86), (-1.1, 0.918), (-1.4, 0.928), (-1.7, 0.918), (-1.98, 0.906),
              (-2.12, 0.90), (-2.22, 0.885)])
 INSET6 = spline([(2.25, 0.08), (1.95, 0.13), (1.25, 0.17), (0.8, 0.19), (0.0, 0.22), (-0.58, 0.225),
                  (-1.1, 0.22), (-1.4, 0.24), (-1.98, 0.25), (-2.22, 0.24)])
@@ -447,8 +493,12 @@ YG = spline([(2.25, 0.40), (2.10, 0.50), (1.95, 0.53), (1.5, 0.55), (1.0, 0.575)
              (-1.98, 0.50), (-2.22, 0.52)])
 DROP7 = spline([(2.25, 0.0), (1.95, -0.03), (1.5, -0.04), (1.0, -0.025), (0.8, 0.0), (0.6, 0.03),
                 (0.0, 0.05), (-0.58, 0.05), (-1.0, 0.04), (-1.6, 0.02), (-1.98, 0.0), (-2.22, 0.0)])
-SCOOP = spline([(0.62, 0.0), (0.35, 0.03), (0.0, 0.07), (-0.35, 0.11), (-0.62, 0.13), (-0.88, 0.09), (-1.08, 0.0)])
-NOSE = spline([(1.5, 0.0), (1.95, 0.05), (2.25, 0.12)])
+SCOOP = spline([(0.62, 0.0), (0.2, 0.02), (-0.3, 0.05), (-0.62, 0.06), (-0.9, 0.04), (-1.08, 0.0)])
+NOSE = spline([(1.5, 0.0), (1.95, 0.05), (2.25, 0.14)])
+FANG = spline([(1.7, 0.0), (2.0, 0.04), (2.25, 0.11)])       # fender tips pushed ahead of the hood
+TAILFIN = spline([(-1.9, 0.0), (-2.12, 0.04), (-2.22, 0.09)])  # rear haunch tips past the tail
+VALLEY = spline([(0.82, 0.0), (1.0, 0.03), (1.6, 0.045), (2.1, 0.035), (2.25, 0.0)])
+SPINE = spline([(0.9, 0.52), (1.5, 0.42), (2.2, 0.30)])       # valley position as a share of yg
 ZF = spline([(2.25, 0.115), (1.9, 0.12), (1.5, 0.13), (-1.9, 0.13), (-2.22, 0.15)])
 
 
@@ -468,9 +518,23 @@ def section(x):
         (w - 0.035, z5),
         (w - INSET6(x), z6),
         (yg, z7),
-        (yg * 0.52, zc - DROP7(x) * 0.25),
+        (yg * SPINE(x), zc - DROP7(x) * 0.25 - VALLEY(x)),
         (0.0, zc),
     ]
+
+
+def ctrl(x, j, half=None):
+    """Control point j (0..9) of station x with the plan-view offsets applied, right side (+Y)."""
+    half = half or section(x)
+    y, z = half[j]
+    dx = NOSE(x) * max(0.0, 1 - (y / W(x)) ** 2)
+    if j in (5, 6):
+        dx += FANG(x) - TAILFIN(x)
+    if j == 4:
+        dx += 0.6 * FANG(x) - 0.6 * TAILFIN(x)
+    if j == 7:
+        dx += 0.4 * FANG(x)
+    return (x + dx, y, z)
 
 
 def body_region(xm, j):
@@ -483,6 +547,8 @@ def body_region(xm, j):
         return "door"
     if door and j == 6:
         return "door_glass"
+    if j == 6 and -0.58 > xm > -0.95:
+        return "quarter_glass"
     if j >= 7:
         if 0.80 > xm > 0.0:
             return "windshield"
@@ -498,7 +564,7 @@ def body_region(xm, j):
 
 
 REGIONS = ["paint", "carbon", "floor", "door", "door_glass", "windshield", "roof", "engine_cover",
-           "hood", "headlight", "fascia", "tail", "well", "intake"]
+           "hood", "headlight", "fascia", "tail", "well", "intake", "doorscoop", "quarter_glass"]
 
 
 def shell():
@@ -506,10 +572,8 @@ def shell():
     rings = []
     for x in STATIONS:
         half = section(x)
-        w = W(x)
-        nose = NOSE(x)
-        loop = [(x + nose * max(0.0, 1 - (y / w) ** 2), y, z) for y, z in half]
-        loop += [(x + nose * max(0.0, 1 - (y / w) ** 2), -y, z) for y, z in reversed(half[1:-1])]
+        right = [ctrl(x, j, half) for j in range(10)]
+        loop = right + [(px, -py, pz) for px, py, pz in reversed(right[1:-1])]
         rings.append([bm.verts.new(p) for p in loop])
     n = len(rings[0])  # 18
     ri = {r: i for i, r in enumerate(REGIONS)}
@@ -522,7 +586,7 @@ def shell():
             f = bm.faces.new((A[k], B[k], B[(k + 1) % n], A[(k + 1) % n]))
             f.material_index = ri[body_region(xm, j)]
     # nose and tail caps, each pulled in on a short extra ring so the ends come out rounded
-    for ring, dx, s, reg in ((rings[0], 0.022, 0.88, "fascia"), (rings[-1], -0.03, 0.9, "tail")):
+    for ring, dx, s, reg in ((rings[0], 0.022, 0.88, "fascia"), (rings[-1], 0.05, 0.86, "tail")):
         cz = sum(v.co.z for v in ring) / n
         inner = [bm.verts.new((v.co.x + dx, v.co.y * s, cz + (v.co.z - cz) * s)) for v in ring]
         for k in range(n):
@@ -537,10 +601,16 @@ def shell():
             e = bm.edges.get((ring[k], ring[(k + 1) % n]))
             if e:
                 e[crease] = c
-    sharp = {3: 0.85, 5: 0.75, 6: 0.35, 7: 0.55}
+    sharp = {3: 0.9, 5: 0.9, 6: 0.6, 7: 0.7}
     for i in range(len(rings) - 1):
+        xm = (STATIONS[i] + STATIONS[i + 1]) / 2
         for j, c in sharp.items():
             for k in (j, (n - j) % n):
+                e = bm.edges.get((rings[i][k], rings[i + 1][k]))
+                if e:
+                    e[crease] = c
+        if 0.95 < xm < 2.2:          # hood spine and valleys
+            for k, c in ((9, 0.95), (8, 0.5), (10, 0.5)):
                 e = bm.edges.get((rings[i][k], rings[i + 1][k]))
                 if e:
                     e[crease] = c
@@ -577,37 +647,40 @@ def cutters():
             y0 = 0.64 if ax > 0 else 0.6
             cyl(bm, (ax, s * (y0 + 0.4), zc + 0.01), R, 0.8, segs=64, rot=(math.pi / 2, 0, 0))
             add(bm, "well", f"Arch_{ax}_{s}")
-    # front: big outboard intakes under the lamps, a wide centre mouth
-    for s in (1, -1):
+    # front corners: a tall intake under each lamp, leaving a thin blade of fender outboard
+    for sd in (1, -1):
         bm = bmesh.new()
-        poly = [(s * 0.38, 0.17), (s * 0.80, 0.16), (s * 0.86, 0.33), (s * 0.66, 0.40), (s * 0.40, 0.33)]
-        if s < 0:
+        poly = [(sd * 0.36, 0.15), (sd * 0.83, 0.15), (sd * 0.80, 0.46), (sd * 0.62, 0.50), (sd * 0.36, 0.36)]
+        if sd < 0:
             poly.reverse()
-        prism(bm, poly, "x", 1.98, 2.5)
-        add(bm, "intake", f"IntakeF_{s}")
+        prism(bm, poly, "x", 1.82, 2.6)
+        add(bm, "intake", f"IntakeF_{sd}")
     bm = bmesh.new()
-    prism(bm, [(-0.31, 0.16), (0.31, 0.16), (0.27, 0.31), (-0.27, 0.31)], "x", 2.05, 2.5)
+    prism(bm, [(-0.29, 0.15), (0.29, 0.15), (0.25, 0.29), (-0.25, 0.29)], "x", 2.08, 2.6)
     add(bm, "intake", "IntakeC")
-    # side scoops ahead of the rear wheels
-    for s in (1, -1):
+    # the door scoop: a wedge that bites deeper toward the rear, then the tall rear-wheel intake
+    for sd in (1, -1):
         bm = bmesh.new()
-        poly = [(-0.98, 0.33), (-0.62, 0.36), (-0.52, 0.58), (-0.90, 0.62)]
-        prism(bm, poly, "y", s * 0.80, s * 1.2)
-        add(bm, "intake", f"Scoop_{s}")
-    # rear: diffuser tunnel and the exhaust bay
+        tri = [(0.74, 0.30), (-0.60, 0.30), (-0.60, 0.71)]
+        outer = [bm.verts.new((x, sd * 1.4, z)) for x, z in tri]
+        depth = [0.0, 0.17, 0.17]
+        inner = [bm.verts.new((x, sd * (W(x) - d), z)) for (x, z), d in zip(tri, depth)]
+        bm.faces.new(outer)
+        bm.faces.new(list(reversed(inner)))
+        for k in range(3):
+            bm.faces.new((inner[k], inner[(k + 1) % 3], outer[(k + 1) % 3], outer[k]))
+        add(bm, "doorscoop", f"DoorScoop_{sd}")
+        bm = bmesh.new()
+        poly = [(-0.58, 0.24), (-0.95, 0.24), (-0.99, 0.77), (-0.58, 0.73)]
+        prism(bm, poly, "y", sd * (W(-0.8) - 0.30), sd * 1.4)
+        add(bm, "intake", f"RearIntake_{sd}")
+    # rear: diffuser tunnel and the open mesh tail
     bm = bmesh.new()
     prism(bm, [(-0.78, 0.10), (0.78, 0.10), (0.70, 0.30), (-0.70, 0.30)], "x", -2.6, -1.98)
     add(bm, "intake", "Diffuser")
     bm = bmesh.new()
-    poly = rounded_rect(0.62, 0.13, 0.05, cy=0.40)
-    prism(bm, poly, "x", -2.6, -2.10)
-    add(bm, "intake", "ExhaustBay")
-    # rear outlet vents above the diffuser at each corner
-    for s in (1, -1):
-        bm = bmesh.new()
-        poly = rounded_rect(0.36, 0.13, 0.03, cx=s * 0.66, cy=0.48)
-        prism(bm, poly, "x", -2.6, -2.12)
-        add(bm, "intake", f"VentR_{s}")
+    prism(bm, [(-0.80, 0.34), (0.80, 0.34), (0.84, 0.81), (-0.84, 0.81)], "x", -2.6, -2.05)
+    add(bm, "intake", "TailMesh")
     col.hide_render = True
     col.hide_viewport = True
     return col
@@ -646,8 +719,10 @@ def split_shell(src):
     groups = {}
     for f in full.faces:
         reg = names[f.material_index] if f.material_index < len(names) else "paint"
+        if reg == "doorscoop":
+            reg = "door" if f.calc_center_median().x > -0.58 else "paint"
         key = reg
-        if reg in ("door", "door_glass", "headlight"):
+        if reg in ("door", "door_glass", "headlight", "quarter_glass"):
             key = reg + ("_L" if f.calc_center_median().y > 0 else "_R")
         groups.setdefault(key, []).append(f.index)
     out = {}
@@ -683,12 +758,13 @@ def body_parts():
     look = {
         "paint": "Paint", "roof": "Paint", "fascia": "Paint", "tail": "Paint", "door": "Paint",
         "hood": "Paint", "carbon": "Carbon", "floor": "Underbody", "well": "WellLiner",
-        "intake": "Mesh", "door_glass": "Glass", "windshield": "Glass", "engine_cover": "Glass",
+        "intake": "Mesh", "door_glass": "Glass", "quarter_glass": "Glass", "windshield": "Glass", "engine_cover": "Glass",
         "headlight": "DarkChrome",
     }
     pb = part("body", (0, 0, 0.0))
-    pdl = part("door_left", (0.35, 0.45, 0.85))
-    pdr = part("door_right", (0.35, -0.45, 0.85))
+    # reverse-dihedral doors: hinged at the rear, they swing up and forward of the cabin
+    pdl = part("door_left", (-0.2, 0.4, 0.95))
+    pdr = part("door_right", (-0.2, -0.4, 0.95))
     ph = part("hood", (0.5, 0, 0.7))
     pe = part("engine_cover", (-0.3, 0, 0.9))
     owner = {"door_L": pdl, "door_glass_L": pdl, "door_R": pdr, "door_glass_R": pdr, "hood": ph,
@@ -699,7 +775,7 @@ def body_parts():
         reg = key[:-2] if key.endswith(("_L", "_R")) else key
         if key in panels:
             roll_edges(bm, 0.004, 0.006)
-        elif reg in ("door_glass", "windshield"):
+        elif reg in ("door_glass", "windshield", "quarter_glass"):
             roll_edges(bm, 0.002, 0.003)
         ob = new_object("Body_" + key, bm, look[reg], sharp=50)
         thick = {"Glass": 0.006, "Mesh": 0.0, "WellLiner": 0.0, "DarkChrome": 0.0}.get(look[reg], 0.012)
@@ -737,7 +813,7 @@ def tyre(bm, R, w, rim, segs=128):
     lathe(bm, prof, segs, closed=True)
 
 
-def rim(bm, R, w, rim_r, spokes=14):
+def rim(bm, R, w, rim_r, spokes=10):
     u = w / 2
     # barrel with an outer lip; face of the wheel is +Y
     prof = [(rim_r - 0.012, -u * 0.9), (rim_r + 0.01, -u * 0.92), (rim_r + 0.012, -u * 0.84),
@@ -750,11 +826,12 @@ def rim(bm, R, w, rim_r, spokes=14):
     for s in range(spokes // 2):
         base = 2 * math.pi * s / (spokes // 2)
         for d in (-1, 1):
-            a = base + d * math.radians(7.5)
-            a_in = base + d * math.radians(3.2)
+            a = base + d * math.radians(10.5)
+            a_in = base + d * math.radians(1.6)
             pts = []
-            for (r, ang, uu, hw) in ((0.075, a_in, hub_u, 0.02), (0.16, a - d * 0.02, u * 0.62, 0.018),
-                                     (rim_r - 0.026, a, u * 0.82, 0.016)):
+            for (r, ang, uu, hw) in ((0.075, a_in, hub_u, 0.013), (0.13, base + d * math.radians(3.5), u * 0.55, 0.012),
+                                     (0.19, base + d * math.radians(8), u * 0.72, 0.013),
+                                     (rim_r - 0.026, a, u * 0.82, 0.015)):
                 c, sn = math.cos(ang), math.sin(ang)
                 t = Vector((-sn, 0, c))
                 p = Vector((r * c, uu, r * sn))
@@ -845,7 +922,7 @@ def wheel(pid, ax, side, front):
     bm = bmesh.new()
     rim(bm, spec["R"], spec["w"], spec["rim"])
     bm.transform(base)
-    child(new_object(f"Rim_{pid}", bm, "Gunmetal", sharp=35), pe)
+    child(new_object(f"Rim_{pid}", bm, "WheelBlack", sharp=35), pe)
     bm = bmesh.new()
     hub_nut(bm, spec["w"] / 2 * 0.35)
     bm.transform(base)
@@ -1016,12 +1093,10 @@ def lights(body):
         pts, ups = [], []
         for i in range(25):
             x = 1.6 + (2.14 - 1.6) * i / 24
-            sec = section(x)
-            y = (sec[5][0] + sec[6][0]) / 2
-            z = (sec[5][1] + sec[6][1]) / 2
-            x += NOSE(x) * max(0.0, 1 - (y / W(x)) ** 2)
+            a, b = Vector(ctrl(x, 5)), Vector(ctrl(x, 6))
+            m = (a + b) / 2
             d = Vector((0, s * 0.55, 0.85)).normalized()
-            co, n = hit(Vector((x, s * y, z)) + d * 0.5, -d)
+            co, n = hit(Vector((m.x, s * m.y, m.z)) + d * 0.5, -d)
             if co is None:
                 continue
             pts.append(co - n * 0.008)
@@ -1047,22 +1122,42 @@ def lights(body):
                         rot=n.to_track_quat("Z", "Y").to_euler())
             child(new_object(f"Projector_{s}", bm, "Chrome", sharp=40), ph)
 
-    # tail: thin LED blade across the tail, under a smoked lens, plus corner returns
-    def band(z0, z1, ymax):
-        return lambda u, v: (-3.0, (u * 2 - 1) * ymax, z0 + (z1 - z0) * v)
-    bm = bmesh.new()
-    proj_grid(bm, band(0.795, 0.815, 0.80), 80, 1, (1, 0, 0), 0.004)
-    child(new_object("TailLED", bm, "TailLED", sharp=60), pt)
-    bm = bmesh.new()
-    proj_grid(bm, band(0.76, 0.845, 0.84), 80, 3, (1, 0, 0), 0.007)
-    child(thicken(new_object("TailLens", bm, "Glass", sharp=60), 0.004), pt)
-    for s in (1, -1):
+    # tail: angular chrome frames carrying the LED blades, framing the open mesh
+    back = [(-1, 0, 0)]
+    for sd in (1, -1):
+        path = [(-2.16, sd * y, z) for y, z in ((0.26, 0.79), (0.81, 0.79), (0.77, 0.40), (0.50, 0.365), (0.42, 0.50))]
         bm = bmesh.new()
-        proj_grid(bm, lambda u, v, s=s: (-3.0, s * (0.55 + 0.25 * u), 0.62 + 0.03 * v), 20, 1, (1, 0, 0), 0.003)
-        child(new_object(f"TailLow_{s}", bm, "TailLED", sharp=60), pt)
+        sweep(bm, path, [(-0.017, 0.0), (0.017, 0.0), (0.017, 0.055), (-0.017, 0.055)], back * len(path))
+        child(new_object(f"TailFrame_{sd}", finish(bm), "Chrome", sharp=30), pt)
+        bm = bmesh.new()
+        sweep(bm, path[:3], [(-0.006, 0.055), (0.006, 0.055), (0.006, 0.058), (-0.006, 0.058)], back * 3)
+        child(new_object(f"TailLED_{sd}", finish(bm), "TailLED", sharp=30), pt)
     bm = bmesh.new()
-    proj_grid(bm, lambda u, v: (-3.0, (u * 2 - 1) * 0.07, 0.66 + 0.035 * v), 8, 1, (1, 0, 0), 0.003)
-    child(new_object("ThirdLight", bm, "TailLED", sharp=60), pt)
+    sweep(bm, [(-2.2, -0.2, 0.825), (-2.2, 0.2, 0.825)], [(-0.006, 0), (0.006, 0), (0.006, 0.01), (-0.006, 0.01)],
+          back * 2)
+    child(new_object("ThirdLight", finish(bm), "TailLED", sharp=30), pt)
+
+
+def honey_plane(name, corners, parent, scale=40.0):
+    """A flat honeycomb grille on the quad `corners`, UVs in metres times scale."""
+    bm = bmesh.new()
+    vs = [bm.verts.new(c) for c in corners]
+    f = bm.faces.new(vs)
+    uv = bm.loops.layers.uv.new("UVMap")
+    o = Vector(corners[0])
+    e1 = (Vector(corners[1]) - o).normalized()
+    e2 = f.normal.cross(e1)
+    for lp in f.loops:
+        d = lp.vert.co - o
+        lp[uv].uv = (d.dot(e1) * scale, d.dot(e2) * scale)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(ob)
+    me.materials.append(MATS["Honeycomb"])
+    child(ob, parent)
+    return ob
 
 
 def trim(body):
@@ -1100,21 +1195,11 @@ def trim(body):
     # rear diffuser strakes in the tunnel
     bm = bmesh.new()
     for yy in (-0.6, -0.36, -0.12, 0.12, 0.36, 0.6):
-        prism(bm, [(-2.21, 0.10), (-1.98, 0.10), (-1.98, 0.12), (-2.19, 0.29)], "y", yy - 0.004, yy + 0.004)
+        prism(bm, [(-2.16, 0.10), (-1.98, 0.10), (-1.98, 0.12), (-2.14, 0.29)], "y", yy - 0.004, yy + 0.004)
     child(new_object("DiffuserStrakes", finish(bm), "Carbon", sharp=30), pa)
     bm = bmesh.new()
-    prism(bm, [(-0.78, 0.09), (0.78, 0.09), (0.78, 0.102), (-0.78, 0.102)], "x", -2.21, -1.6)
+    prism(bm, [(-0.78, 0.09), (0.78, 0.09), (0.78, 0.102), (-0.78, 0.102)], "x", -2.16, -1.6)
     child(new_object("DiffuserFloor", finish(bm), "Carbon", sharp=30), pa)
-    # ducktail lip riding the top edge of the tail
-    bm = bmesh.new()
-    pts = []
-    for i in range(41):
-        yy = (i / 40 * 2 - 1) * 0.70
-        co, n = hit((-2.205, yy, 2.0), (0, 0, -1))
-        if co is not None:
-            pts.append(co + Vector((0, 0, -0.004)))
-    sweep(bm, pts, [(0.0, 0.0), (0.0, 0.012), (-0.065, 0.034), (-0.07, 0.026), (-0.03, 0.0)])
-    child(new_object("Ducktail", finish(bm), "Carbon", sharp=30), pa)
     # mirrors on the doors
     for s, pid in ((1, "door_left"), (-1, "door_right")):
         pe = PARTS[pid]
@@ -1131,47 +1216,70 @@ def trim(body):
         sweep(bm, catmull([(0.56, s * 0.80, 0.765), (0.53, s * 0.88, 0.80), (0.49, s * 0.96, 0.835)], 6),
               [(-0.022, -0.006), (0.022, -0.006), (0.018, 0.006), (-0.018, 0.006)])
         child(new_object(f"MirrorArm_{s}", finish(bm), "Carbon", sharp=40), pe)
-    # badges
-    child(text_mesh("LYKAN", 0.055, (-2.30, 0.0, 0.72), (math.pi / 2, 0, -math.pi / 2), "Chrome", 0.003,
-                    "BadgeRear"), pb)
-    child(text_mesh("W MOTORS", 0.026, (-2.30, 0.0, 0.69), (math.pi / 2, 0, -math.pi / 2), "Chrome", 0.002,
-                    "BadgeRear2"), pb)
-    co, n = hit((3.0, 0.0, 0.38), (-1, 0, 0))
+    # honeycomb screens in every opening
+    for sd in (1, -1):
+        honey_plane(f"GrilleF_{sd}", [(1.87, sd * 0.37, 0.155), (1.87, sd * 0.82, 0.155), (1.87, sd * 0.79, 0.455),
+                                     (1.87, sd * 0.37, 0.355)][:: sd], pa)
+        y = sd * (W(-0.8) - 0.28)
+        honey_plane(f"GrilleSide_{sd}", [(-0.59, y, 0.25), (-0.94, y, 0.25), (-0.98, y, 0.76), (-0.59, y, 0.72)][:: sd],
+                    pa)
+        bm = bmesh.new()
+        rbox(bm, (0, 0, 0), (0.30, 0.42, 0.012), bevel=0.004)
+        bm.transform(M((2.0, sd * 0.59, 0.31), (0, 0, -sd * 0.08)))
+        child(new_object(f"IntakeBlade_{sd}", bm, "Chrome", sharp=30), pa)
+    honey_plane("GrilleC", [(2.1, 0.28, 0.155), (2.1, -0.28, 0.155), (2.1, -0.24, 0.285), (2.1, 0.24, 0.285)], pa)
+    honey_plane("GrilleRear", [(-2.09, 0.80, 0.345), (-2.09, -0.80, 0.345), (-2.09, -0.83, 0.80), (-2.09, 0.83, 0.80)],
+                pa)
+    piece("TailPanel", rb((-2.15, 0, 0.58), (0.03, 0.46, 0.15), bevel=0.01), "Carbon", pa)
+    child(text_mesh("L Y K A N", 0.05, (-2.167, 0.0, 0.60), (math.pi / 2, 0, -math.pi / 2), "Chrome", 0.002,
+                    "BadgeRear"), pa)
+    child(text_mesh("H Y P E R S P O R T", 0.022, (-2.167, 0.0, 0.545), (math.pi / 2, 0, -math.pi / 2), "Chrome",
+                    0.0015, "BadgeRear2"), pa)
+    co, n = hit((-3.0, 0.0, 0.86), (1, 0, 0))
+    if co is not None:
+        child(text_mesh("W", 0.05, co + Vector((-0.003, 0, 0)), (math.pi / 2, 0, -math.pi / 2), "Chrome", 0.003,
+                        "BadgeTail"), pb)
+    co, n = hit((3.0, 0.0, 0.33), (-1, 0, 0))
     if co is not None:
         t = text_mesh("W", 0.07, co + Vector((0.004, 0, 0)), (math.pi / 2, 0, math.pi / 2), "Chrome", 0.004,
                       "BadgeFront")
         child(t, pb)
-    # hood vents and engine-cover louvers
-    for s in (1, -1):
+    # the bright blade along each lower door
+    for sd, pid in ((1, "door_left"), (-1, "door_right")):
+        pts, ups = [], []
+        for i in range(21):
+            x = 0.70 - 1.26 * i / 20
+            z = 0.305 + 0.055 * i / 20
+            co, n = hit((x, sd * 2.0, z), (0, -sd, 0))
+            if co is not None:
+                pts.append(co + n * 0.002)
+                ups.append(n)
         bm = bmesh.new()
-        proj_grid(bm, lambda u, v, s=s: (1.38 + 0.30 * u, s * (0.16 + 0.12 * v + 0.05 * u), 3.0), 10, 4,
-                  (0, 0, -1), -0.001)
-        child(new_object(f"HoodVent_{s}", bm, "Mesh", sharp=60), PARTS["hood"])
-        bm = bmesh.new()
-        for k in range(7):
-            u = (k + 0.5) / 7
-            x = 1.38 + 0.30 * u
-            pts = []
-            for j in range(9):
-                yy = 0.16 + 0.05 * u + 0.12 * j / 8
-                co, n = hit((x, s * yy, 3.0), (0, 0, -1))
-                if co is not None:
-                    pts.append(co + Vector((0, 0, 0.002)))
-            if len(pts) > 2:
-                sweep(bm, pts, [(-0.004, -0.006), (0.004, -0.006), (0.004, 0.0), (-0.004, 0.0)])
-        child(new_object(f"HoodSlats_{s}", bm, "Carbon", sharp=40), PARTS["hood"])
+        sweep(bm, pts, [(-0.009, 0.0), (0.009, 0.0), (0.006, 0.008), (-0.006, 0.008)], ups)
+        child(new_object(f"DoorBlade_{sd}", finish(bm), "Chrome", sharp=40), PARTS[pid])
+    # engine cover: chevron louvers pointing forward, astride a body-colour spine
     bm = bmesh.new()
-    for k in range(9):
-        x = -0.70 - k * 0.105
+    for k in range(8):
+        x0 = -0.72 - k * 0.11
         pts = []
         for j in range(17):
-            yy = (j / 16 * 2 - 1) * 0.40
+            yy = (j / 16 * 2 - 1) * 0.38
+            x = x0 - 0.16 * abs(yy) / 0.38
             co, n = hit((x, yy, 3.0), (0, 0, -1))
             if co is not None:
                 pts.append(co + Vector((0, 0, 0.004)))
         if len(pts) > 2:
-            sweep(bm, pts, [(-0.012, -0.004), (0.012, -0.004), (0.016, 0.006), (-0.008, 0.008)])
-    child(new_object("CoverLouvers", bm, "Carbon", sharp=40), PARTS["engine_cover"])
+            sweep(bm, pts, [(-0.012, -0.006), (0.012, -0.006), (0.014, 0.002), (-0.008, 0.004)])
+    child(new_object("CoverLouvers", bm, "Mesh", sharp=40), PARTS["engine_cover"])
+    pts = []
+    for i in range(21):
+        x = -0.62 - 1.0 * i / 20
+        co, n = hit((x, 0.0, 3.0), (0, 0, -1))
+        if co is not None:
+            pts.append(co)
+    bm = bmesh.new()
+    sweep(bm, pts, [(-0.03, -0.005), (0.03, -0.005), (0.012, 0.025), (-0.012, 0.025)])
+    child(new_object("CoverSpine", finish(bm), "Paint", sharp=40), PARTS["engine_cover"])
     # rear-view mirror and wipers
     bm = bmesh.new()
     rbox(bm, (0, 0, 0), (0.03, 0.22, 0.06), bevel=0.01)
@@ -1488,14 +1596,14 @@ def cooling():
 
 def frunk():
     pe = part("frunk", (0.6, 0, 1.0))
-    piece("FrunkTub", rb((1.48, 0, 0.42), (0.62, 0.86, 0.26), bevel=0.05), "Carpet", pe)
-    piece("Battery", rb((1.62, 0.25, 0.58), (0.18, 0.24, 0.07), bevel=0.01), "Plastic", pe)
-    piece("BatteryTerm", multi(rb((1.66, 0.17, 0.62), (0.025, 0.025, 0.02), bevel=0.003),
-                               rb((1.66, 0.33, 0.62), (0.025, 0.025, 0.02), bevel=0.003)), "RedAnodised", pe)
-    piece("ECU", rb((1.62, -0.24, 0.575), (0.16, 0.2, 0.05), bevel=0.008), "Aluminium", pe)
-    piece("BrakeFluid", placed(lambda bm: cyl(bm, (0, 0, 0), 0.04, 0.08, segs=24), M((1.18, 0.33, 0.61))),
+    piece("FrunkTub", rb((1.48, 0, 0.37), (0.62, 0.86, 0.2), bevel=0.05), "Carpet", pe)
+    piece("Battery", rb((1.62, 0.25, 0.505), (0.18, 0.24, 0.07), bevel=0.01), "Plastic", pe)
+    piece("BatteryTerm", multi(rb((1.66, 0.17, 0.545), (0.025, 0.025, 0.02), bevel=0.003),
+                               rb((1.66, 0.33, 0.545), (0.025, 0.025, 0.02), bevel=0.003)), "RedAnodised", pe)
+    piece("ECU", rb((1.62, -0.24, 0.495), (0.16, 0.2, 0.05), bevel=0.008), "Aluminium", pe)
+    piece("BrakeFluid", placed(lambda bm: cyl(bm, (0, 0, 0), 0.04, 0.08, segs=24), M((1.18, 0.33, 0.53))),
           "GlassClear", pe)
-    piece("FluidCaps", placed(lambda bm: cyl(bm, (0, 0, 0), 0.025, 0.02, segs=24), M((1.18, 0.33, 0.66))),
+    piece("FluidCaps", placed(lambda bm: cyl(bm, (0, 0, 0), 0.025, 0.02, segs=24), M((1.18, 0.33, 0.58))),
           "Gold", pe)
     return pe
 
@@ -1524,7 +1632,7 @@ def chassis():
         tube(bm, [(x, -0.55, 0.22), (x, 0.55, 0.22)], 0.022, 10)
     tube(bm, [(2.05, -0.38, 0.22), (2.05, 0.38, 0.22)], 0.03, 12)
     child(new_object("Subframes", bm, "Aluminium", sharp=60), pe)
-    piece("CrashBox", rb((2.12, 0, 0.22), (0.1, 0.9, 0.08), bevel=0.02), "Aluminium", pe)
+    piece("CrashBox", rb((2.12, 0, 0.22), (0.1, 0.9, 0.08), bevel=0.02), "Gunmetal", pe)
     # fuel cell behind the seats
     piece("FuelCell", rb((-0.57, 0, 0.32), (0.13, 1.1, 0.28), bevel=0.03), "Plastic", pe)
     piece("FuelCap", placed(lambda bm: cyl(bm, (0, 0, 0), 0.03, 0.02, segs=24), M((-0.57, 0.4, 0.47))),
@@ -1868,7 +1976,7 @@ if __name__ == "__main__":
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT, "art", "lykan.blend"))
     if "render" in args:
         if "quick" in args:
-            render(["front34", "side", "rear34"], samples=24, res=(1200, 675), tag="_q")
+            render(["front34", "side", "rear34", "front"], samples=24, res=(1200, 675), tag="_q")
             skin(True)
             render(["cut", "cutrear"], samples=24, res=(1200, 675), tag="_q")
             skin(False)
