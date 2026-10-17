@@ -20,7 +20,8 @@ export default function GlobalCanvas() {
       mode: m ? "detail" : onBoard ? "board" : onFlow ? "flow" : "journey",
       detailSlug: m ? m[1] : null,
       boardFocus: null,
-      ...(onFlow ? { flowView: "exterior" } : {}),
+      // a ?view= / ?showcase= deep link is applied by FlowView; don't reset over it
+      ...(onFlow && !/[?&](view|showcase)=/.test(window.location.search) ? { flowView: "exterior" } : {}),
     });
     if (m || onBoard || onFlow) lenis?.scrollTo(0, { immediate: true, force: true });
   }, [pathname]);

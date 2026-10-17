@@ -38,7 +38,7 @@ import {
 import { NIGHT_URL } from "./Globe";
 
 export const BOARD_URL = "/models/board.glb";
-const PAPER_URL = "/board/paper-normal.webp";
+export const PAPER_URL = "/board/paper-normal.webp";
 
 /** The printed map: centred on 10°E, from the Southern Ocean to the Arctic, enlarged on the board. */
 const FRAME = BOARD_FRAME;
@@ -635,5 +635,3 @@ export default function Board() {
   );
 }
 
-useGLTF.preload(BOARD_URL, "/draco/");
-useTexture.preload(PAPER_URL);

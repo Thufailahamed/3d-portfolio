@@ -1,0 +1,503 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// SynapX studio reel — a black & white film written entirely in code.
+// Five raymarched shots, 24s @ 30fps, composited with type, bloom, grain and gate weave.
+const W = 1280, H = 720, SS = 2, FPS = 30, DURATION = 24;
+const SHOTS = [0, 5, 10, 15, 20, 24];
+
+const canvas = document.getElementById('c');
+canvas.width = W; canvas.height = H;
+const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
+const hasFloat = !!gl.getExtension('EXT_color_buffer_float');
+
+const COMMON = `#version 300 es
+precision highp float;
+out vec4 o;
+uniform vec2 R; uniform float T; uniform float S; uniform int SHOT;
+`;
+
+const SCENE = COMMON + `
+int gMat;
+float h11(float n){return fract(sin(n)*43758.5453);}
+float h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);float n=dot(i,vec3(1,57,113));
+ return mix(mix(mix(h11(n),h11(n+1.),f.x),mix(h11(n+57.),h11(n+58.),f.x),f.y),
+            mix(mix(h11(n+113.),h11(n+114.),f.x),mix(h11(n+170.),h11(n+171.),f.x),f.y),f.z);}
+float fbm(vec3 p){float a=.5,s=0.;for(int i=0;i<4;i++){s+=a*noise(p);p*=2.03;a*=.5;}return s;}
+float sdBox(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
+float sdB2(vec2 p,vec2 b){vec2 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,q.y),0.);}
+mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
+
+// ---------- shot 0: monolith field
+float mapA(vec3 p){
+  float d=p.y; gMat=0;
+  vec2 c=floor(p.xz/4.), q=mod(p.xz,4.)-2.;
+  if(c.x>0.5||c.x<-1.5){
+    float r=h21(c),r2=h21(c+17.3),r3=h21(c+5.1);
+    if(r>0.15){
+      float Hh=1.2+7.*r*r;
+      vec3 b=vec3(q.x-(r2-.5)*1.1,p.y-Hh,q.y-(r3-.5)*1.1);
+      b.xz*=rot((r2-.5)*.6);
+      float m=sdBox(b,vec3(.35+.3*r2,Hh,.3+.35*r3));
+      if(m<d){d=m;gMat=1;}
+    }
+  }
+  float slab=sdBox(p-vec3(0.,6.,-46.),vec3(1.3,6.,.28));
+  if(slab<d){d=slab;gMat=1;}
+  return d;
+}
+// ---------- shot 1: liquid chrome
+float mapB(vec3 p){
+  float d=p.y+1.25; gMat=0;
+  vec3 q=p-vec3(0.,.08*sin(S*.9),0.);
+  q.xz*=rot(S*.3); q.xy*=rot(.2);
+  float s=length(q)-1.;
+  s+=.07*sin(3.7*q.x+S*1.2)*sin(3.3*q.y+S*.9)*sin(3.9*q.z+S*1.1);
+  s+=.025*sin(8.*q.y-S*2.3+3.*q.x);
+  s*=.7;
+  if(s<d){d=s;gMat=1;}
+  vec3 r=p; r.xy*=rot(.35); r.yz*=rot(.2+S*.1);
+  float ring=length(vec2(length(r.xz)-1.8,r.y))-.008;
+  if(ring<d){d=ring;gMat=2;}
+  return d;
+}
+// ---------- shot 2: ocean of cubes
+float hgtC(vec2 c){float d=length(c-vec2(4.,-6.));return .9+.75*sin(d*.42-S*1.9)+.3*sin(c.x*.31+S*.7)*cos(c.y*.27-S*.5);}
+float cubeC(vec3 p,vec2 c){
+  vec2 q=p.xz-(c+.5); float h=max(hgtC(c),.1);
+  return sdBox(vec3(q.x,p.y-(h-5.)*.5,q.y),vec3(.42,(h+5.)*.5,.42)-.04)-.04;
+}
+float mapC(vec3 p){
+  gMat=1;
+  vec2 c=floor(p.xz), o=sign(fract(p.xz)-.5);
+  float d=cubeC(p,c);
+  d=min(d,cubeC(p,c+vec2(o.x,0.)));
+  d=min(d,cubeC(p,c+vec2(0.,o.y)));
+  d=min(d,cubeC(p,c+o));
+  return d;
+}
+// ---------- shot 3: colonnade of arches
+float mapD(vec3 p){
+  float d=p.y; gMat=0;
+  vec3 q=p; q.z=mod(q.z,4.)-2.;
+  float slab=sdBox(q-vec3(0.,5.,0.),vec3(5.3,5.,.32));
+  float rect=max(abs(q.x)-2.9,q.y-4.2);
+  float circ=length(vec2(q.x,q.y-4.2))-2.9;
+  float arch=max(slab,-min(rect,circ));
+  float shell=5.3-length(vec2(p.x,max(p.y-4.2,0.)));
+  // narrow skylight slot along the crown of the vault
+  shell=max(shell,-sdB2(vec2(p.x,p.y-9.3),vec2(.35,.8)));
+  float m=min(arch,shell);
+  if(m<d){d=m;gMat=1;}
+  return d;
+}
+
+float map(vec3 p){
+  if(SHOT==0) return mapA(p);
+  if(SHOT==1) return mapB(p);
+  if(SHOT==2) return mapC(p);
+  return mapD(p);
+}
+float stepK(){return SHOT==1?.7:(SHOT==2?.8:.85);}
+vec3 nrm(vec3 p){vec2 e=vec2(.0015,0.);return normalize(vec3(map(p+e.xyy)-map(p-e.xyy),map(p+e.yxy)-map(p-e.yxy),map(p+e.yyx)-map(p-e.yyx)));}
+float trace(vec3 ro,vec3 rd,float tmax){
+  float t=.01,k=stepK();
+  for(int i=0;i<240;i++){float d=map(ro+rd*t);if(abs(d)<.0006*t+.0004)return t;t+=d*k;if(t>tmax)break;}
+  return -1.;
+}
+float shadow(vec3 ro,vec3 rd,float k){
+  float r=1.,t=.03;
+  for(int i=0;i<56;i++){float h=map(ro+rd*t);r=min(r,k*h/t);t+=clamp(h,.03,.7);if(r<.002||t>30.)break;}
+  return clamp(r,0.,1.);
+}
+float hardShadow(vec3 p,vec3 L){
+  float t=.05;
+  for(int i=0;i<28;i++){float h=map(p+L*t);if(h<.003)return 0.;t+=h;if(t>30.)break;}
+  return 1.;
+}
+float ao(vec3 p,vec3 n){float o=0.,s=1.;for(int i=1;i<=5;i++){float h=.07*float(i);o+=(h-map(p+n*h))*s;s*=.7;}return clamp(1.-2.*o,0.,1.);}
+// god rays: march the view ray, count the samples that can see the light
+float vol(vec3 ro,vec3 rd,float tmax,vec3 L,float ext){
+  float acc=0.,j=h21(gl_FragCoord.xy*.731+T*13.1),len=min(tmax,45.);
+  for(int i=0;i<18;i++){float ti=(float(i)+j)/18.*len;acc+=hardShadow(ro+rd*ti,L)*exp(-ti*ext);}
+  return acc/18.*len*.014;
+}
+mat3 camM(vec3 ro,vec3 ta,float roll){vec3 f=normalize(ta-ro);vec3 r=normalize(cross(f,vec3(sin(roll),cos(roll),0.)));return mat3(r,cross(r,f),f);}
+
+// ---------------- shot 0 shading
+vec3 LA=normalize(vec3(.05,.3,-1.));
+float skyA(vec3 rd){float s=max(dot(rd,LA),0.);return .006+.05*pow(s,4.)+.9*pow(s,40.)+8.*pow(s,1400.);}
+float shadeA(vec3 ro,vec3 rd,float t){
+  if(t<0.)return skyA(rd);
+  vec3 p=ro+rd*t;map(p);int m0=gMat;vec3 n=nrm(p);gMat=m0;
+  int m=gMat; float alb=m==1?.5*(.7+.3*fbm(p*vec3(3.,.6,3.))):.22*(.8+.2*noise(p*2.));
+  float dif=max(dot(n,LA),0.)*shadow(p+n*.01,LA,12.);
+  float a=ao(p,n);
+  float c=alb*(dif*2.6+a*(.05+.05*n.y)+.12*pow(max(dot(rd,LA),0.),6.)*a);
+  return mix(c,skyA(rd),1.-exp(-t*.028));
+}
+// ---------------- shot 1 shading
+float env(vec3 rd){
+  float a=atan(rd.x,rd.z),e=rd.y;
+  float c=.02+.16*smoothstep(-.08,.9,e)*(.55+.45*cos(a-.6));
+  if(rd.y>0.){vec2 sb=rd.xz/rd.y;c+=3.2*smoothstep(.03,-.03,sdB2(sb-vec2(.2,0.),vec2(.7,.28)));}
+  c+=2.6*smoothstep(.06,0.,abs(a-1.9))*smoothstep(.06,0.,max(-.15-e,e-.75));
+  c+=1.8*smoothstep(.04,0.,abs(a+2.25))*smoothstep(.06,0.,max(-.25-e,e-.55));
+  c+=.5*exp(-abs(e-.02)*40.)*(.6+.4*cos(a));
+  c+=1.4*smoothstep(.05,0.,abs(a-.35))*smoothstep(.05,0.,max(.05-e,e-.45));
+  c+=.9*smoothstep(.12,.0,abs(abs(a)-3.0))*smoothstep(.1,0.,abs(e-.3)-.05);
+  c+=.12*smoothstep(.0,1.,e)*(.5+.5*sin(a*3.));
+  return c;
+}
+float bounceB(vec3 p,vec3 rd){
+  float t=trace(p,rd,25.);
+  if(t<0.)return env(rd);
+  vec3 q=p+rd*t;map(q);int m=gMat;vec3 n=nrm(q);
+  if(m==2)return 2.4;
+  if(m==1)return env(reflect(rd,n))*.85;
+  return .02*exp(-.08*length(q.xz));
+}
+float shadeB(vec3 ro,vec3 rd,float t){
+  if(t<0.)return env(rd)*.18;
+  vec3 p=ro+rd*t;map(p);int m=gMat;vec3 n=nrm(p);
+  if(m==2)return 1.8;
+  float fr=pow(1.-max(dot(-rd,n),0.),5.);
+  if(m==1){
+    vec3 rf=reflect(rd,n);
+    return (.55+.45*fr)*bounceB(p+n*.02,rf);
+  }
+  // glossy black floor: blurred-ish reflection, contact shadow, soft pool of light
+  float a=ao(p,n),sh=shadow(p+n*.01,normalize(vec3(.2,1.,.05)),5.);
+  vec3 nn=normalize(n+.015*vec3(noise(p*9.)-.5,0.,noise(p*9.+7.)-.5));
+  float r=bounceB(p+n*.02,reflect(rd,nn))*(.05+.45*fr);
+  float c=r+.16*sh*a*exp(-length(p.xz)*.55)+.01*a;
+  return c*exp(-.07*length(p.xz));
+}
+// ---------------- shot 2 shading
+vec3 LC=normalize(vec3(-.8,.42,-.38));
+float shadeC(vec3 ro,vec3 rd,float t){
+  float horizon=.07*exp(-abs(rd.y+.05)*12.)*pow(max(dot(normalize(rd.xz),normalize(LC.xz)),0.),3.);
+  if(t<0.)return horizon;
+  vec3 p=ro+rd*t;map(p);int m0=gMat;vec3 n=nrm(p);gMat=m0;
+  vec2 cell=floor(p.xz-n.xz*.02);
+  float dif=max(dot(n,LC),0.)*shadow(p+n*.01,LC,14.);
+  float a=ao(p,n);
+  float spec=pow(max(dot(reflect(rd,n),LC),0.),48.)*dif*1.4;
+  float c=.55*(dif*1.9+a*.05*(.6+.4*n.y))+spec;
+  float lit=step(.965,h21(cell))*step(.5,n.y);
+  c+=lit*(1.4+1.2*sin(S*3.+h21(cell+3.)*40.))*smoothstep(.45,.3,max(abs(fract(p.x)-.5),abs(fract(p.z)-.5)));
+  return mix(c,horizon,1.-exp(-t*.045));
+}
+// ---------------- shot 3 shading
+vec3 LD=normalize(vec3(.22,1.,-.5));
+float skyD(vec3 rd){return .03+.9*pow(max(-rd.z,0.),30.)+.25*pow(max(-rd.z,0.),4.)+1.5*pow(max(dot(rd,LD),0.),30.);}
+float shadeD(vec3 ro,vec3 rd,float t){
+  if(t<0.)return skyD(rd);
+  vec3 p=ro+rd*t;map(p);int m=gMat;vec3 n=nrm(p);
+  float a=ao(p,n);
+  float dif=max(dot(n,LD),0.)*shadow(p+n*.01,LD,20.);
+  float alb;
+  if(m==0){vec2 g=floor(p.xz*.5);alb=mod(g.x+g.y,2.)<.5?.42:.16;alb*=.85+.15*fbm(p*vec3(2.,1.,2.));}
+  else alb=.5*(.75+.25*fbm(p*1.7));
+    float c=alb*(dif*5.5+a*(.08+.05*n.y));
+  return mix(c,skyD(rd),1.-exp(-t*.045));
+}
+
+float shot(vec3 ro,vec3 rd){
+  if(SHOT==0){
+    float t=trace(ro,rd,90.);int m=gMat;
+    float c=shadeA(ro,rd,t);
+    if(t>0.&&m==0){
+      vec3 p=ro+rd*t;
+      vec3 n=normalize(vec3(.04*(noise(p*2.5)-.5),1.,.04*(noise(p*2.5+9.)-.5)));
+      vec3 r=reflect(rd,n);float fr=.04+.96*pow(1.-max(dot(-rd,n),0.),5.);
+      float wet=smoothstep(.35,.65,fbm(p*.6));
+      float t2=trace(p+n*.02,r,60.);
+      c+=shadeA(p,r,t2)*fr*(.25+.6*wet);
+    }
+    float tv=t<0.?60.:t;
+    c+=vol(ro,rd,tv,LA,.03)*(.08+1.1*pow(max(dot(rd,LA),0.),10.));
+    return c;
+  }
+  if(SHOT==1){float t=trace(ro,rd,30.);return shadeB(ro,rd,t);}
+  if(SHOT==2){float t=trace(ro,rd,70.);return shadeC(ro,rd,t);}
+  float t=trace(ro,rd,90.);int m=gMat;
+  float c=shadeD(ro,rd,t);
+  if(t>0.&&m==0){
+    vec3 p=ro+rd*t;vec3 n=vec3(0,1,0);vec3 r=reflect(rd,n);
+    float fr=.04+.96*pow(1.-max(dot(-rd,n),0.),5.);
+    float t2=trace(p+n*.02,r,60.);
+    c+=shadeD(p,r,t2)*(.12+.7*fr);
+  }
+  float tv=t<0.?60.:t;
+  c+=vol(ro,rd,tv,LD,.02)*(.9+2.*pow(max(dot(rd,LD),0.),6.));
+  // the end of the colonnade dissolves into light
+  c=mix(c,3.,smoothstep(3.8,5.,S)*(1.-exp(-tv*.08)));
+  return c;
+}
+
+float title(vec2 uv){
+  float y=uv.y+.02;
+  float grow=smoothstep(.2,2.4,S);
+  float w=.95*grow;
+  float span=smoothstep(w,w-.25,abs(uv.x));
+  float c=span*(exp(-abs(y)*1400.)*2.8+exp(-abs(y)*90.)*.22);
+  c+=.05*exp(-length(uv*vec2(.6,2.))*3.)*grow;
+  for(int i=0;i<40;i++){
+    float fi=float(i);
+    vec2 pp=vec2(h11(fi*1.7)*2.-1.,h11(fi*3.1)-.5)*vec2(.95,.55);
+    pp+=vec2(sin(S*.3+fi)*.03,S*.012*(h11(fi*5.)+.3));
+    float sz=.0015+.0025*h11(fi*7.3);
+    c+=.25*h11(fi*9.1)*exp(-pow(length(uv-pp)/sz,2.));
+  }
+  return c;
+}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy-.5*R)/R.y;
+  float c;
+  if(SHOT==4){c=title(uv);}
+  else{
+    vec3 ro,ta;float fl,roll=0.;
+    if(SHOT==0){ro=vec3(.35*sin(S*.35),1.25+.05*sin(S*.7),2.-S*1.5);ta=ro+vec3(-.05+.03*S,.18,-1.);fl=1.7;}
+    else if(SHOT==1){float a=.5+S*.16,rad=6.2-.12*S;ro=vec3(rad*sin(a),.55+.15*sin(S*.5),rad*cos(a));ta=vec3(0.,-.15,0.);fl=1.9;}
+    else if(SHOT==2){ro=vec3(-2.+S*1.,7.-S*.25,8.-S*1.1);ta=ro+vec3(.5,-.62,-1.);fl=1.8;roll=-.04;}
+    else{ro=vec3(.4*sin(S*.5),1.7+.1*sin(S*.8),-S*3.2);ta=ro+vec3(.08*sin(S*.4),.06,-1.);fl=1.45;roll=.03*sin(S*.6);}
+    vec3 rd=camM(ro,ta,roll)*normalize(vec3(uv,fl));
+    c=shot(ro,rd);
+  }
+  o=vec4(vec3(max(c,0.)),1.);
+}`;
+
+const POST = COMMON + `
+uniform sampler2D uScene; uniform sampler2D uText;
+uniform float uFade; uniform float uFlash; uniform float uFrame;
+float h(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+void main(){
+  vec2 uv=gl_FragCoord.xy/R;
+  vec2 weave=(vec2(h(vec2(uFrame,1.)),h(vec2(uFrame,2.)))-.5)*vec2(.0007,.0011);
+  vec2 su=uv+weave;
+  float sc=texture(uScene,su).r;
+  vec4 tx=texture(uText,uv);
+  float slate=tx.r*tx.a, ttl=tx.g*tx.a;
+  // halation / bloom from the bright parts of the image and the type
+  float bl=0.;
+  for(int i=0;i<24;i++){
+    float fi=float(i);float a=fi*2.39996;float r=.004+.0016*fi;
+    vec2 o2=vec2(cos(a),sin(a))*r*vec2(R.y/R.x,1.);
+    vec4 tt=texture(uText,uv+o2);
+    float s=max(texture(uScene,su+o2).r-.7,0.)+tt.g*tt.a*.5;
+    bl+=s*(1.-fi/24.);
+  }
+  bl/=12.;
+  float c=sc+ttl*1.1+bl*.55;
+  c=c*uFade+uFlash;
+  // filmic tone curve
+  c=1.-exp(-c*1.35);
+  c=mix(c,c*c*(3.-2.*c),.35);
+  c=pow(c,1.05);
+  float v=length((uv-.5)*vec2(1.,.8));
+  c*=1.-.55*pow(v*1.25,2.4);
+  c*=1.+.025*(h(vec2(uFrame,7.))-.5);
+  // occasional print scratch and dust
+  float sx=h(vec2(uFrame,11.));
+  if(h(vec2(uFrame,13.))>.86)c+=.10*exp(-abs(uv.x-sx)*R.x*.7)*step(.2,h(vec2(floor(uv.y*40.),uFrame)));
+  vec2 dp=vec2(h(vec2(uFrame,17.)),h(vec2(uFrame,19.)));
+  if(h(vec2(uFrame,23.))>.8)c-=.35*exp(-pow(length((uv-dp)*R)/2.5,2.));
+  // grain, strongest in the mids
+  float g=h(uv*R+fract(uFrame*.6180339)*1000.)+h(uv*R*1.7+uFrame)-1.;
+  c+=g*.075*(.35+c*(1.-c)*2.6);
+  // 2.2:1 letterbox, slate lives in the bars
+  float bar=(1.-(R.x/R.y)/2.2)*.5;
+  if(uv.y<bar||uv.y>1.-bar)c=.0+slate*.62+g*.01;
+  o=vec4(vec3(clamp(c,0.,1.)),1.);
+}`;
+
+const VERT = `#version 300 es
+in vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+
+function prog(fs) {
+  const mk = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, mk(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(p, 0, 'p');
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const sceneProg = prog(SCENE), postProg = prog(POST);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+const sceneTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, hasFloat ? gl.RGBA16F : gl.RGBA8, W * SS, H * SS, 0, gl.RGBA, hasFloat ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+const fbo = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, sceneTex, 0);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+const textCanvas = document.createElement('canvas');
+textCanvas.width = W; textCanvas.height = H;
+const ctx = textCanvas.getContext('2d');
+const textTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, textTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+const U = (p, n) => gl.getUniformLocation(p, n);
+
+// ---------- easing / envelopes
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const ss = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const env = (s, a, b, fi = 0.8, fo = 0.5) => ss(a, a + fi, s) * (1 - ss(b - fo, b, s));
+const easeOut = (x) => 1 - Math.pow(1 - clamp01(x), 3);
+
+const TITLE = 'Bahnschrift', SERIF = 'Georgia', MONO = 'Consolas';
+const MAIN = '#00ff00', SLATE = '#ff0000';
+
+function txt(str, x, y, { size = 48, weight = 300, family = TITLE, italic = false, track = 0, align = 'left', alpha = 1, blur = 0, rise = 0 } = {}) {
+  if (alpha <= 0.002) return;
+  ctx.save();
+  ctx.font = `${italic ? 'italic ' : ''}${weight} ${size}px ${family}`;
+  ctx.letterSpacing = `${track}px`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'alphabetic';
+  ctx.globalAlpha = alpha;
+  ctx.filter = blur > 0.05 ? `blur(${blur}px)` : 'none';
+  ctx.fillStyle = MAIN;
+  // letter-spacing adds trailing space; nudge centred text back
+  const nudge = align === 'center' ? track / 2 : align === 'right' ? track : 0;
+  ctx.fillText(str, x + nudge, y + rise);
+  ctx.restore();
+}
+function wipe(x0, w, p, draw) {
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, 0, w * easeOut(p), H); ctx.clip(); draw(); ctx.restore();
+}
+function rule(x, y, w, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = MAIN; ctx.fillRect(x, y, w, 1); ctx.restore();
+}
+
+function drawText(t) {
+  ctx.clearRect(0, 0, W, H);
+  const f = Math.round(t * FPS);
+  const tc = `${String(Math.floor(f / FPS / 60)).padStart(2, '0')}:${String(Math.floor(f / FPS) % 60).padStart(2, '0')}:${String(f % FPS).padStart(2, '0')}`;
+  // slate in the letterbox bars
+  ctx.save();
+  ctx.fillStyle = SLATE; ctx.font = `400 12px ${MONO}`; ctx.letterSpacing = '4px';
+  ctx.textAlign = 'left';
+  ctx.fillText('SYNAPX  /  STUDIO REEL  —  01', 48, 40);
+  ctx.fillText('COLOMBO  ·  LK', 48, 692);
+  ctx.textAlign = 'right';
+  ctx.fillText(`TC 00:${tc}`, W - 44, 40);
+  ctx.fillText('FROM SCHEMA TO SCREEN', W - 44, 692);
+  const shotNo = SHOTS.findIndex((b, i) => t >= b && t < SHOTS[i + 1]);
+  ctx.textAlign = 'center';
+  ctx.fillText(`SC.0${shotNo + 1}`, W / 2, 40);
+  ctx.restore();
+
+  const k = Math.max(0, shotNo);
+  const s = t - SHOTS[k];
+  if (k === 0) {
+    const a = env(s, 1.0, 4.7, 1.2, 0.6);
+    txt('SYNAPX', W / 2, 382, { size: 104, weight: 300, track: 26 + s * 7, align: 'center', alpha: a, blur: 14 * (1 - ss(1.0, 2.4, s)) });
+    txt('AN ENGINEERING STUDIO', W / 2, 428, { size: 13, weight: 400, family: MONO, track: 9, align: 'center', alpha: env(s, 2.0, 4.6, 0.8, 0.5) * 0.85 });
+  } else if (k === 1) {
+    const a = env(s, 0.7, 4.75, 0.3, 0.5);
+    const p = (s - 0.7) / 1.1;
+    txt('01 — DESIGN', 110, 418, { size: 12, weight: 400, family: MONO, track: 6, alpha: a * 0.8 });
+    rule(110, 432, 260 * easeOut(p), a * 0.6);
+    wipe(100, 640, p, () => txt('WE DESIGN', 106, 500, { size: 66, weight: 300, track: 10, alpha: a }));
+    txt('systems that feel inevitable.', 110, 544, { size: 26, weight: 400, family: SERIF, italic: true, alpha: env(s, 1.5, 4.75, 0.9, 0.5) * 0.9, rise: 8 * (1 - easeOut((s - 1.5) / 1.2)) });
+  } else if (k === 2) {
+    const a = env(s, 0.7, 4.75, 0.3, 0.5);
+    const p = (s - 0.7) / 1.1;
+    txt('02 — ENGINEERING', W - 110, 418, { size: 12, weight: 400, family: MONO, track: 6, align: 'right', alpha: a * 0.8 });
+    rule(W - 110 - 300 * easeOut(p), 432, 300 * easeOut(p), a * 0.6);
+    wipe(W - 760, 760, p, () => txt('WE ENGINEER', W - 104, 500, { size: 66, weight: 300, track: 10, align: 'right', alpha: a }));
+    txt('multi-tenant SaaS · agentic AI · cloud platforms', W - 110, 544, { size: 24, weight: 400, family: SERIF, italic: true, align: 'right', alpha: env(s, 1.5, 4.75, 0.9, 0.5) * 0.9, rise: 8 * (1 - easeOut((s - 1.5) / 1.2)) });
+  } else if (k === 3) {
+    txt('FROM SCHEMA', W / 2, 372, { size: 70, weight: 300, track: 18 + s * 3, align: 'center', alpha: env(s, 0.5, 2.7, 0.7, 0.45), blur: 8 * (1 - ss(0.5, 1.3, s)) });
+    txt('to screen.', W / 2, 384, { size: 96, weight: 400, family: SERIF, italic: true, track: 2, align: 'center', alpha: env(s, 2.8, 4.9, 0.6, 0.4), blur: 8 * (1 - ss(2.8, 3.5, s)) });
+  } else if (k === 4) {
+    const a = 1 - ss(2.9, 3.7, s);
+    txt('SYNAPX', W / 2, 344, { size: 118, weight: 300, track: 34 - 10 * easeOut(s / 2.5), align: 'center', alpha: ss(0.4, 1.4, s) * a, blur: 10 * (1 - ss(0.4, 1.5, s)) });
+    txt('THUFAIL AHAMED  —  ENGINEERING STUDIO, COLOMBO', W / 2, 414, { size: 12, weight: 400, family: MONO, track: 7, align: 'center', alpha: ss(1.4, 2.1, s) * a * 0.85 });
+  }
+}
+
+function fadeAt(t) {
+  let f = ss(0, 0.9, t) * (1 - ss(22.9, 23.9, t));
+  for (const b of [5, 10, 15]) f *= ss(0, 0.22, Math.abs(t - b));
+  return f;
+}
+
+window.renderAt = function (t) {
+  const k = Math.max(0, SHOTS.findIndex((b, i) => t >= b && t < SHOTS[i + 1]));
+  const s = t - SHOTS[k];
+  const frame = Math.round(t * FPS);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, W * SS, H * SS);
+  gl.useProgram(sceneProg);
+  gl.uniform2f(U(sceneProg, 'R'), W * SS, H * SS);
+  gl.uniform1f(U(sceneProg, 'T'), t);
+  gl.uniform1f(U(sceneProg, 'S'), s);
+  gl.uniform1i(U(sceneProg, 'SHOT'), k);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  drawText(t);
+  gl.bindTexture(gl.TEXTURE_2D, textTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textCanvas);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(postProg);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, textTex);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(U(postProg, 'uScene'), 0);
+  gl.uniform1i(U(postProg, 'uText'), 1);
+  gl.uniform2f(U(postProg, 'R'), W, H);
+  gl.uniform1f(U(postProg, 'uFade'), fadeAt(t));
+  const flash = t > 19.6 && t < 20.6 ? Math.exp(-Math.abs(t - 20) * 7) * 1.2 : 0;
+  gl.uniform1f(U(postProg, 'uFlash'), flash);
+  gl.uniform1f(U(postProg, 'uFrame'), frame);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.finish();
+  return canvas.toDataURL('image/jpeg', 0.95);
+};
+
+const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+window.gpu = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
+window.ready = Promise.all([
+  document.fonts.load(`300 40px ${TITLE}`),
+  document.fonts.load(`italic 400 40px ${SERIF}`),
+  document.fonts.load(`400 12px ${MONO}`),
+]).then(() => true);
+</script>
+</body>
+</html>

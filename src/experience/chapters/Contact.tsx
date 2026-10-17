@@ -69,6 +69,7 @@ export default function Contact() {
     const on = { value: 0 };
     const flare = { value: 0 };
     const time = { value: 0 };
+    const portal = { value: 0 };
     const hoverPos = archMat.uniforms.uHoverPos;
     const hoverAmt = archMat.uniforms.uHoverAmt;
     const make = (frag: string, color: THREE.Color, intensity: number, extra: Record<string, THREE.IUniform> = {}) =>
@@ -85,6 +86,7 @@ export default function Contact() {
           uTop: { value: TOP },
           uHoverPos: hoverPos,
           uHoverAmt: hoverAmt,
+          uPortal: portal,
           ...extra,
         },
       });
@@ -92,6 +94,7 @@ export default function Contact() {
       on,
       flare,
       time,
+      portal,
       seams: make(glowFrag, RUNE_BLUE.clone(), 1.6),
       lines: make(glowFrag, new THREE.Color("#8cc4ff"), 2.4),
       veil: Object.assign(make(veilFrag, RUNE_BLUE.clone(), 1, { uHalf: { value: DOOR } }), {
@@ -202,6 +205,23 @@ export default function Contact() {
     [baked, archMat, light, shaft, dust, motes],
   );
 
+  // the doorway is a gate: the DOM asks whether a click landed in it (see ContactSection)
+  const veil = useRef<THREE.Mesh>(null);
+  const door = useMemo(() => ({ ray: new THREE.Raycaster(), ndc: new THREE.Vector2(), v: new THREE.Vector3() }), []);
+  useEffect(() => {
+    sceneState.portal.pick = (x, y) => {
+      const v = veil.current;
+      if (!v || !group.current?.visible || light.on.value < 0.5) return false;
+      door.ndc.set(x, y);
+      door.ray.setFromCamera(door.ndc, camera);
+      return door.ray.intersectObject(v, false).length > 0;
+    };
+    return () => {
+      sceneState.portal.pick = () => false;
+      sceneState.portal.hover = false;
+    };
+  }, [camera, door, light]);
+
   // copying the email answers with a surge through the arch
   useEffect(
     () =>
@@ -236,6 +256,24 @@ export default function Contact() {
       hover.hit = !!hit;
       if (hit) hover.target.copy(hit.point);
     }
+    // the doorway: where it is (the camera dives for it) and whether the pointer is in it
+    const v = veil.current;
+    if (v) {
+      if (!v.geometry.boundingBox) v.geometry.computeBoundingBox();
+      v.geometry.boundingBox!.getCenter(door.v);
+      v.localToWorld(door.v);
+      door.v.toArray(sceneState.portal.door);
+      door.v.project(camera);
+      sceneState.portal.screen.x = door.v.x;
+      sceneState.portal.screen.y = door.v.y;
+      if (hover.canHover && light.on.value > 0.5 && sceneState.portal.dive === 0) {
+        door.ndc.set(sceneState.mouse.x, sceneState.mouse.y);
+        door.ray.setFromCamera(door.ndc, camera);
+        sceneState.portal.hover = door.ray.intersectObject(v, false).length > 0;
+      } else sceneState.portal.hover = false;
+    }
+    light.portal.value = sceneState.portal.glow;
+
     const u = archMat.uniforms;
     if (u.uHoverAmt.value < 0.01 && hover.hit) u.uHoverPos.value.copy(hover.target);
     u.uHoverPos.value.lerp(hover.target, Math.min(1, dt * 10));
@@ -267,7 +305,7 @@ export default function Contact() {
         )}
         {nodes.Seams && <mesh geometry={nodes.Seams.geometry} material={light.seams} />}
         {nodes.Lines && <mesh geometry={nodes.Lines.geometry} material={light.lines} />}
-        {nodes.Veil && <mesh geometry={nodes.Veil.geometry} material={light.veil} renderOrder={6} />}
+        {nodes.Veil && <mesh ref={veil} geometry={nodes.Veil.geometry} material={light.veil} renderOrder={6} />}
         <mesh geometry={shaft.geometry} material={shaft.material} position={shaft.pos} quaternion={shaft.q} renderOrder={5} />
         <points geometry={dust.g} material={dust.m} frustumCulled={false} />
         <points geometry={motes.g} material={motes.m} frustumCulled={false} renderOrder={7} />

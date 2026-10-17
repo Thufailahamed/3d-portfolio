@@ -1,10 +1,13 @@
+import { gradientNoiseGlsl } from "./ascent";
+import { valueNoiseGlsl } from "./night";
+
 /**
  * Night-side Earth from NASA's Black Marble (2016) composite.
  *
- * uBody   — the planet's opacity (it forms inside the strands)
+ * uBody   — the planet's opacity
  * uPower  — the power wave: angle from the south pole (0 … 1 = north pole) it has reached;
  *           city lights switch on behind it
- * vPolar  — this point's angle from the south pole, 0 … 1 (the strands feed in at the south pole)
+ * vPolar  — this point's angle from the south pole, 0 … 1
  */
 export const earthVert = /* glsl */ `
 varying vec2 vUv;
@@ -31,11 +34,29 @@ varying vec2 vUv;
 varying vec3 vN;
 varying vec3 vW;
 varying float vPolar;
+${valueNoiseGlsl}
+
 void main(){
   vec3 tex = texture2D(uMap, vUv).rgb;   // sRGB texture → linear here
   float lum = dot(tex, vec3(0.2126, 0.7152, 0.0722));
   // city lights are bright and warm; moonlit land and ice are dim and cool
   float lights = smoothstep(0.02, 0.22, lum) * smoothstep(-0.005, 0.03, tex.r - tex.b);
+  // seen close (the map magnified past its pixels) the lights break into streets and towns,
+  // and the dim land and sea are read from a blurred level of the map, so its compression
+  // blocks don't show as tiles across the ocean
+  vec2 texel = vUv * vec2(4096.0, 2048.0);
+  float tpp = max(length(dFdx(texel)), length(dFdy(texel)));
+  float mag = smoothstep(1.1, 0.35, tpp);
+  float mask = lights;   // (before the grain, which can take it past 1)
+  // close in, the smaller towns come up too
+  lights = mix(lights, smoothstep(0.012, 0.14, lum) * smoothstep(-0.005, 0.03, tex.r - tex.b), mag);
+  float grain = vnoise(vec3(texel * 2.7, 0.5)) * 0.5 + 0.5;
+  lights *= mix(1.0, 0.35 + 1.4 * grain * grain, mag * smoothstep(0.08, 0.3, lum));
+  vec3 soft = texture2D(uMap, vUv, 3.5).rgb;
+  float softLum = dot(soft, vec3(0.2126, 0.7152, 0.0722));
+  // the surface without its city lights (added back sharp below). Close in that's the blurred
+  // map held down to moonlit-land brightness, so the cities leave neither glow nor holes in it
+  vec3 base = mix(tex * (1.0 - mask), min(soft, vec3(0.03, 0.033, 0.046)), mag);
 
   vec3 N = normalize(vN);
   vec3 V = normalize(cameraPosition - vW);
@@ -43,16 +64,20 @@ void main(){
   float moon = 0.22 + 0.78 * smoothstep(-0.25, 0.95, dot(N, normalize(uMoon)));
 
   // the surface: moonlit land, ice and ocean, shaded so the planet reads as a sphere
-  vec3 col = tex * (1.0 - lights) * 1.8 * moon;
+  vec3 col = base * 1.8 * moon;
   // the cities switch on behind the power wave
-  float on = smoothstep(uPower, uPower - 0.06, vPolar);
+  // (written with rising edges: smoothstep with edge0 > edge1 is undefined, and some GPUs return 0)
+  float on = 1.0 - smoothstep(uPower - 0.06, uPower, vPolar);
   col += tex * lights * (0.06 + 2.6 * on);
   // the wave front itself: a thin travelling band of light
-  float front = exp(-pow((vPolar - uPower) / 0.022, 2.0)) * step(0.001, uPower) * (1.0 - smoothstep(1.0, 1.15, uPower));
+  float fd = (vPolar - uPower) / 0.022;   // (squared by hand: pow() of a negative is NaN)
+  float front = exp(-fd * fd) * step(0.001, uPower) * (1.0 - smoothstep(1.0, 1.15, uPower));
   col += uWave * front * 0.55;
   // a faint moon sheen on the oceans, so the dark side still has a surface
   vec3 L = normalize(uMoon);
-  float ocean = 1.0 - smoothstep(0.004, 0.03, lum);
+  // (close in, judged on the blurred map: on the sharp one the darkest specks between towns pass
+  // for ocean and catch the sheen, leaving the rest of the land as dark pits)
+  float ocean = 1.0 - smoothstep(0.004, 0.03, mix(lum, softLum, mag));
   float sheen = pow(max(dot(reflect(-L, N), V), 0.0), 18.0);
   col += uAtmo * sheen * ocean * 0.18;
   // atmosphere hugging the limb, brightest on the moonlit side
@@ -61,6 +86,72 @@ void main(){
 
   // premultiplied: the planet fades in as a whole
   gl_FragColor = vec4(col * uBody, uBody);
+}`;
+
+/**
+ * The cloud cover: a shell just above the surface (so close in it drifts over the ground with
+ * real parallax, and thickens toward the limb). Weather-like systems from warped fbm, frayed at
+ * the edges; moonlit on top, and glowing warm from below where cities shine up into it.
+ * uCloud — how much of it shows (thick close in, a light cover from space).
+ */
+export const cloudVert = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vP;
+varying vec3 vN;
+varying vec3 vW;
+void main(){
+  vUv = uv;
+  vP = normalize(position);
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vW = w.xyz;
+  vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+
+export const cloudFrag = /* glsl */ `
+uniform sampler2D uMap;
+uniform vec3 uMoon;
+uniform float uCloud;
+uniform float uTime;
+varying vec2 vUv;
+varying vec3 vP;
+varying vec3 vN;
+varying vec3 vW;
+${gradientNoiseGlsl}
+float fbmT(vec3 p){
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++){ s += a * gnoise(p); p = TURN * p * 2.03 + 1.7; a *= 0.5; }
+  return s;
+}
+void main(){
+  vec3 q = vP * 4.2 + vec3(uTime * 0.003, 0.0, -uTime * 0.002);
+  // warped twice, so the systems curl and stream like real weather
+  q += 0.8 * vec3(gnoise(q * 0.5 + 3.1), gnoise(q * 0.5 + 7.7), gnoise(q * 0.5 + 1.3));
+  q += 0.25 * vec3(gnoise(q * 1.7 + 5.2), gnoise(q * 1.7 + 2.4), gnoise(q * 1.7 + 9.6));
+  float body = fbmT(q) * 0.5 + 0.5;
+  // fine streaks, seen only close in (no finer: specks of dark cloud read as holes over the cities)
+  body += 0.035 * gnoise(TURN * q * 17.0);
+  // a little more weather at the mid-latitudes, clearer over the subtropics
+  body += 0.04 * cos(abs(vP.y) * 9.0);
+  float d = body - 0.535;
+  d -= (gnoise(TURN * TURN * q * 9.0 + 1.9) * 0.5 + 0.5) * 0.09 * (1.0 - smoothstep(0.0, 0.12, d));
+  float dens = smoothstep(0.0, 0.2, d);
+
+  vec3 N = normalize(vN);
+  vec3 V = normalize(cameraPosition - vW);
+  float facing = max(dot(N, V), 0.0);
+  dens = 1.0 - pow(1.0 - dens, 1.0 + 1.6 * (1.0 - facing));   // more air to look through at the limb
+  float moon = 0.12 + 0.88 * smoothstep(-0.25, 0.95, dot(N, normalize(uMoon)));
+  // thick cores stand taller and catch more moonlight; thin edges stay dark and blue
+  vec3 col = mix(vec3(0.026, 0.031, 0.045), vec3(0.08, 0.09, 0.115), smoothstep(0.5, 0.78, body)) * moon;
+  // the cities below light it up from underneath (a blurred read of the map): thin cloud glows
+  // with them, thick cloud only faintly
+  vec3 under = texture2D(uMap, vUv, 3.0).rgb;
+  float warm = smoothstep(-0.005, 0.03, under.r - under.b);
+  col += vec3(1.0, 0.74, 0.45) * under * warm * 2.4 * (0.35 + 0.65 * (1.0 - smoothstep(0.55, 0.8, body)));
+
+  float a = dens * 0.92 * uCloud;
+  gl_FragColor = vec4(col * a, a);
 }`;
 
 /** Soft atmosphere halo just outside the limb (back faces, additive). */
@@ -111,7 +202,8 @@ varying float vFront;
 varying float vPolar;
 void main(){
   // a band trailing just behind the wave front
-  float band = exp(-pow((vPolar - uPower + 0.03) / 0.07, 2.0)) * step(0.001, uPower);
+  float bd = (vPolar - uPower + 0.03) / 0.07;   // (squared by hand: pow() of a negative is NaN)
+  float band = exp(-bd * bd) * step(0.001, uPower);
   float a = mix(0.45, 0.8, vKind) * band * vFront;
   gl_FragColor = vec4(uColor * a, 1.0);
 }`;

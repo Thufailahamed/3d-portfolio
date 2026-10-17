@@ -6,7 +6,8 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { about } from "@/content/site";
 import { sceneState } from "@/lib/sceneState";
-import { damp, LINES_OUT, POWER, span } from "../aboutTimeline";
+import { damp, ease } from "../aboutTimeline";
+import { GLOBE_R, GLOBE_Y, globeG, TILT } from "../ascent";
 import { BOARD_FRAME, sharedInk, UNFOLD_FILL } from "../boardArt";
 import { unfoldFrag, unfoldVert } from "../shaders/unfold";
 import {
@@ -16,6 +17,8 @@ import {
   atmoVert,
   borderFrag,
   borderVert,
+  cloudFrag,
+  cloudVert,
   earthFrag,
   earthVert,
   gridFrag,
@@ -27,9 +30,6 @@ import {
 /** NASA Black Marble 2016 night-lights composite, 4096 × 2048. */
 export const NIGHT_URL = "/earth/night.webp";
 export const BORDERS_URL = "/earth/borders.bin";
-export const GLOBE_R = 1.25;
-/** Globe centre inside the about group (where the bloom used to open). */
-export const GLOBE_Y = 2.85;
 const ATMO = new THREE.Color("#5c9dff");
 const WAVE = new THREE.Color("#dff5ee");
 /** Soft moonlight from the upper left, so the night side still reads as a sphere. */
@@ -37,9 +37,6 @@ const MOON = new THREE.Vector3(-0.6, 0.5, 0.65).normalize();
 const asBinary = (l: THREE.Loader) => (l as THREE.FileLoader).setResponseType("arraybuffer");
 /** Starting turn so home (Colombo) and the arcs flying out of it face the camera. */
 const START_TURN = (175 * Math.PI) / 180;
-export const TILT = 0.41; // Earth's axial tilt
-/** The globe can be grabbed once the visitor has read in (≈ the HUD hand-off). */
-const GRAB_FROM = 12;
 const AUTO_SPIN = 0.035; // rad/s
 
 /** Longitude/latitude (degrees) → point on a sphere, matching three's SphereGeometry UVs. */
@@ -129,7 +126,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     map.anisotropy = 8;
   }, [map]);
 
-  const { earthMat, atmoMat, borderMat, borderGeo, markerMat, markerGeo, arcGeo, arcMat, gridGeo, gridMat } = useMemo(() => {
+  const { earthMat, cloudMat, atmoMat, borderMat, borderGeo, markerMat, markerGeo, arcGeo, arcMat, gridGeo, gridMat } = useMemo(() => {
     const body = { value: 0 };
     const power = { value: 0 };
     const atmo = { value: ATMO };
@@ -204,6 +201,16 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
           uWave: { value: WAVE },
         },
       }),
+      cloudMat: new THREE.ShaderMaterial({
+        ...glass,
+        vertexShader: cloudVert,
+        fragmentShader: cloudFrag,
+        blending: THREE.CustomBlending,
+        blendEquation: THREE.AddEquation,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
+        uniforms: { uMap: { value: map }, uMoon: { value: MOON }, uCloud: { value: 1 }, uTime: { value: 0 } },
+      }),
       atmoMat: new THREE.ShaderMaterial({
         ...glass,
         vertexShader: atmoVert,
@@ -237,9 +244,9 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
 
   useEffect(
     () => () => {
-      for (const o of [borderGeo, markerGeo, arcGeo, gridGeo, earthMat, atmoMat, borderMat, markerMat, arcMat, gridMat]) o.dispose();
+      for (const o of [borderGeo, markerGeo, arcGeo, gridGeo, earthMat, cloudMat, atmoMat, borderMat, markerMat, arcMat, gridMat]) o.dispose();
     },
-    [borderGeo, markerGeo, arcGeo, gridGeo, earthMat, atmoMat, borderMat, markerMat, arcMat, gridMat],
+    [borderGeo, markerGeo, arcGeo, gridGeo, earthMat, cloudMat, atmoMat, borderMat, markerMat, arcMat, gridMat],
   );
 
   const tmp = useMemo(
@@ -249,6 +256,7 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
   const group = useRef<THREE.Group>(null);
   const pitchGroup = useRef<THREE.Group>(null);
   const earth = useRef<THREE.Mesh>(null);
+  const cloudShell = useRef<THREE.Mesh>(null);
   const lines = useRef<THREE.Group>(null);
   const sheet = useRef<THREE.Mesh>(null);
 
@@ -338,22 +346,19 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
    * straighten into a cylinder (k1), and the cylinder unrolls flat and square on the screen,
    * at the size the board's camera will start from (k2).
    */
-  const openInto = (t: number, time: number, sec: number) => {
+  const openInto = (t: number, time: number) => {
     const u = unfold;
     const opening = t > 0;
     if (earth.current) earth.current.visible = !opening;
+    if (cloudShell.current) cloudShell.current.visible = !opening;
     if (lines.current) lines.current.visible = !opening;
     if (sheet.current) sheet.current.visible = opening;
     if (!opening || !group.current) return;
-    const ease = (x: number) => {
-      const c = THREE.MathUtils.clamp(x, 0, 1);
-      return c * c * (3 - 2 * c);
-    };
     const align = ease(t / 0.32);
     const k1 = ease((t - 0.22) / 0.38);
     const k2 = ease((t - 0.42) / 0.58);
     // the atmosphere thins away as it starts to open, and restores when rolling back
-    atmoMat.uniforms.uBody.value = span(sec, 10.6, 11.6) * (1 - ease(t / 0.3));
+    atmoMat.uniforms.uBody.value = 1 - ease(t / 0.3);
 
     // follow the globe as it turns now (it keeps drifting): the hand-back to the real globe
     // at the end of the roll-up is then exact
@@ -393,24 +398,26 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
   useFrame(({ clock }, delta) => {
     const dt = Math.min(delta, 0.1);
     const time = clock.elapsedTime;
-    const sec = sceneState.aboutSec;
-    // the dark planet forms inside the opening strands; then the light arriving through
-    // them sweeps it pole to pole and the cities switch on
-    earthMat.uniforms.uBody.value = span(sec, 10.6, 11.6);
-    earthMat.uniforms.uPower.value = span(sec, POWER[0], POWER[1]) * 1.2;
-    const markersOn = span(sec, POWER[1], POWER[1] + 0.6);
+    // the planet is already lit when the zoom-out from the valley reaches it (see ascent.ts);
+    // as it settles, the grid comes in, the cities are marked and arcs fly out from home
+    const g = globeG(sceneState.ascent.u);
+    earthMat.uniforms.uBody.value = 1;
+    earthMat.uniforms.uPower.value = 1.2;
+    // thick cloud close in, thinning to a light cover once it hangs in space
+    cloudMat.uniforms.uCloud.value = 1 - 0.5 * ease((g - 0.35) / 0.6);
+    cloudMat.uniforms.uTime.value = time;
+    const markersOn = ease((g - 0.86) / 0.12);
     markerMat.uniforms.uOn.value = markersOn;
     markerMat.uniforms.uTime.value = time;
-    // once the cities are lit: the grid settles in and arcs fly out from home
-    gridMat.uniforms.uOn.value = span(sec, POWER[1] - 0.4, POWER[1] + 1);
-    arcMat.uniforms.uDraw.value = span(sec, POWER[1], POWER[1] + 1.3);
+    gridMat.uniforms.uOn.value = ease((g - 0.72) / 0.22);
+    arcMat.uniforms.uDraw.value = ease((g - 0.88) / 0.12);
     arcMat.uniforms.uTime.value = time;
 
     // grab and spin: dragging turns it on its axis (yaw) and tips it toward you (pitch),
     // with momentum on release; it drifts on its own when left alone
     const live = !!group.current?.parent?.visible;
     const opening = sceneState.unfold.t;
-    const grabbable = live && sec >= GRAB_FROM && opening === 0;
+    const grabbable = live && g >= 1 && opening === 0;
     const m = motion.current;
     const drag = sceneState.globeDrag;
     const rPx = Math.max(40, sceneState.globe.r);
@@ -425,13 +432,15 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     }
     drag.dx = drag.dy = 0;
     if (!drag.dragging) m.yaw += AUTO_SPIN * dt;
-    // tipping only once the strands are gone (they hang off the south pole); otherwise ease back
-    const pitchFree = sec >= LINES_OUT[1];
-    m.pitch = pitchFree ? THREE.MathUtils.clamp(m.pitch, -0.55, 0.55) : damp(m.pitch, 0, 6, dt);
+    // tipping only once it has settled; otherwise ease back
+    m.pitch = grabbable ? THREE.MathUtils.clamp(m.pitch, -0.55, 0.55) : damp(m.pitch, 0, 6, dt);
+    // while out of sight it rests turned home-side to the camera, so the zoom-out from the
+    // valley comes up right above home
+    if (!live && opening === 0) m.yaw = m.vel = m.pitch = 0;
     if (spin.current) spin.current.rotation.y = START_TURN + m.yaw + sceneState.mouse.x * 0.08;
     if (pitchGroup.current) pitchGroup.current.rotation.x = m.pitch;
 
-    openInto(opening, time, sec);
+    openInto(opening, time);
     if (!group.current) return;
     const parent = group.current.parent!;
     // the globe on screen, for the DOM drag target
@@ -439,14 +448,19 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
     tmp.e.copy(tmp.c).addScaledVector(tmp.n.set(1, 0, 0).applyQuaternion(camera.quaternion), GLOBE_R);
     tmp.v.copy(tmp.c).project(camera);
     tmp.e.project(camera);
-    const g = sceneState.globe;
-    g.x = (tmp.v.x * 0.5 + 0.5) * size.width;
-    g.y = (-tmp.v.y * 0.5 + 0.5) * size.height;
-    g.r = Math.abs(tmp.e.x - tmp.v.x) * 0.5 * size.width;
-    g.grabbable = grabbable;
+    const og = sceneState.globe;
+    og.x = (tmp.v.x * 0.5 + 0.5) * size.width;
+    og.y = (-tmp.v.y * 0.5 + 0.5) * size.height;
+    og.r = Math.abs(tmp.e.x - tmp.v.x) * 0.5 * size.width;
+    og.grabbable = grabbable;
 
     // city markers → screen, with how squarely each faces the camera
     if (spin.current) spin.current.updateWorldMatrix(true, false);
+    // home's direction from the centre, for the camera's zoom-out
+    if (spin.current) {
+      tmp.v.copy(places[HOME]).applyMatrix4(spin.current.matrixWorld).sub(tmp.c).normalize();
+      tmp.v.toArray(og.home);
+    }
     sceneState.markers.length = places.length;
     places.forEach((p, i) => {
       const out = (sceneState.markers[i] ??= { x: 0, y: 0, facing: 0 });
@@ -471,6 +485,9 @@ export default function Globe({ spin }: { spin: React.RefObject<THREE.Group | nu
           <group ref={spin}>
             <mesh ref={earth} material={earthMat} renderOrder={10}>
               <sphereGeometry args={[GLOBE_R, 160, 80]} />
+            </mesh>
+            <mesh ref={cloudShell} material={cloudMat} renderOrder={10.5}>
+              <sphereGeometry args={[GLOBE_R * 1.008, 160, 80]} />
             </mesh>
             <group ref={lines}>
               <lineSegments geometry={gridGeo} material={gridMat} renderOrder={11} />

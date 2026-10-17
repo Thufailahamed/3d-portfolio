@@ -42,3 +42,6 @@ next-env.d.ts
 
 # blender backups
 *.blend1
+
+# guestbook storage (local dev)
+/.data/

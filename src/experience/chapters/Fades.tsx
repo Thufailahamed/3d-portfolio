@@ -10,7 +10,7 @@ import { fadeFrag, fadeVert } from "../shaders/about";
 
 const s = THREE.MathUtils.smoothstep;
 
-/** Dips to black that hide the camera's cuts: projects → about → contact. */
+/** The dip to black that hides the camera's cut from about to contact (projects → about zooms out, see ascent.ts). */
 export default function Fades() {
   const mat = useMemo(
     () =>
@@ -29,9 +29,7 @@ export default function Fades() {
 
   useFrame(() => {
     const p = sceneState.p;
-    const a = s(local(p, "projects"), 0.9, 0.985) * (1 - s(local(p, "about"), 0.015, 0.09));
-    const b = s(local(p, "about"), 0.94, 0.99) * (1 - s(local(p, "contact"), 0.015, 0.14));
-    mat.uniforms.uOpacity.value = Math.max(a, b);
+    mat.uniforms.uOpacity.value = s(local(p, "about"), 0.94, 0.99) * (1 - s(local(p, "contact"), 0.015, 0.14));
   });
 
   return (

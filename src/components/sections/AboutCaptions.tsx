@@ -37,7 +37,7 @@ export default function AboutCaptions() {
       const on = p >= c.start + (c.end - c.start) * atSec(0) && p <= c.end;
       el.style.visibility = on ? "visible" : "hidden";
       if (!on) return;
-      const sec = sceneState.aboutSec; // same damped clock as the strands
+      const sec = sceneState.aboutSec; // damped behind the scroll (see About)
       letters.forEach((chars, i) => {
         const [from, to] = SLOTS[i];
         const live = sec > from - 0.1 && sec < to + chars.length * STAGGER + FADE + 0.1;

@@ -5,7 +5,8 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { projects } from "@/content/site";
-import { chapter, PROJECTS_ORIGIN } from "@/lib/chapters";
+import { PROJECTS_ORIGIN } from "@/lib/chapters";
+import { showValley } from "../ascent";
 import { gsap } from "@/lib/gsap";
 import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
@@ -26,11 +27,6 @@ const CRYSTAL_WORLD: [number, number, number] = [PROJECTS_ORIGIN[0], PROJECTS_OR
 /** Chapter 4 — a crystal hovering over a river stone in a moonlit mountain valley, holding the active project. */
 export default function Projects() {
   const group = useRef<THREE.Group>(null);
-  const visibleRange = useMemo(() => {
-    const tu = chapter("tunnel");
-    const pr = chapter("projects");
-    return [tu.end - 0.002, pr.end + 0.004] as const;
-  }, []);
 
   const isMobile = useApp((s) => s.isMobile);
   // the cursor's ray over the meadow (the grass keeps it current) and the mushrooms' clearings
@@ -54,7 +50,7 @@ export default function Projects() {
 
   useFrame((_, dt) => {
     const p = sceneState.p;
-    const on = p >= visibleRange[0] && p <= visibleRange[1];
+    const on = showValley(p);
     if (group.current) group.current.visible = on;
     if (on) env.uTime.value += dt;
   });

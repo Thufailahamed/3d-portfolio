@@ -8,7 +8,9 @@ import { PROJECTS_ORIGIN } from "@/lib/chapters";
 import { gsap } from "@/lib/gsap";
 import { perlin } from "@/lib/perlin";
 import { rng } from "@/lib/random";
+import { sceneState } from "@/lib/sceneState";
 import { useApp } from "@/store/useApp";
+import { valleyX } from "../ascent";
 import { ridgeFrag, ridgeVert } from "../shaders/mountains";
 import { valleyLight } from "../shaders/night";
 
@@ -327,6 +329,8 @@ export default function Mountains({ crystal }: { crystal: [number, number, numbe
               uFloorY: { value: PROJECTS_ORIGIN[1] },
               uReflect: { value: reflect ? 1 : 0 },
             },
+            polygonOffsetFactor: 2,
+            polygonOffsetUnits: 8,
           }),
       ),
     [uniforms, crystal],
@@ -393,8 +397,16 @@ export default function Mountains({ crystal }: { crystal: [number, number, numbe
     });
   }, [built, uniforms]);
 
+  const mirror = useRef<THREE.Group>(null);
   useFrame((_, dt) => {
     uniforms.uTime.value += dt;
+    // looking down from high over the valley the river mirrors only sky, and the mirrored range
+    // would show through the floor: drop it
+    const climb = valleyX(sceneState.ascent.u);
+    if (mirror.current) mirror.current.visible = climb < 0.3;
+    // … and from up there the range's foothills and the valley's back hills lie at almost the same
+    // depth, fighting cell by cell: push the range back a touch so the valley floor wins the ties
+    mats[0].polygonOffset = climb > 0.2;
   });
 
   if (!built) return null;
@@ -404,7 +416,7 @@ export default function Mountains({ crystal }: { crystal: [number, number, numbe
       <mesh geometry={built.ridgeGeo} material={mats[0]} frustumCulled={false} renderOrder={1} />
       <mesh geometry={far} material={mats[0]} frustumCulled={false} renderOrder={1} />
       {/* the range mirrored in the river (the ground hides it everywhere else) */}
-      <group scale={[1, -1, 1]}>
+      <group ref={mirror} scale={[1, -1, 1]}>
         <mesh geometry={built.ridgeGeo} material={mats[1]} frustumCulled={false} renderOrder={2} />
       </group>
     </group>

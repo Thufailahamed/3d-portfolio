@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { about, contact, person } from "@/content/site";
 import { gsap, SplitText, useGSAP } from "@/lib/gsap";
 import { useChapterActive } from "@/hooks/useChapterActive";
+import { sceneState } from "@/lib/sceneState";
 import CopyEmail from "../CopyEmail";
+import Multiverse, { openMultiverse } from "../Multiverse";
 import { lenis } from "../SmoothScroll";
 
 const home = about.places[0];
@@ -16,6 +18,8 @@ export default function ContactSection() {
   const clock = useRef<HTMLSpanElement>(null);
   // the end lies past the bottom of the page, so it stays active at the very end
   const active = useChapterActive("contact", 0.25, 1.05);
+  // falling through the multiverse: the copy steps aside
+  const [travel, setTravel] = useState(false);
 
   useGSAP(
     () => {
@@ -39,6 +43,16 @@ export default function ContactSection() {
     { scope: root, dependencies: [active] },
   );
 
+  // falling through the arch: everything but the scene steps aside, and comes back after
+  const traveled = useRef(false);
+  useEffect(() => {
+    const el = root.current;
+    if (!el || (!travel && !traveled.current)) return;
+    traveled.current = travel;
+    gsap.to(el.children, { opacity: travel ? 0 : 1, duration: travel ? 0.5 : 0.9, ease: "power2.out", overwrite: "auto" });
+    el.style.pointerEvents = travel ? "none" : "";
+  }, [travel]);
+
   // home's local time
   useEffect(() => {
     const fmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: home.tz });
@@ -49,6 +63,32 @@ export default function ContactSection() {
     const id = setInterval(update, 10000);
     return () => clearInterval(id);
   }, []);
+
+  // the doorway is a gate: the cursor says "Enter" over it, and a click (or tap) in it falls through
+  useEffect(() => {
+    const el = root.current;
+    if (!active || !el) return;
+    let over = false;
+    const watch = () => {
+      const now = sceneState.portal.hover;
+      if (now === over) return;
+      over = now;
+      if (over) el.dataset.cursor = "enter";
+      else delete el.dataset.cursor;
+      el.style.cursor = over ? "pointer" : "";
+      el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    };
+    gsap.ticker.add(watch);
+    return () => {
+      gsap.ticker.remove(watch);
+      delete el.dataset.cursor;
+      el.style.cursor = "";
+    };
+  }, [active]);
+  const onClick = (e: React.MouseEvent) => {
+    if ((e.target as Element).closest("a, button, [data-cursor=copy]")) return;
+    if (sceneState.portal.pick((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1)) openMultiverse();
+  };
 
   // all the way back: the journey replays in reverse to the forest
   const toStart = () => {
@@ -61,11 +101,13 @@ export default function ContactSection() {
       ref={root}
       id="contact"
       aria-labelledby="contact-title"
+      onClick={onClick}
       className={`fixed inset-0 z-20 flex flex-col justify-end px-gutter pb-6 transition-[opacity,visibility] duration-700 md:pb-8 ${
         active ? "opacity-100" : "pointer-events-none invisible opacity-0"
       }`}
     >
       <div aria-hidden className="contact-shade pointer-events-none absolute inset-0" />
+      {active && <Multiverse onTravel={setTravel} />}
 
       <div className="relative md:w-[min(54vw,860px)]">
         <div className="contact-in mb-5 flex items-center gap-4">

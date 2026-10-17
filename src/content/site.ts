@@ -44,6 +44,8 @@ export const person = {
   location: "Colombo, Sri Lanka",
   email: "thufailahamed627@gmail.com",
   available: true,
+  /** the "Now building" line under Available (replaced by the latest GitHub push when GITHUB_USER is set) */
+  now: "This 3D portfolio",
   intro:
     "I design and build software end to end — multi-tenant SaaS, AI copilots, marketplaces and ERPs — and run SynapX, an engineering studio in Colombo. From the database schema to the last pixel, so what gets planned is what ships.",
   socials: [

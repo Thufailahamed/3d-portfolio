@@ -3,6 +3,9 @@ import type { ChapterId } from "@/lib/chapters";
 
 type Quality = "high" | "low";
 export type Weather = "night" | "rain" | "day";
+/** the pavilion drawn as a hidden-line blueprint, or rendered as a real, lit building */
+export type FlowStyle = "xray" | "real";
+export type GuestEntry = { id: string; name: string; line: string; at: number };
 
 type AppState = {
   quality: Quality;
@@ -22,14 +25,35 @@ type AppState = {
   boardFocus: number | null;
   /** currently focused project showcase in the 3D flow pavilion (index into projects[]) */
   flowFocus: number | null;
-  flowView: "exterior" | "hall" | "showcase";
+  /** "drone" lifts off from the plaza and orbits the whole complex; "walk" is first person */
+  flowView: "exterior" | "drone" | "walk" | "hall" | "showcase";
   detailSlug: string | null;
   /** DOM-only experience (no WebGL) */
   lite: boolean;
   sound: boolean;
-  /** the forest's sky: the original night, a storm, or daylight */
+  /** the forest's sky (and the realistic pavilion's): the original night, a storm, or daylight */
   weather: Weather;
+  /** how the /flow pavilion is drawn */
+  flowStyle: FlowStyle;
+  /** the realistic pavilion's textures and shaders are still being prepared */
+  flowPreparing: boolean;
+  /** the realistic pavilion is prepared and on screen (components swap to their real materials) */
+  flowRealLive: boolean;
+  /** the board's / pavilion's assets have started loading, so their components may mount */
+  warmBoard: boolean;
+  warmFlow: boolean;
+  /** the thermal binoculars are raised (pavilion) */
+  thermal: boolean;
+  /** thermal palette: 0 white-hot, 1 black-hot, 2 ironbow */
+  thermalPalette: number;
+  /** the binoculars fill the view completely (the normal render can be skipped) */
+  thermalFull: boolean;
   menuOpen: boolean;
+  /** the multiverse fills the screen (the journey's canvas can stop rendering underneath) */
+  multiverseCover: boolean;
+  /** guestbook signatures (newest first), shown on the marble tablet in the hall */
+  guestbook: GuestEntry[];
+  guestbookOpen: boolean;
   toast: string | null;
   set: (s: Partial<Omit<AppState, "set">>) => void;
 };
@@ -50,7 +74,18 @@ export const useApp = create<AppState>((set) => ({
   lite: false,
   sound: false,
   weather: "night",
+  flowStyle: "xray",
+  flowPreparing: false,
+  flowRealLive: false,
+  warmBoard: false,
+  warmFlow: false,
+  thermal: false,
+  thermalPalette: 0,
+  thermalFull: false,
   menuOpen: false,
+  multiverseCover: false,
+  guestbook: [],
+  guestbookOpen: false,
   toast: null,
   set: (s) => set(s),
 }));

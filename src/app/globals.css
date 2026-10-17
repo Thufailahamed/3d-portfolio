@@ -826,3 +826,148 @@ html[data-weather="day"] [data-chapter="fracture"],
 html[data-weather="day"] [data-chapter="contact"] {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.25), 0 4px 28px rgb(0 0 0 / 0.35);
 }
+
+/* first-person crosshair: a dot that opens into a ring over an inspectable showcase */
+.walk-reticle span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  transition: all 180ms ease;
+}
+.walk-reticle.is-target span {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: 1.5px solid #c8ff3d;
+  box-shadow: 0 0 12px rgba(200, 255, 61, 0.35);
+}
+
+/* /flow drawing set overlay: measured sheets in the X-ray blueprint language; SVG units are metres */
+.bp-in {
+  animation: bp-in 260ms ease-out both;
+}
+@keyframes bp-in {
+  from { opacity: 0; transform: scale(0.985); }
+}
+.bp-sheet {
+  background:
+    linear-gradient(to right, rgb(140 170 210 / 0.05) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(to bottom, rgb(140 170 210 / 0.05) 1px, transparent 1px) 0 0 / 24px 24px,
+    #060a10;
+}
+.bp-svg * { vector-effect: non-scaling-stroke; }
+.bp-draw text {
+  fill: rgb(236 241 247 / 0.86);
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
+  paint-order: stroke;
+  stroke: #060a10;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+.bp-lbl { font-family: var(--font-inter-tight), system-ui, sans-serif !important; font-weight: 600; letter-spacing: 0.08em; font-size: 1.05em; }
+.bp-small { font-size: 0.8em; }
+.bp-draw .bp-mute { fill: rgb(236 241 247 / 0.45); }
+.bp-draw .bp-acc { fill: #c8ff3d; }
+.bp-num { font-weight: 500; font-size: 0.9em; }
+.bp-draw .bp-dimt { font-size: 0.8em; fill: rgb(236 241 247 / 0.55); }
+.bp-lvlt { font-size: 0.8em; }
+.bp-draw .bp-frieze { font-size: 0.55em; letter-spacing: 0.3em; fill: #c8ff3d; stroke: none; }
+.bp-draw .bp-float { font-size: 1.1em; letter-spacing: 0.2em; fill: rgb(236 241 247 / 0.5); }
+.bp-grid { stroke: rgb(140 170 210 / 0.14); stroke-width: 0.6px; stroke-dasharray: 2 4; }
+.bp-grd { stroke: rgb(236 241 247 / 0.8); stroke-width: 1.4px; }
+.bp-slab { fill: rgb(150 180 220 / 0.06); stroke: rgb(236 241 247 / 0.7); stroke-width: 1px; }
+.bp-slab2 { fill: #060a10; stroke: rgb(236 241 247 / 0.35); stroke-width: 0.8px; stroke-dasharray: 6 3; }
+.bp-slabE, .bp-stepE { fill: rgb(150 180 220 / 0.14); stroke: rgb(236 241 247 / 0.7); stroke-width: 0.8px; }
+.bp-step { fill: rgb(150 180 220 / 0.08); stroke: rgb(236 241 247 / 0.55); stroke-width: 0.7px; }
+.bp-stepP { fill: rgb(150 180 220 / 0.14); stroke: rgb(236 241 247 / 0.4); stroke-width: 0.7px; }
+.bp-over { fill: none; stroke: rgb(236 241 247 / 0.38); stroke-width: 0.8px; stroke-dasharray: 5 3; }
+.bp-cut { fill: rgb(225 233 243 / 0.82); stroke: rgb(225 233 243 / 0.82); stroke-width: 0.6px; }
+.bp-lt { fill: none; stroke: rgb(236 241 247 / 0.4); stroke-width: 0.8px; }
+.bp-ln2 { fill: #060a10; stroke: rgb(236 241 247 / 0.8); stroke-width: 0.8px; }
+.bp-paper { fill: #060a10; stroke: rgb(236 241 247 / 0.7); stroke-width: 0.8px; }
+.bp-glow { stroke: #c8ff3d; stroke-width: 2px; fill: none; filter: drop-shadow(0 0 3px rgb(200 255 61 / 0.6)); }
+.bp-glowS { stroke: #c8ff3d; stroke-width: 1.2px; fill: none; }
+.bp-glowW { stroke: #c8ff3d; stroke-width: 3px; fill: none; filter: drop-shadow(0 0 4px rgb(200 255 61 / 0.6)); }
+.bp-glowfill { fill: #c8ff3d; stroke: #c8ff3d; stroke-width: 0.6px; }
+.bp-plinth, .bp-plinthE { fill: rgb(150 180 220 / 0.18); stroke: rgb(236 241 247 / 0.85); stroke-width: 1px; }
+.bp-vit { fill: rgb(125 211 252 / 0.12); stroke: #7dd3fc; stroke-width: 1px; }
+.bp-vitP { fill: none; stroke: #7dd3fc; stroke-width: 1px; }
+.bp-kiosk { fill: #060a10; stroke: rgb(236 241 247 / 0.75); stroke-width: 0.9px; }
+.bp-rope { fill: none; stroke: rgb(236 241 247 / 0.35); stroke-width: 0.8px; stroke-dasharray: 1.5 2.5; }
+.bp-route { fill: none; stroke: #c8ff3d; stroke-width: 1.6px; stroke-dasharray: 7 4; animation: bp-march 1.6s linear infinite; }
+@keyframes bp-march { to { stroke-dashoffset: -22; } }
+.bp-brass { stroke: #d9b45a; stroke-width: 0.9px; opacity: 0.7; }
+.bp-colp { fill: rgb(225 233 243 / 0.85); stroke: none; }
+.bp-col { fill: #0a1018; stroke: rgb(236 241 247 / 0.8); stroke-width: 0.8px; }
+.bp-colb { fill: rgb(150 180 220 / 0.07); stroke: rgb(236 241 247 / 0.35); stroke-width: 0.6px; }
+.bp-ent { fill: rgb(150 180 220 / 0.1); stroke: rgb(236 241 247 / 0.8); stroke-width: 0.9px; }
+.bp-dent { fill: rgb(150 180 220 / 0.2); stroke: rgb(236 241 247 / 0.5); stroke-width: 0.4px; }
+.bp-tym { fill: rgb(150 180 220 / 0.16); stroke: rgb(236 241 247 / 0.6); stroke-width: 0.6px; }
+.bp-wall { fill: rgb(150 180 220 / 0.07); stroke: rgb(236 241 247 / 0.4); stroke-width: 0.7px; }
+.bp-wall2 { fill: rgb(150 180 220 / 0.12); stroke: rgb(236 241 247 / 0.4); stroke-width: 0.7px; }
+.bp-recess { fill: rgb(150 180 220 / 0.13); stroke: rgb(236 241 247 / 0.45); stroke-width: 0.7px; }
+.bp-door { fill: rgb(200 255 61 / 0.14); stroke: #c8ff3d; stroke-width: 2px; }
+.bp-fig { fill: rgb(236 241 247 / 0.45); stroke: none; }
+.bp-dim { stroke: rgb(236 241 247 / 0.4); stroke-width: 0.7px; }
+.bp-lvl, .bp-sb, .bp-axh { fill: rgb(236 241 247 / 0.85); stroke: none; }
+.bp-sbo { fill: none; stroke: rgb(236 241 247 / 0.85); stroke-width: 0.8px; }
+.bp-pil { fill: rgb(150 180 220 / 0.12); stroke: rgb(236 241 247 / 0.6); stroke-width: 0.6px; }
+.bp-rib { fill: rgb(217 180 90 / 0.18); stroke: #d9b45a; stroke-width: 0.7px; }
+.bp-glass { fill: #7dd3fc; stroke: #7dd3fc; stroke-width: 0.6px; opacity: 0.75; }
+.bp-rose { fill: none; stroke: #c8ff3d; stroke-width: 1.4px; }
+.bp-roseL { stroke: #c8ff3d; stroke-width: 0.7px; opacity: 0.6; }
+.bp-pool { fill: rgb(125 211 252 / 0.06); stroke: rgb(236 241 247 / 0.45); stroke-width: 0.8px; }
+.bp-poolin { fill: none; stroke: rgb(125 211 252 / 0.3); stroke-width: 0.6px; }
+/* clickable showcases and the live marker */
+.bp-pick { cursor: pointer; outline: none; }
+.bp-hit { fill: transparent; stroke: none; }
+.bp-hitring { fill: rgb(200 255 61 / 0); stroke: #c8ff3d; stroke-width: 1.2px; stroke-dasharray: 3 3; opacity: 0; transition: opacity 160ms ease, fill 160ms ease; }
+.bp-pick:hover .bp-hitring, .bp-pick:focus-visible .bp-hitring { opacity: 1; fill: rgb(200 255 61 / 0.1); }
+.bp-me { fill: #c8ff3d; stroke: #060a10; stroke-width: 1.5px; }
+.bp-cone { fill: rgb(200 255 61 / 0.22); stroke: rgb(200 255 61 / 0.6); stroke-width: 0.8px; }
+.bp-pulse { fill: none; stroke: #c8ff3d; stroke-width: 1px; transform-box: fill-box; transform-origin: center; animation: bp-pulse 1.8s ease-out infinite; }
+@keyframes bp-pulse {
+  from { transform: scale(0.4); opacity: 0.9; }
+  to { transform: scale(2.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bp-in, .bp-route, .bp-pulse { animation: none; }
+}
+
+/* drawing set → prototype */
+.bp-stage-in {
+  animation: bp-stage-in 420ms ease-out both;
+}
+@keyframes bp-stage-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+.bp-cta {
+  box-shadow: 0 0 0 0 rgb(200 255 61 / 0.45);
+  animation: bp-cta 2.4s ease-out infinite;
+}
+@keyframes bp-cta {
+  0% { box-shadow: 0 0 0 0 rgb(200 255 61 / 0.4); }
+  70%, 100% { box-shadow: 0 0 0 12px rgb(200 255 61 / 0); }
+}
+.bp-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: #c8ff3d;
+  box-shadow: 0 0 10px rgb(200 255 61 / 0.6);
+}
+.bp-scrub::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 9999px;
+  background: #c8ff3d;
+}
+.bp-scrub:focus-visible { outline: 1px solid #c8ff3d; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .bp-stage-in, .bp-cta { animation: none; }
+}

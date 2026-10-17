@@ -150,7 +150,10 @@ vec3 nightAir(vec3 col, vec3 W){
   vec3 toP = W - cameraPosition;
   float dist = length(toP);
   vec3 d = toP / dist;
-  vec3 haze = nightSky(normalize(vec3(d.x, max(d.y, 0.0) * 0.25, d.z)));
+  vec3 haze = nightSky(normalize(vec3(d.x, max(d.y, 0.0) * 0.25, d.z) + vec3(0.0, 1e-4, 0.0)));
+  // looking steeply down (climbing out of the valley) the view's horizontal heading is noise:
+  // the haze would swing across the moon's glow in a bright fan. Down there it's the plain horizon
+  haze = mix(haze, HORIZON + uGlow * 0.6, smoothstep(0.55, 0.9, -d.y));
   col = mix(col, haze, 1.0 - exp(-pow(dist * uHaze, 1.7)));
   float mist = exp(-max(W.y, 0.0) * 1.8) * (1.0 - exp(-dist * 0.05));
   mist *= 0.55 + 0.45 * vnoise(vec3(W.xz * 0.16 + vec2(uTime * 0.05, uTime * 0.012), uTime * 0.03));
@@ -172,7 +175,10 @@ vec3 bumpNormal(vec3 P, vec3 N, float h, float strength){
   vec3 r2 = cross(N, dpx);
   float det = dot(dpx, r1);
   vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
-  return normalize(abs(det) * N - grad * strength);
+  vec3 b = abs(det) * N - grad * strength;
+  // degenerate (a surface seen exactly edge-on or from straight above): normalising zero would
+  // give NaN, which the bloom smears into blocks
+  return dot(b, b) > 1e-20 ? normalize(b) : N;
 }
 #endif
 `;

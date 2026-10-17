@@ -3,7 +3,7 @@
 import { useProgress } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useEffect } from "react";
-import type * as THREE from "three";
+import * as THREE from "three";
 import { useApp } from "@/store/useApp";
 
 /** Mirrors three's loading manager into the app store (lives outside Suspense). */
@@ -32,7 +32,14 @@ export function CompileGate() {
         o.visible = true;
       }
     });
+    // compiled for an offscreen target, as the post-processing renders the scene: on screen the
+    // programs would get tone mapping and an sRGB output and need compiling a second time
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+    const prevTarget = gl.getRenderTarget();
+    gl.setRenderTarget(target);
     const job = gl.compileAsync(scene, camera);
+    gl.setRenderTarget(prevTarget);
+    target.dispose();
     for (const o of hidden) o.visible = false;
     job
       .catch(() => undefined)

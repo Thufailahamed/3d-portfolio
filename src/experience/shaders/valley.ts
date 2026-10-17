@@ -251,7 +251,9 @@ void main(){
   col += uTint * (pow(c, 500.0) * 0.5 + pow(c, 40.0) * 0.03) * near;
 
   float air = 1.0 - exp(-pow(dist * 0.024, 1.5));
-  vec3 haze = nightSky(normalize(vec3(-V.x, 0.0, -V.z)));
+  vec3 haze = nightSky(normalize(vec3(-V.x, 1e-4, -V.z)));
+  // seen from straight above, the heading is noise (and normalising zero would be NaN)
+  haze = mix(haze, HORIZON + uGlow * 0.6, smoothstep(0.55, 0.9, V.y));
   col = mix(col, haze * (1.0 - refl), air);
   // premultiplied: rgb is what the surface adds, alpha how much of the reflection it hides
   gl_FragColor = vec4(col, 1.0 - refl);

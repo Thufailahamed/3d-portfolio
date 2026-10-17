@@ -26,7 +26,9 @@ export default function Loader() {
     if (pathname === "/flow") {
       useApp.getState().set({ entered: true });
       sceneState.intro = 1;
-      setGone(true);
+      // (on /flow the loader already renders nothing; this keeps it gone after leaving)
+      const id = requestAnimationFrame(() => setGone(true));
+      return () => cancelAnimationFrame(id);
     }
   }, [pathname]);
 

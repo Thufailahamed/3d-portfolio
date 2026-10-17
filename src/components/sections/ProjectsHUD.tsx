@@ -35,13 +35,13 @@ export default function ProjectsHUD() {
     useApp.getState().set({ activeProject: next });
   };
 
-  // HUD is live only while the camera is settled on the prism
+  // HUD is live only while the camera is settled on the prism (it lifts off at 0.78, see ascent.ts)
   useGSAP(() => {
     // undo the fade from a previous "Discover" dive if this page was restored from cache
     gsap.set(root.current, { clearProps: "opacity,visibility" });
     entering.current = false;
     const st = ScrollTrigger.create({
-      ...chapterScroll("projects", 0.12, 0.88),
+      ...chapterScroll("projects", 0.12, 0.8),
       onToggle: (self) => setActive(self.isActive),
     });
     return () => st.kill();

@@ -9,8 +9,9 @@ import { rng } from "@/lib/random";
 import { sceneState } from "@/lib/sceneState";
 import { thunder } from "@/lib/sound";
 import { useApp } from "@/store/useApp";
+import { showValley, valleyX } from "./ascent";
 import { palette } from "./palette";
-import { setValleyLight } from "./shaders/night";
+import { setValleyLight, valleyLight } from "./shaders/night";
 import { rainFrag, rainVert, skyFrag, skyVert } from "./shaders/weather";
 import { weatherUniforms } from "./weatherUniforms";
 
@@ -137,9 +138,8 @@ export default function Weather() {
     const presence = mode === "journey" ? Math.max(forest, clearing) : 0;
     const day = mix.day * presence;
     const wet = mix.rain * presence;
-    // the projects valley, from the tunnel's hidden cut to the end of its chapter
-    const pr = chapter("projects");
-    const inValley = mode === "journey" && p >= tu.end - 0.002 && p <= pr.end + 0.004 ? 1 : 0;
+    // the projects valley, from the tunnel's hidden cut until the zoom-out leaves it in the clouds
+    const inValley = mode === "journey" && showValley(p) ? 1 : 0;
     const anyWet = Math.max(wet, mix.rain * inValley);
 
     // lightning: now and then while it rains, a double flash
@@ -162,6 +162,10 @@ export default function Weather() {
     sceneState.valley.rain = mix.rain * inValley;
     sceneState.valley.flash = valleyFlash;
     setValleyLight(mix.day, mix.rain, valleyFlash);
+    // climbing out of the valley: the air thins, so the floor stays visible from above
+    const climb = valleyX(sceneState.ascent.u);
+    valleyLight.uHaze.value *= 1 - 0.65 * climb;
+    valleyLight.uMist.value *= 1 - 0.5 * climb;
     rain.m.uniforms.uRain.value = anyWet;
     rain.m.uniforms.uFlash.value = Math.max(flash, valleyFlash);
 
