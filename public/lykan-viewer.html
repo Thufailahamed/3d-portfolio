@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lykan Preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0b0c; color: #e8e8ea; font: 13px/1.4 ui-monospace, Menlo, monospace; overflow: hidden; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 16px; top: 16px; pointer-events: none; }
+  #hud h1 { font: 600 18px/1.2 system-ui, sans-serif; margin: 0 0 4px; letter-spacing: .02em; }
+  #hud p { margin: 0; opacity: .6; }
+  #part { position: fixed; left: 16px; bottom: 16px; padding: 8px 12px; border: 1px solid #333; border-radius: 6px; background: #111a; min-width: 160px; }
+  #reset { position: fixed; right: 16px; bottom: 16px; padding: 8px 12px; background: #1b1b1e; color: inherit; border: 1px solid #333; border-radius: 6px; font: inherit; cursor: pointer; }
+  #load { position: fixed; inset: 0; display: grid; place-items: center; opacity: .6; }
+</style>
+</head>
+<body>
+<div id="hud"><h1>Lykan HyperSport</h1><p>Drag to orbit · scroll to zoom · click a part to pull it out</p></div>
+<div id="part">No part selected</div>
+<button id="reset">Reassemble</button>
+<div id="load">Loading model…</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0b0c);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.9;
+
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
+camera.position.set(5.2, 1.8, 5.0);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.5, 0);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(4, 7, 3);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 });
+scene.add(key);
+
+const ground = new THREE.Mesh(new THREE.CircleGeometry(12, 64), new THREE.MeshStandardMaterial({ color: 0x111113, roughness: 0.35, metalness: 0.2 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const draco = new DRACOLoader().setDecoderPath("/draco/");
+const parts = [];
+new GLTFLoader().setDRACOLoader(draco).load("/models/lykan.glb", (gltf) => {
+  gltf.scene.traverse((o) => {
+    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+    if (o.name.startsWith("Part_")) {
+      o.userData.home = o.position.clone();
+      o.userData.out = new THREE.Vector3(...(o.userData.explode || [0, 1, 0]));
+      o.userData.t = 0; o.userData.goal = 0;
+      parts.push(o);
+    }
+  });
+  scene.add(gltf.scene);
+  document.getElementById("load").remove();
+});
+
+const ray = new THREE.Raycaster();
+const ptr = new THREE.Vector2();
+let down = null;
+renderer.domElement.addEventListener("pointerdown", (e) => (down = [e.clientX, e.clientY]));
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  ptr.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObjects(parts, true)[0];
+  if (!hit) return;
+  let o = hit.object;
+  while (o && !o.name.startsWith("Part_")) o = o.parent;
+  if (!o) return;
+  o.userData.goal = o.userData.goal ? 0 : 1;
+  document.getElementById("part").textContent = o.userData.part.replace(/_/g, " ");
+});
+document.getElementById("reset").onclick = () => parts.forEach((p) => (p.userData.goal = 0));
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => {
+  for (const p of parts) {
+    const d = p.userData;
+    d.t += (d.goal - d.t) * 0.12;
+    p.position.copy(d.home).addScaledVector(d.out, d.t);
+  }
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
