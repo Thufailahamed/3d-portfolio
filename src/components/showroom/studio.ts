@@ -290,7 +290,19 @@ export type Look = {
   pins: boolean;
   /** time of day under open sky, 0 (sunrise glow) to 1 (high noon) */
   sun: number;
+  weather: WeatherId;
+  /** depth of field: 0 is everything sharp, higher is a wider aperture and softer background */
+  aperture: number;
 };
+
+/** Dry, a dusty haze in the light, a wet floor after the rain, or rain falling now. */
+export type WeatherId = "dry" | "haze" | "wet" | "rain";
+export const weathers: { id: WeatherId; name: string }[] = [
+  { id: "dry", name: "Dry" },
+  { id: "haze", name: "Haze" },
+  { id: "wet", name: "Wet floor" },
+  { id: "rain", name: "Rain" },
+];
 
 /** A pin for the hotspots: a part of the content and the model groups it covers. */
 export type Pin = { id: string; name: string; members: string[] };

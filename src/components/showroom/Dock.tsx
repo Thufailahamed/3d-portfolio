@@ -373,6 +373,18 @@ export const icons = {
       <path d="M5 1.5V5H1.5M12.5 5H9V1.5M9 12.5V9h3.5M1.5 9H5v3.5" />
     </svg>
   ),
+  weather: (
+    <Svg>
+      <path d="M7 15.5a4 4 0 0 1-.4-8 5.2 5.2 0 0 1 10 1.3 3.4 3.4 0 0 1 .4 6.7z" />
+      <path d="M8.5 18l-1 2.5M12.5 18l-1 2.5M16.5 18l-1 2.5" />
+    </Svg>
+  ),
+  lens: (
+    <Svg>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5l3 6.5M20.5 12l-6.9.9M16.2 19.4l-4-5.9M6.6 18.6l3.7-5.9M3.6 10.6l7.2.5M9.4 4l1.9 7" />
+    </Svg>
+  ),
   film: (
     <svg aria-hidden width="9" height="10" viewBox="0 0 9 10" fill="currentColor">
       <path d="M0 0l9 5-9 5z" />

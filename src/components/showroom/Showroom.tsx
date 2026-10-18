@@ -27,6 +27,8 @@ import {
   type Quality,
   type ShotId,
   type Tuning,
+  type WeatherId,
+  weathers,
 } from "./studio";
 
 const ShowroomScene = dynamic(() => import("./ShowroomScene"), { ssr: false });
@@ -120,6 +122,8 @@ export default function Showroom({
   const [pinsOn, setPinsOn] = useState(false);
   const [sun, setSun] = useState(shared.sun ?? 0.6);
   const [fullscreen, setFullscreen] = useState(false);
+  const [weather, setWeather] = useState<WeatherId>(weathers.some((w) => w.id === shared.weather) ? shared.weather! : "dry");
+  const [aperture, setAperture] = useState(shared.aperture ?? 0);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const toast = useCallback((msg: string) => {
@@ -249,6 +253,8 @@ export default function Showroom({
         ride: ride || undefined,
         tint: tint || undefined,
         sun: backdrop === "sky" ? sun : undefined,
+        weather: weather !== "dry" ? weather : undefined,
+        aperture: aperture || undefined,
       }),
     );
     const link = url.toString();
@@ -257,7 +263,7 @@ export default function Showroom({
       () => toast("Copy the link from the address bar"),
     );
     window.history.replaceState(null, "", url);
-  }, [custom, paintIdx, mood, backdrop, livery, liveryColor, brake, iridescent, lights, doors, steer, ride, tint, sun, toast]);
+  }, [custom, paintIdx, mood, backdrop, livery, liveryColor, brake, iridescent, lights, doors, steer, ride, tint, sun, weather, aperture, toast]);
   const rev = useCallback(() => {
     if (!engine.current) setSound(true);
     else engine.current.rev();
@@ -288,8 +294,10 @@ export default function Showroom({
       tint,
       pins: pinsOn,
       sun,
+      weather,
+      aperture: interior ? 0 : aperture,
     }),
-    [doors, car.doors, car.calipers, brake, iridescent, livery, liveryColor, interior, cinematic, grid, backdrop, quality, tuning, drive, steer, ride, tint, pinsOn, sun],
+    [doors, car.doors, car.calipers, brake, iridescent, livery, liveryColor, interior, cinematic, grid, backdrop, quality, tuning, drive, steer, ride, tint, pinsOn, sun, weather, aperture],
   );
   const pins = useMemo<Pin[]>(() => car.parts.map((p) => ({ id: p.id, name: p.name, members: p.members ?? [p.id] })), [car]);
 
@@ -322,6 +330,7 @@ export default function Showroom({
       else if (k === "v") setDrive((v) => !v);
       else if (k === "h") setPinsOn((v) => !v);
       else if (k === "f") toggleFullscreen();
+      else if (k === "w") setWeather((w) => weathers[(weathers.findIndex((x) => x.id === w) + 1) % weathers.length].id);
       else if (k === "s") setTurntable((v) => !v);
       else if (k === "?" || (k === "/" && e.shiftKey)) setKeysOpen((v) => !v);
       else if (/^[1-6]$/.test(k)) view(shots[+k - 1].id);
@@ -441,6 +450,21 @@ export default function Showroom({
       { id: "pins", label: "Hotspots", hint: "H", icon: icons.pins, active: pinsOn, onClick: () => setPinsOn((v) => !v) },
       { id: "xray", label: "X-ray", hint: "X", icon: icons.xray, active: xray, onClick: () => setXray((v) => !v) },
       { id: "measure", label: "Measure", hint: "M", icon: icons.measure, active: measure, onClick: () => setMeasure((v) => !v) },
+      {
+        id: "lens",
+        label: aperture ? `Lens · f/${(16 / (1 + aperture * 2.5)).toFixed(1)}` : "Lens",
+        icon: icons.lens,
+        active: aperture > 0,
+        panel: (
+          <div className="w-[19rem]">
+            <Slider label="Aperture" value={aperture} min={0} max={6} step={0.25} onChange={setAperture}
+              format={(v) => (v ? `f/${(16 / (1 + v * 2.5)).toFixed(1)}` : "Off")} />
+            <p className="px-1 pt-1 text-[11px] leading-relaxed text-fg/45">
+              Opens the lens: the car stays sharp and the studio behind it melts away, as with a fast portrait lens.
+            </p>
+          </div>
+        ),
+      },
       { id: "keys", label: "Keyboard shortcuts", hint: "?", icon: icons.keys, onClick: () => setKeysOpen((v) => !v) },
     ],
     [
@@ -521,6 +545,31 @@ export default function Showroom({
               <Slider label="Time of day" value={sun} min={0} max={1} step={0.01} onChange={setSun}
                 format={(v) => (v < 0.25 ? "Dawn" : v < 0.55 ? "Morning" : "Noon")} />
             )}
+          </div>
+        ),
+      },
+      {
+        id: "weather",
+        label: `Weather · ${weathers.find((w) => w.id === weather)?.name}`,
+        hint: "W",
+        icon: icons.weather,
+        active: weather !== "dry",
+        panel: (
+          <div className="grid max-w-[21rem] gap-2">
+            <Chips>
+              {weathers.map((w) => (
+                <Chip key={w.id} on={weather === w.id} onClick={() => setWeather(w.id)}>{w.name}</Chip>
+              ))}
+            </Chips>
+            <p className="px-1 text-[11px] leading-relaxed text-fg/45">
+              {weather === "rain"
+                ? "Rain falls round the car, rings spread on the floor and water beads on the paint."
+                : weather === "wet"
+                  ? "The floor shines like a mirror and the last drops sit on the paint."
+                  : weather === "haze"
+                    ? "Dust turns in the light and the overhead lamp throws a visible shaft."
+                    : "A clean, dry studio."}
+            </p>
           </div>
         ),
       },
@@ -1007,6 +1056,7 @@ const KEYS: [string, string][] = [
   ["V", "Drive"],
   ["H", "Hotspots"],
   ["F", "Full screen"],
+  ["W", "Change the weather"],
   ["S", "Spin the turntable"],
   ["C", "Play the film"],
   ["← →", "Previous or next part (or car)"],

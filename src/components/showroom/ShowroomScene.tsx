@@ -1,15 +1,15 @@
 "use client";
 
-import { ContactShadows, Environment, Grid, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
-import { Bloom, DepthOfField, EffectComposer, N8AO, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { ContactShadows, Environment, Grid, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerspectiveCamera, Sparkles, useGLTF } from "@react-three/drei";
+import { Bloom, ChromaticAberration, DepthOfField, EffectComposer, N8AO, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { BlendFunction, ToneMappingMode, type BloomEffect, type DepthOfFieldEffect } from "postprocessing";
 import * as THREE from "three";
 
 import type { CarView, PaintColor } from "@/content/cars";
-import { cineShots, moodById, shots, type BackdropId, type Dims, type Look, type Mood, type MoodId, type Pin, type ShotId } from "./studio";
+import { cineShots, moodById, shots, type BackdropId, type Dims, type Look, type Mood, type MoodId, type Pin, type ShotId, type WeatherId } from "./studio";
 
 const ACCENT = new THREE.Color("#c8ff3d");
 const GHOST = 0.18;
@@ -210,8 +210,55 @@ const DOOR_OUT = THREE.MathUtils.degToRad(22);
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
 const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), pv = new THREE.Vector3(), hv = new THREE.Vector3();
 
-/** The livery, painted in the car's own frame by the paint shader: stripes, a side band or a two-tone roof. */
+/**
+ * The paint shader's extras, all worked out in the car's own frame:
+ * - the livery: stripes, a side band or a two-tone roof
+ * - metallic flake: each sub-millimetre flake tilts the base coat's normal a little, under a clear
+ *   coat that stays smooth, so metallics sparkle as the light moves across them
+ * - rain: beads of water on the upward faces, each a tiny dome bumped into both coats' normals
+ */
 const liveryIndex = { none: 0, stripes: 1, band: 2, twotone: 3 } as const;
+const paintFxPars = /* glsl */ `
+  uniform int uLivery;
+  uniform vec3 uLiveryColor;
+  uniform vec4 uBox;
+  uniform float uFlake;
+  uniform float uWet;
+  varying vec3 vCarPos;
+  vec3 fxHash3(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yxz + 19.19);
+    return fract((p.xxy + p.yxx) * p.zyx);
+  }
+  uniform mat3 uCarRot;
+  vec3 dropTilt = vec3(0.0);
+`;
+const paintFxNormal = /* glsl */ `
+  #include <normal_fragment_maps>
+  // rain beads: one per 26 mm cell, on surfaces that face the sky. Each is a dome: its normal leans
+  // out from the bead's centre, more toward the rim (worked out directly, so no stair-stepping)
+  if (uWet > 0.0) {
+    vec3 wn = inverseTransformDirection(normal, viewMatrix);
+    float up = smoothstep(0.25, 0.75, wn.y);
+    vec2 g = vCarPos.xz * 38.0;
+    vec2 id = floor(g);
+    vec3 h = fxHash3(vec3(id, 3.7));
+    vec2 d = fract(g) - 0.5 - (h.xy - 0.5) * 0.45;
+    float r = 0.1 + 0.22 * h.z;
+    float on = step(0.32, fxHash3(vec3(id, 9.1)).x) * up * uWet;
+    float inside = 1.0 - smoothstep(r * 0.8, r, length(d));
+    vec3 lean = uCarRot * vec3(d.x, 0.0, d.y) / r;
+    dropTilt = (viewMatrix * vec4(lean, 0.0)).xyz * inside * on * 1.1;
+    normal = normalize(normal + dropTilt);
+    // wet paint reads a shade deeper
+    diffuseColor.rgb *= 1.0 - 0.12 * uWet * up;
+  }
+  // flake: a random tilt per flake cell (about 0.7 mm)
+  if (uFlake > 0.0) {
+    vec3 rnd = fxHash3(floor(vCarPos * 1400.0)) - 0.5;
+    normal = normalize(normal + rnd * uFlake);
+  }
+`;
 function addLivery(mat: THREE.Material, u: Record<string, THREE.IUniform>) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
@@ -219,7 +266,10 @@ function addLivery(mat: THREE.Material, u: Record<string, THREE.IUniform>) {
       .replace("#include <common>", "#include <common>\nuniform mat4 uCarInv;\nvarying vec3 vCarPos;")
       .replace("#include <project_vertex>", "#include <project_vertex>\nvCarPos = (uCarInv * modelMatrix * vec4(transformed, 1.0)).xyz;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", "#include <common>\nuniform int uLivery;\nuniform vec3 uLiveryColor;\nuniform vec4 uBox;\nvarying vec3 vCarPos;")
+      .replace("#include <common>", "#include <common>\n" + paintFxPars)
+      .replace("#include <normal_fragment_maps>", paintFxNormal)
+      // the beads sit on the clear coat too (the flake does not: it is under it)
+      .replace("#include <clearcoat_normal_fragment_maps>", "#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (uWet > 0.0) clearcoatNormal = normalize(clearcoatNormal + dropTilt);\n#endif")
       .replace(
         "#include <color_fragment>",
         `#include <color_fragment>
@@ -239,7 +289,7 @@ function addLivery(mat: THREE.Material, u: Record<string, THREE.IUniform>) {
         }`,
       );
   };
-  mat.customProgramCacheKey = () => "livery";
+  mat.customProgramCacheKey = () => "paintfx";
   mat.needsUpdate = true;
 }
 
@@ -270,7 +320,15 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
   const finish = useRef<{ paint: MatState[]; lamps: Lamp[]; calipers: MatState[] }>({ paint: [], lamps: [], calipers: [] });
   const goal = useMemo(() => ({ color: new THREE.Color(), metal: 0, rough: 0, brake: new THREE.Color() }), []);
   const livery = useMemo<Record<string, THREE.IUniform>>(
-    () => ({ uLivery: { value: 0 }, uLiveryColor: { value: new THREE.Color() }, uCarInv: { value: new THREE.Matrix4() }, uBox: { value: new THREE.Vector4() } }),
+    () => ({
+      uLivery: { value: 0 },
+      uLiveryColor: { value: new THREE.Color() },
+      uCarInv: { value: new THREE.Matrix4() },
+      uBox: { value: new THREE.Vector4() },
+      uFlake: { value: 0 },
+      uWet: { value: 0 },
+      uCarRot: { value: new THREE.Matrix3() },
+    }),
     [],
   );
 
@@ -469,8 +527,16 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     }
     // the livery's colour and the car's frame for the shader
     livery.uLivery.value = liveryIndex[look.livery];
+    // flake in metallic paint only; beads fade in as the rain sets in, and off again more slowly
+    const metal = coat[0]?.mat.metalness ?? 0;
+    livery.uFlake.value = THREE.MathUtils.clamp((metal - 0.25) * 0.5, 0, 0.22);
+    const wet = look.weather === "rain" ? 1 : look.weather === "wet" ? 0.55 : 0;
+    livery.uWet.value += (wet - livery.uWet.value) * Math.min(1, dt * (wet > livery.uWet.value ? 0.6 : 0.25));
     livery.uLiveryColor.value.set(look.liveryColor);
-    if (table.current) livery.uCarInv.value.copy(table.current.matrixWorld).invert();
+    if (table.current) {
+      livery.uCarInv.value.copy(table.current.matrixWorld).invert();
+      livery.uCarRot.value.setFromMatrix4(table.current.matrixWorld);
+    }
     // brake calipers
     for (const s of calipers) {
       const base = s.mat.userData.base as Base;
@@ -759,6 +825,8 @@ const beamFrag = /* glsl */ `
 `;
 
 const BEAM_LEN = 6;
+/** render layer for glow that should show to the camera but stay out of shadow and depth passes */
+const FX_LAYER = 1;
 
 /** Headlamp beams: real spot lights for the pools on the floor, plus a soft volumetric cone each. */
 function HeadBeams({ rec, rig }: { rec: PartRec; rig: Rig }) {
@@ -786,7 +854,11 @@ function HeadBeams({ rec, rig }: { rec: PartRec; rig: Rig }) {
   }, [rec]);
   const lights = useRef<(THREE.SpotLight | null)[]>([]);
   const beams = useRef<(THREE.Mesh | null)[]>([]);
+  // the cones only exist while the lamps are lit
+  const [lit, setLit] = useState(false);
   useEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
+  const token = useId();
+  useEffect(() => sweep(rec.obj, "beam", token), [rec, token]);
 
   useFrame(() => {
     const lv = rig.lamps;
@@ -796,13 +868,13 @@ function HeadBeams({ rec, rig }: { rec: PartRec; rig: Rig }) {
       l.intensity = lv * 70;
       l.color.copy(rig.headColor);
     }
-    for (const b of beams.current) if (b) b.visible = lv > 0.01;
+    if (lv > 0.01 !== lit) setLit(lv > 0.01);
   });
 
   return (
     <>
       {spots.map((p, i) => (
-        <group key={i} position={p}>
+        <group key={i} position={p} userData={{ beam: token }}>
           <spotLight
             ref={(l) => {
               lights.current[i] = l;
@@ -818,11 +890,27 @@ function HeadBeams({ rec, rig }: { rec: PartRec; rig: Rig }) {
             decay={2}
             color="#fff1dc"
           />
-          <mesh ref={(m) => void (beams.current[i] = m)} geometry={geo} material={mat} raycast={() => null} renderOrder={10} userData={{ fx: true }} />
+          {/* glow only, on its own layer: the floor's contact shadow renders layer 0 and would print the
+              cone into it as a dark wedge ahead of the car; the main camera sees both layers */}
+          {lit && (
+            <mesh ref={(m) => {
+              beams.current[i] = m;
+              m?.layers.set(FX_LAYER);
+            }} geometry={geo} material={mat} raycast={() => null} renderOrder={10} userData={{ fx: true }} />
+          )}
         </group>
       ))}
     </>
   );
+}
+
+/**
+ * The glTF scene is cached and the lamps are portalled into it, so a remount can leave the last
+ * visit's beams behind, still visible (and printed into the floor's contact shadow as dark cones).
+ * Clear out any that are not this mount's own.
+ */
+function sweep(obj: THREE.Object3D, tag: "beam" | "tail", token: string) {
+  for (const c of [...obj.children]) if (c.userData[tag] && c.userData[tag] !== token) obj.remove(c);
 }
 
 /** Tail lamps throw a red wash onto the floor behind the car. */
@@ -833,10 +921,12 @@ function TailGlow({ rec, rig }: { rec: PartRec; rig: Rig }) {
     return new THREE.Vector3(local.min.x - 0.25, c.y, c.z);
   }, [rec]);
   const light = useRef<THREE.PointLight>(null);
+  const token = useId();
+  useEffect(() => sweep(rec.obj, "tail", token), [rec, token]);
   useFrame(() => {
     if (light.current) light.current.intensity = rig.lamps * 6;
   });
-  return <pointLight ref={light} position={pos} intensity={0} distance={4} decay={2} color="#ff1a0a" />;
+  return <pointLight ref={light} position={pos} intensity={0} distance={4} decay={2} color="#ff1a0a" userData={{ tail: token }} />;
 }
 
 // ---------------------------------------------------------------------- the studio
@@ -979,6 +1069,136 @@ function floorNoise(size = 256) {
   return tex;
 }
 
+// ---------------------------------------------------------------------- weather
+
+const rainVert = /* glsl */ `
+  attribute vec4 aSeed;
+  uniform float uTime;
+  varying float vA;
+  void main() {
+    // each drop falls through a 9 m column and wraps; the second end of the streak trails above it
+    float y = mod(aSeed.y * 9.0 - uTime * (8.0 + aSeed.w * 3.0), 9.0);
+    vec3 p = vec3((aSeed.x - 0.5) * 26.0, y + position.y * 0.38, (aSeed.z - 0.5) * 26.0);
+    p.x += position.y * 0.05; // a breath of wind
+    vA = (1.0 - position.y * 0.85) * smoothstep(0.0, 0.6, y) * (0.5 + aSeed.w * 0.5);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+const rainFrag = /* glsl */ `
+  varying float vA;
+  void main() { gl_FragColor = vec4(vec3(0.62, 0.68, 0.78) * vA * 0.55, 1.0); }
+`;
+const rippleVert = /* glsl */ `
+  attribute vec3 aSeed;
+  uniform float uTime;
+  varying vec2 vUv;
+  varying float vAge;
+  void main() {
+    vUv = uv;
+    // a ripple per instance: it spreads and fades over 0.7 s, then starts again somewhere else
+    float t = uTime / 0.7 + aSeed.z * 10.0;
+    float cycle = floor(t);
+    vAge = fract(t);
+    vec2 at = (fract(vec2(sin(cycle * 12.9898 + aSeed.x * 78.2), sin(cycle * 39.346 + aSeed.y * 11.1)) * 43758.5453) - 0.5) * 16.0;
+    float size = 0.06 + vAge * 0.22;
+    vec3 p = vec3(at.x + position.x * size, 0.008, at.y + position.y * size);
+    gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  }
+`;
+const rippleFrag = /* glsl */ `
+  varying vec2 vUv;
+  varying float vAge;
+  void main() {
+    float r = length(vUv - 0.5) * 2.0;
+    float ring = smoothstep(0.08, 0.0, abs(r - 0.82)) * (1.0 - vAge);
+    gl_FragColor = vec4(vec3(0.7, 0.75, 0.82) * ring * 0.35, 1.0);
+  }
+`;
+
+/** A small seeded random generator (mulberry32), so the rain is the same every time it is built. */
+function seeded(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Rain: streaks falling round the car (motion-blurred, as a camera sees them) and rings where they land. */
+function Rain({ lite }: { lite: boolean }) {
+  const { streaks, ripples, mat, ripMat } = useMemo(() => {
+    const rnd = seeded(7);
+    const n = lite ? 1400 : 3200;
+    const pos = new Float32Array(n * 6);
+    const seed = new Float32Array(n * 8);
+    for (let i = 0; i < n; i++) {
+      pos.set([0, 0, 0, 0, 1, 0], i * 6);
+      const sd = [rnd(), rnd(), rnd(), rnd()];
+      seed.set([...sd, ...sd], i * 8);
+    }
+    const streaks = new THREE.BufferGeometry();
+    streaks.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    streaks.setAttribute("aSeed", new THREE.BufferAttribute(seed, 4));
+    const m = lite ? 90 : 220;
+    const plane = new THREE.PlaneGeometry(1, 1);
+    const ripples = new THREE.InstancedBufferGeometry();
+    ripples.setIndex(plane.index);
+    ripples.setAttribute("position", plane.attributes.position);
+    ripples.setAttribute("uv", plane.attributes.uv);
+    ripples.instanceCount = m;
+    const rs = new Float32Array(m * 3);
+    for (let i = 0; i < rs.length; i++) rs[i] = rnd();
+    ripples.setAttribute("aSeed", new THREE.InstancedBufferAttribute(rs, 3));
+    const common = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false };
+    const mat = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: rainVert, fragmentShader: rainFrag, ...common });
+    const ripMat = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 } }, vertexShader: rippleVert, fragmentShader: rippleFrag, ...common });
+    return { streaks, ripples, mat, ripMat };
+  }, [lite]);
+  useEffect(() => () => {
+    streaks.dispose();
+    ripples.dispose();
+    mat.dispose();
+    ripMat.dispose();
+  }, [streaks, ripples, mat, ripMat]);
+  useFrame(({ clock }) => {
+    mat.uniforms.uTime.value = clock.elapsedTime;
+    ripMat.uniforms.uTime.value = clock.elapsedTime;
+  });
+  return (
+    <>
+      <lineSegments geometry={streaks} material={mat} frustumCulled={false} raycast={() => null} />
+      <mesh geometry={ripples} material={ripMat} frustumCulled={false} raycast={() => null} />
+    </>
+  );
+}
+
+const shaftFrag = /* glsl */ `
+  varying vec3 vPos;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    float h = clamp(vPos.y / 6.4 + 0.5, 0.0, 1.0);
+    float rim = pow(abs(dot(normalize(vNormal), normalize(vView))), 2.0);
+    gl_FragColor = vec4(vec3(1.0, 0.97, 0.92) * rim * pow(h, 1.6) * 0.07, 1.0);
+  }
+`;
+
+/** The light from the overhead scrim, made visible by the haze: a soft column down to the car. */
+function LightShaft() {
+  const mat = useMemo(
+    () => new THREE.ShaderMaterial({ vertexShader: beamVert, fragmentShader: shaftFrag, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }),
+    [],
+  );
+  useEffect(() => () => mat.dispose(), [mat]);
+  return (
+    <mesh material={mat} position-y={3.2} scale={[4.4, 1, 1.7]} raycast={() => null} renderOrder={5}>
+      <cylinderGeometry args={[1, 1.3, 6.4, 64, 1, true]} />
+    </mesh>
+  );
+}
+
 const skyVert = /* glsl */ `
   varying vec3 vDir;
   void main() {
@@ -1037,8 +1257,9 @@ function SkyDome({ sun }: { sun: number }) {
   );
 }
 
-function Studio({ live, rig, narrow, backdrop, sun }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId; sun: number }) {
+function Studio({ live, rig, narrow, backdrop, sun, weather }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId; sun: number; weather: WeatherId }) {
   const sky = backdrop === "sky";
+  const wet = weather === "wet" || weather === "rain";
   const scene = useThree((s) => s.scene);
   const cove = useRef<THREE.MeshStandardMaterial>(null);
   const floor = useRef<THREE.MeshStandardMaterial>(null);
@@ -1118,23 +1339,23 @@ function Studio({ live, rig, narrow, backdrop, sun }: { live: Live; rig: Rig; na
       </mesh>
       <mesh geometry={glowGeo} material={glow} scale={[0.995, 1, 0.995]} raycast={() => null} visible={!sky} />
 
-      {/* dark polished concrete: blurred, slightly wavering reflections, with a satin sheen that varies across the slab */}
-      {/* under open sky the slab runs out to the horizon, where the haze swallows it */}
+      {/* dark polished concrete: blurred reflections with a satin sheen that varies across the slab; wet, it
+          turns to a near mirror. Under open sky the slab runs out to the horizon, where the haze swallows it */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow scale={sky ? 5 : 1}>
         <circleGeometry args={[FLOOR_R + 0.02, 160]} />
         <MeshReflectorMaterial
           ref={floor as never}
           resolution={narrow ? 512 : 1024}
-          blur={[260, 90]}
-          mixBlur={0.9}
-          mixStrength={7}
+          blur={wet ? [130, 44] : [260, 90]}
+          mixBlur={wet ? 0.6 : 0.9}
+          mixStrength={wet ? 9.5 : 7}
           mixContrast={1.15}
           depthScale={1.2}
           minDepthThreshold={0.3}
           maxDepthThreshold={1.4}
           roughnessMap={noise}
-          roughness={0.72}
-          metalness={0.15}
+          roughness={wet ? 0.32 : 0.72}
+          metalness={wet ? 0.3 : 0.15}
           color="#141518"
         />
       </mesh>
@@ -1165,6 +1386,15 @@ function Studio({ live, rig, narrow, backdrop, sun }: { live: Live; rig: Rig; na
           <planeGeometry args={[9.2, 3.4]} />
         </mesh>
       </group>
+
+      {weather === "rain" && <Rain lite={narrow} />}
+      {weather === "haze" && (
+        <>
+          {/* dust turning in the light, and the shaft it shows up under the overhead scrim */}
+          <Sparkles count={narrow ? 120 : 260} scale={[15, 6.5, 15]} position-y={3.3} size={2.2} speed={0.22} opacity={0.5} noise={1.2} color="#fff6e8" />
+          {!sky && backdrop !== "void" && <LightShaft />}
+        </>
+      )}
 
       {/* turntable: a flush disc set into the floor, edged in brushed steel with a thin LED line */}
       <group ref={turntable}>
@@ -1254,8 +1484,9 @@ function Reflections({ live, rig, narrow, backdrop, sun }: { live: Live; rig: Ri
   );
 }
 
-function Stage({ mood, backdrop, grid, tuning, sun, rig, lite, bloom }: {
+function Stage({ mood, backdrop, grid, tuning, sun, weather, rig, lite, bloom }: {
   mood: MoodId;
+  weather: WeatherId;
   sun: number;
   backdrop: BackdropId;
   grid: boolean;
@@ -1293,7 +1524,7 @@ function Stage({ mood, backdrop, grid, tuning, sun, rig, lite, bloom }: {
       <color attach="background" args={["#0a0a0b"]} />
       <fog ref={fog} attach="fog" args={["#0a0a0b", 14, 34]} />
       <Reflections live={live} rig={rig} narrow={lite} backdrop={backdrop} sun={sun} />
-      <Studio live={live} rig={rig} narrow={lite} backdrop={backdrop} sun={sun} />
+      <Studio live={live} rig={rig} narrow={lite} backdrop={backdrop} sun={sun} weather={weather} />
       {grid && (
         <Grid ref={gridRef} position={[0, 0.006, 0]} args={[40, 40]} infiniteGrid cellSize={0.5} sectionSize={2.5} cellThickness={0.6} sectionThickness={1.1}
           cellColor={light ? "#6d6f74" : "#4a4c52"} sectionColor={light ? "#45474c" : "#8b8e96"} fadeDistance={24} fadeStrength={1.6} />
@@ -1532,7 +1763,7 @@ function Director({ view, panel, shot, cinematic, interior, rig, onCinematicShot
   const start = useMemo(() => (reducedMotion() ? hero : intro).toArray() as [number, number, number], [hero, intro]);
   return (
     <>
-      <PerspectiveCamera makeDefault position={start} fov={baseFov} near={0.05} far={1200} />
+      <PerspectiveCamera makeDefault position={start} fov={baseFov} near={0.05} far={1200} onUpdate={(c) => c.layers.enable(FX_LAYER)} />
       <OrbitControls ref={controls as never} makeDefault enableDamping dampingFactor={0.08} minDistance={1.2} maxDistance={12}
         maxPolarAngle={Math.PI * 0.505} enablePan={false}
         onStart={() => {
@@ -1575,31 +1806,49 @@ function Snapper({ snap, onSnap }: { snap: SceneProps["snap"]; onSnap: (png: str
   return null;
 }
 
-function Post({ narrow, lite, cinematic, bloom, dof }: {
+const FRINGE = new THREE.Vector2(0.0007, 0.0005);
+
+function Post({ narrow, lite, cinematic, aperture, rig, bloom, dof }: {
   lite: boolean;
   narrow: boolean;
   cinematic: boolean;
+  /** the everyday view's depth of field: 0 is off */
+  aperture: number;
+  rig: Rig;
   bloom: RefObject<BloomEffect | null>;
   dof: RefObject<DepthOfFieldEffect | null>;
 }) {
+  // the lens holds focus on whatever the camera orbits: the car, or the part picked out of it
+  useFrame(() => {
+    if (cinematic || !aperture || !dof.current) return;
+    dof.current.target ??= new THREE.Vector3();
+    dof.current.target.copy(rig.focus);
+    dof.current.bokehScale = aperture;
+  });
+
   // ambient occlusion seats the car on the floor and darkens its panel gaps and wheel arches; a
-  // touch of film grain keeps the dark gradients from banding. The reel adds a shallow depth of
-  // field, in a fresh composer so the everyday view stays cheap.
+  // touch of film grain keeps the dark gradients from banding, and a whisper of colour fringing at
+  // the frame's edges is what a real lens adds. The reel has a shallow depth of field; the everyday
+  // view has one when the aperture is opened. Each is its own composer, so an unused effect costs nothing.
   const ao = !lite && <N8AO halfRes quality="medium" aoRadius={0.9} distanceFalloff={0.6} intensity={2.2} color="#000000" />;
+  const fringe = !lite && <ChromaticAberration offset={FRINGE} radialModulation modulationOffset={0.4} />;
   return cinematic ? (
     <EffectComposer key={`cine${lite}`} multisampling={lite ? 0 : 4}>
       {ao || <></>}
       <DepthOfField ref={dof} worldFocusRange={2.2} bokehScale={narrow ? 2.5 : 4.5} />
       <Bloom ref={bloom} mipmapBlur intensity={0.55} luminanceThreshold={1} luminanceSmoothing={0.15} radius={0.75} />
       <ToneMapping mode={ToneMappingMode.AGX} />
+      {fringe || <></>}
       <Noise premultiply blendFunction={BlendFunction.SOFT_LIGHT} opacity={0.22} />
       <Vignette offset={0.25} darkness={0.75} />
     </EffectComposer>
   ) : (
-    <EffectComposer key={`view${lite}`} multisampling={lite ? 0 : 4}>
+    <EffectComposer key={`view${lite}${aperture > 0}`} multisampling={lite ? 0 : 4}>
       {ao || <></>}
+      {aperture > 0 ? <DepthOfField ref={dof} worldFocusRange={3.2} bokehScale={aperture} /> : <></>}
       <Bloom ref={bloom} mipmapBlur intensity={0.55} luminanceThreshold={1} luminanceSmoothing={0.15} radius={0.7} />
       <ToneMapping mode={ToneMappingMode.AGX} />
+      {fringe || <></>}
       <Noise premultiply blendFunction={BlendFunction.SOFT_LIGHT} opacity={0.12} />
       <Vignette offset={0.3} darkness={0.6} />
     </EffectComposer>
@@ -1641,12 +1890,12 @@ export default function ShowroomScene(props: SceneProps) {
       gl={{ antialias: false, powerPreference: "high-performance" }}
       onPointerMissed={() => props.onHover(null)}
     >
-      <Stage mood={props.mood} backdrop={props.look.backdrop} grid={props.look.grid || props.look.drive} tuning={props.look.tuning} sun={props.look.sun} rig={rig} lite={lite} bloom={bloom} />
+      <Stage mood={props.mood} backdrop={props.look.backdrop} grid={props.look.grid || props.look.drive} tuning={props.look.tuning} sun={props.look.sun} weather={props.look.weather} rig={rig} lite={lite} bloom={bloom} />
       <Car {...props} rig={rig} />
       <Director view={props.view} panel={props.selected.length > 0} shot={props.shot} cinematic={props.cinematic} interior={props.look.interior} rig={rig}
         onCinematicShot={props.onCinematicShot} onCamera={props.onCamera} dof={dof} />
       <Snapper snap={props.snap} onSnap={props.onSnap} />
-      <Post narrow={narrow} lite={lite} cinematic={props.cinematic} bloom={bloom} dof={dof} />
+      <Post narrow={narrow} lite={lite} cinematic={props.cinematic} aperture={props.look.aperture} rig={rig} bloom={bloom} dof={dof} />
     </Canvas>
   );
 }

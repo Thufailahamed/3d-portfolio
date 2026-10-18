@@ -1,5 +1,5 @@
 import type { PaintColor } from "@/content/cars";
-import type { BackdropId, LiveryId, MoodId } from "./studio";
+import type { BackdropId, LiveryId, MoodId, WeatherId } from "./studio";
 
 /**
  * A configuration someone built, carried in the link (?look=…) so it opens the same for whoever
@@ -21,6 +21,8 @@ export type SharedLook = {
   ride?: number;
   tint?: number;
   sun?: number;
+  weather?: WeatherId;
+  aperture?: number;
 };
 
 const KEYS: [keyof SharedLook, string][] = [
@@ -38,6 +40,8 @@ const KEYS: [keyof SharedLook, string][] = [
   ["ride", "r"],
   ["tint", "t"],
   ["sun", "u"],
+  ["weather", "w"],
+  ["aperture", "f"],
 ];
 
 export function encodeLook(look: SharedLook): string {
