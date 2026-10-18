@@ -8,6 +8,8 @@ export type Engine = {
   /** blip the throttle: up to `rpm`, then fall back to idle */
   rev: (rpm?: number) => void;
   setVolume: (v: number) => void;
+  /** hold a steady cruising rpm (the drive mode), or drop back to idle */
+  cruise: (on: boolean) => void;
   stop: () => void;
 };
 
@@ -103,13 +105,18 @@ export function startEngine(cylinders: number, volume = 0.6): Engine | null {
   setRpm(IDLE, now + 0.75, 0.35);
 
   let level = volume;
+  let base = IDLE;
   return {
+    cruise(on: boolean) {
+      base = on ? 3100 : IDLE;
+      setRpm(base, ctx.currentTime, on ? 0.9 : 0.5);
+    },
     rev(rpm = 6800) {
       const t = ctx.currentTime;
       if (ctx.state === "suspended") void ctx.resume();
       setRpm(rpm, t, 0.12);
       master.gain.setTargetAtTime(level * 0.75, t, 0.08);
-      setRpm(IDLE, t + 0.45, 0.4);
+      setRpm(base, t + 0.45, 0.4);
       master.gain.setTargetAtTime(level * 0.5, t + 0.45, 0.4);
     },
     setVolume(v: number) {

@@ -26,6 +26,7 @@ export default function CarsView() {
     const url = new URL(window.location.href);
     url.searchParams.set("car", next);
     url.searchParams.delete("part");
+    url.searchParams.delete("look");
     window.history.replaceState(null, "", url);
     setSlug(next);
     setSwitched(true);

@@ -278,4 +278,19 @@ export type Look = {
   backdrop: BackdropId;
   quality: Quality;
   tuning: Tuning;
+  /** the car rolls: wheels turn, the floor streams past */
+  drive: boolean;
+  /** front wheel angle, degrees (positive to the left) */
+  steer: number;
+  /** ride height change, metres (negative is lower) */
+  ride: number;
+  /** window tint, 0 (the model's glass) to 1 (limo black) */
+  tint: number;
+  /** pins on the parts, to click */
+  pins: boolean;
+  /** time of day under open sky, 0 (sunrise glow) to 1 (high noon) */
+  sun: number;
 };
+
+/** A pin for the hotspots: a part of the content and the model groups it covers. */
+export type Pin = { id: string; name: string; members: string[] };

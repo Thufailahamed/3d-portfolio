@@ -9,7 +9,7 @@ import { BlendFunction, ToneMappingMode, type BloomEffect, type DepthOfFieldEffe
 import * as THREE from "three";
 
 import type { CarView, PaintColor } from "@/content/cars";
-import { cineShots, moodById, shots, type BackdropId, type Dims, type Look, type Mood, type MoodId, type ShotId } from "./studio";
+import { cineShots, moodById, shots, type BackdropId, type Dims, type Look, type Mood, type MoodId, type Pin, type ShotId } from "./studio";
 
 const ACCENT = new THREE.Color("#c8ff3d");
 const GHOST = 0.18;
@@ -69,6 +69,8 @@ export type SceneProps = {
   onCamera: (c: CameraInfo) => void;
   /** what the dock sets: doors, brakes, finish, livery, the cockpit view, the stage and quality */
   look: Look;
+  /** the parts to pin when the hotspots are on */
+  pins: Pin[];
   onCinematicShot: (i: number) => void;
   onHover: (id: string | null, x?: number, y?: number) => void;
   onPick: (id: string) => void;
@@ -95,6 +97,8 @@ type Rig = {
   cineLamps: boolean;
   /** the driver's eye and where it looks, in the car's frame (for the cockpit view) */
   eye: THREE.Vector3 | null;
+  /** how fast the car is rolling, m/s (the floor streams past at this speed) */
+  drive: number;
   look: THREE.Vector3 | null;
   headColor: THREE.Color;
 };
@@ -196,6 +200,10 @@ type Lamp = { s: MatState; head: boolean; lit: boolean; base: Base };
 const TAIL = new THREE.Color(1, 0.04, 0.02);
 
 type Door = { rec: PartRec; hinge: THREE.Vector3; side: number; base: THREE.Quaternion; t: number };
+type Wheel = { rec: PartRec; roll: boolean; front: boolean; radius: number; base: THREE.Quaternion };
+const TINT = new THREE.Color("#040506");
+/** the drive mode's road speed, m/s: brisk enough to read, slow enough that the spokes don't strobe */
+const DRIVE_SPEED = 4.5;
 const DOOR_SWING = THREE.MathUtils.degToRad(64);
 const DOOR_UP = THREE.MathUtils.degToRad(68);
 const DOOR_OUT = THREE.MathUtils.degToRad(22);
@@ -254,7 +262,7 @@ function toPhysical(rec: PartRec, s: MatState) {
   old.dispose();
 }
 
-function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lamps, lights, turntable, cinematic, measure, xray, look, onHover, onPick, onReady, rig }: SceneProps & { rig: Rig }) {
+function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lamps, lights, turntable, cinematic, measure, xray, look, pins, onHover, onPick, onReady, rig }: SceneProps & { rig: Rig }) {
   const { scene } = useGLTF(url, "/draco/");
   const home = useMemo(() => new THREE.Vector3(...view.target), [view]);
   const parts = useParts(scene);
@@ -278,10 +286,36 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
       rec.obj.userData.baseQ = base.clone();
       list.push({ rec, hinge, side, base, t: 0 });
     }
-    // a front door before its rear neighbour, so the rear one never opens first
     return list;
   }, [parts, look.doorStyle]);
   useEffect(() => () => doors.forEach((d) => d.rec.obj.quaternion.copy(d.base)), [doors]);
+
+  // wheels roll about their axles and the fronts steer; brakes steer with them but do not roll
+  const wheels = useMemo(() => {
+    const list: Wheel[] = [];
+    const all = new THREE.Box3();
+    for (const p of parts.values()) all.union(p.box);
+    const midX = all.getCenter(new THREE.Vector3()).x;
+    for (const rec of parts.values()) {
+      const roll = rec.id.startsWith("wheel_");
+      if (!roll && !rec.id.startsWith("brake_")) continue;
+      const base = (rec.obj.userData.baseQ as THREE.Quaternion | undefined)?.clone() ?? rec.obj.quaternion.clone();
+      rec.obj.userData.baseQ = base.clone();
+      list.push({ rec, roll, front: rec.center.x > midX, radius: Math.max(0.2, (rec.box.max.y - rec.box.min.y) / 2), base });
+    }
+    return list;
+  }, [parts]);
+  useEffect(() => () => wheels.forEach((w) => w.rec.obj.quaternion.copy(w.base)), [wheels]);
+  const pose = useRef({ steer: 0, ride: 0, tint: 0, speed: 0, roll: 0 });
+  // glass, for the tint: see-through materials that are not lamps
+  const glass = useMemo(() => {
+    const list: { s: MatState; rec: PartRec }[] = [];
+    for (const rec of parts.values()) {
+      if (rec.id === "headlights" || rec.id === "taillights") continue;
+      for (const st of rec.mats) if (st.transparent && st.opacity < 0.9 && st.opacity > 0.05) list.push({ s: st, rec });
+    }
+    return list;
+  }, [parts]);
 
   useEffect(() => onReady([...parts.keys()]), [parts, onReady]);
   useEffect(() => {
@@ -347,8 +381,16 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     return null;
   };
 
-  useFrame((_, dt) => {
+  useFrame((state, dt) => {
     const k = 1 - Math.exp(-dt * 5);
+    const ps = pose.current;
+    const driving = look.drive && !cinematic;
+    ps.steer += (THREE.MathUtils.degToRad(look.steer) - ps.steer) * k * 0.6;
+    ps.ride += (look.ride - ps.ride) * k * 0.6;
+    ps.tint += (look.tint - ps.tint) * k;
+    ps.speed += ((driving ? DRIVE_SPEED : 0) - ps.speed) * Math.min(1, dt * 0.9);
+    rig.drive = ps.speed;
+    const bodyY = ps.ride + (ps.speed > 0.1 ? Math.sin(state.clock.elapsedTime * 37) * 0.0012 * (ps.speed / DRIVE_SPEED) : 0);
     for (const p of parts.values()) {
       const picked = selected.includes(p.id);
       const out = exploded || picked ? 1 : 0;
@@ -356,6 +398,8 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
       const hover = hovered.includes(p.id) && !picked ? 1 : 0;
       p.t += (out - p.t) * k;
       p.obj.position.copy(p.home).addScaledVector(p.out, ease(p.t));
+      // the body sits on its springs: lowered or raised, and a faint shiver from the engine on the move
+      if (!p.id.startsWith("wheel_") && !p.id.startsWith("brake_")) p.obj.position.y += bodyY;
       const g0 = p.ghost, h0 = p.hover;
       p.ghost += (ghost - p.ghost) * k;
       p.hover += (hover - p.hover) * k * 1.6;
@@ -380,9 +424,30 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
       else qa.setFromAxisAngle(AY, d.side * DOOR_SWING * u);
       const o = d.rec.obj;
       hv.copy(d.hinge).addScaledVector(d.rec.out, ease(d.rec.t));
+      hv.y += bodyY;
       pv.copy(o.position).sub(hv).applyQuaternion(qa).add(hv);
       o.position.copy(pv);
       o.quaternion.copy(qa).multiply(d.base);
+    }
+
+    // wheels: roll with the speed, fronts turned by the steering
+    ps.roll += ps.speed * dt;
+    for (const w of wheels) {
+      const o = w.rec.obj;
+      qa.setFromAxisAngle(AY, w.front ? ps.steer : 0);
+      if (w.roll) qa.multiply(qb.setFromAxisAngle(AZ, -ps.roll / w.radius));
+      hv.copy(w.rec.center).addScaledVector(w.rec.out, ease(w.rec.t));
+      pv.copy(o.position).sub(hv).applyQuaternion(qa).add(hv);
+      o.position.copy(pv);
+      o.quaternion.copy(qa).multiply(w.base);
+    }
+    // window tint: darker and more opaque glass
+    for (const { s: st, rec } of glass) {
+      const base = st.mat.userData.base as Base;
+      const op = base.opacity + (0.94 - base.opacity) * ps.tint;
+      st.opacity = op;
+      st.mat.opacity = op * (1 - (1 - GHOST) * rec.ghost);
+      if (base.color) st.mat.color.copy(base.color).lerp(TINT, ps.tint);
     }
 
     // paint: ease into the picked colour
@@ -436,7 +501,7 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     // the turntable: a slow spin while nobody is busy; squared up for the camera presets
     const g = table.current;
     if (g) {
-      if ((measure || look.interior) && !cinematic) rig.square = true;
+      if ((measure || look.interior || driving) && !cinematic) rig.square = true;
       const idle = turntable && !selected.length && !cinematic && !rig.square && performance.now() - rig.lastDrag > 4000;
       rig.speed += ((idle && !reducedMotion() ? 0.12 * look.tuning.spin : 0) - rig.speed) * k * 0.4;
       if (rig.square) {
@@ -475,8 +540,79 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
         }}
       />
       <Dimensions parts={parts} on={measure && !cinematic} />
+      {look.pins && !cinematic && !look.interior && <Pins pins={pins} parts={parts} selected={selected} onPick={onPick} />}
       {headRec && createPortal(<HeadBeams rec={headRec} rig={rig} />, headRec.obj)}
       {tailRec && createPortal(<TailGlow rec={tailRec} rig={rig} />, tailRec.obj)}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------- hotspots
+
+/**
+ * A pin on each part, at the middle of it as it sits assembled (a set such as the wheels is pinned
+ * on its near-side member): a pulsing dot that names the part on hover and opens it on a click.
+ * Pins on the far side of the car fade back.
+ */
+function Pins({ pins, parts, selected, onPick }: { pins: Pin[]; parts: Map<string, PartRec>; selected: string[]; onPick: (id: string) => void }) {
+  const spots = useMemo(() => {
+    const all = new THREE.Box3();
+    for (const p of parts.values()) all.union(p.box);
+    const mid = all.getCenter(new THREE.Vector3());
+    return pins
+      .map((pin) => {
+        const recs = pin.members.map((m) => parts.get(m)).filter((r) => r !== undefined);
+        if (!recs.length) return null;
+        const at = new THREE.Vector3();
+        for (const r of recs) at.add(r.center);
+        at.divideScalar(recs.length);
+        // a set (four wheels) sits between its members: pin the nearest one instead
+        if (recs.length > 1) at.copy(recs.reduce((a, r) => (r.center.z > a.center.z || (r.center.z === a.center.z && r.center.x > a.center.x) ? r : a)).center);
+        return { pin, recs, at, out: at.clone().sub(mid).normalize() };
+      })
+      .filter((x) => x !== null);
+  }, [pins, parts]);
+  const els = useRef<(HTMLElement | null)[]>([]);
+  const groupRef = useRef<THREE.Group>(null);
+  const world = useMemo(() => new THREE.Vector3(), []);
+  const normal = useMemo(() => new THREE.Vector3(), []);
+  const toCam = useMemo(() => new THREE.Vector3(), []);
+
+  useFrame(({ camera }) => {
+    const g = groupRef.current;
+    if (!g) return;
+    spots.forEach((sp, i) => {
+      const el = els.current[i];
+      if (!el) return;
+      world.copy(sp.at).applyMatrix4(g.matrixWorld);
+      normal.copy(sp.out).transformDirection(g.matrixWorld);
+      toCam.copy(camera.position).sub(world).normalize();
+      el.style.opacity = normal.dot(toCam) > -0.15 ? "1" : "0.28";
+    });
+  });
+
+  return (
+    <group ref={groupRef}>
+      {spots.map((sp, i) => {
+        const on = sp.recs.some((r) => selected.includes(r.id));
+        return (
+          <Html key={sp.pin.id} position={sp.at} center zIndexRange={[25, 0]}>
+            <button
+              ref={(el) => void (els.current[i] = el)}
+              type="button"
+              aria-label={sp.pin.name}
+              onClick={() => onPick(sp.pin.members[0])}
+              className="group relative grid h-6 w-6 place-items-center transition-opacity duration-300"
+            >
+              <span className={`absolute inset-0 animate-ping rounded-full ${on ? "bg-accent/40" : "bg-white/25"}`} style={{ animationDuration: "2.4s" }} />
+              <span className={`relative h-2.5 w-2.5 rounded-full border border-black/40 ${on ? "bg-accent" : "bg-white"} shadow-[0_0_10px_rgba(255,255,255,0.6)]`} />
+              <span className="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-full border border-fg/15 bg-[#0c0c0e]/85 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-fg opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
+                {sp.pin.name}
+              </span>
+            </button>
+          </Html>
+        );
+      })}
     </group>
   );
 }
@@ -756,7 +892,7 @@ const liveOf = (m: Mood): Live => ({
   bloom: m.bloom,
 });
 /** The backdrop repaints the set under the mood's lights: a white cyc, a black void, or open sky. */
-function withBackdrop(l: Live, b: BackdropId): Live {
+function withBackdrop(l: Live, b: BackdropId, sun = 0.6): Live {
   if (b === "white") {
     l.bg.set("#c9cacd");
     l.cove.set("#f0f0f2");
@@ -771,7 +907,8 @@ function withBackdrop(l: Live, b: BackdropId): Live {
     l.ceilingLevel = 0;
     l.floor.set("#0c0c0e");
   } else if (b === "sky") {
-    l.bg.set("#b3c9e6");
+    // the haze the floor fades into: blue by day, amber at sunrise
+    l.bg.set("#b3c9e6").lerp(new THREE.Color("#e8a070"), Math.max(0, 1 - sun * 2.5));
     l.horizon.set("#000000");
     l.stripLevel = 0;
     l.ceilingLevel = 0;
@@ -850,29 +987,34 @@ const skyVert = /* glsl */ `
     gl_Position = p.xyww;
   }
 `;
+const tmpSun = new THREE.Vector3();
 const skyFrag = /* glsl */ `
   uniform vec3 uSun;
+  uniform float uDusk;
   varying vec3 vDir;
   void main() {
     vec3 d = normalize(vDir);
     float up = clamp(d.y, 0.0, 1.0);
     // haze at the horizon into a deep blue overhead, a warm glow round a low sun
-    vec3 zenith = vec3(0.05, 0.17, 0.52);
-    vec3 horizon = vec3(0.70, 0.79, 0.90);
+    vec3 zenith = mix(vec3(0.05, 0.17, 0.52), vec3(0.10, 0.12, 0.30), uDusk);
+    vec3 horizon = mix(vec3(0.70, 0.79, 0.90), vec3(1.0, 0.62, 0.38), uDusk);
     vec3 col = mix(horizon, zenith, pow(up, 0.55));
     float s = max(dot(d, normalize(uSun)), 0.0);
-    col += vec3(1.0, 0.78, 0.52) * (pow(s, 8.0) * 0.35 + pow(s, 900.0) * 6.0);
+    col += mix(vec3(1.0, 0.78, 0.52), vec3(1.0, 0.45, 0.2), uDusk) * (pow(s, 8.0) * (0.35 + uDusk * 0.6) + pow(s, 900.0) * 6.0);
     // below the horizon: the haze carries on, a touch darker, under the floor's edge
     col = mix(col, horizon * 0.85, smoothstep(0.0, -0.08, d.y));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-/** A simple daylight sky: horizon haze, blue overhead and a low sun behind the car. */
-function SkyDome() {
+/**
+ * A simple daylight sky: horizon haze, blue overhead and the sun behind the car. `sun` runs from a
+ * low, warm sun just over the horizon (0) to high noon (1).
+ */
+function SkyDome({ sun }: { sun: number }) {
   const mat = useMemo(
     () => new THREE.ShaderMaterial({
-      uniforms: { uSun: { value: new THREE.Vector3(-0.55, 0.18, -0.8) } },
+      uniforms: { uSun: { value: new THREE.Vector3(-0.55, 0.18, -0.8) }, uDusk: { value: 0 } },
       vertexShader: skyVert,
       fragmentShader: skyFrag,
       side: THREE.BackSide,
@@ -882,6 +1024,12 @@ function SkyDome() {
     [],
   );
   useEffect(() => () => mat.dispose(), [mat]);
+  useFrame((_, dt) => {
+    const el = THREE.MathUtils.degToRad(3 + sun * 62);
+    const goal = tmpSun.set(-0.57 * Math.cos(el), Math.sin(el), -0.82 * Math.cos(el));
+    mat.uniforms.uSun.value.lerp(goal, Math.min(1, dt * 3));
+    mat.uniforms.uDusk.value += (Math.max(0, 1 - sun * 2.5) - mat.uniforms.uDusk.value) * Math.min(1, dt * 3);
+  });
   return (
     <mesh material={mat} scale={500} renderOrder={-10} raycast={() => null}>
       <sphereGeometry args={[1, 48, 24]} />
@@ -889,7 +1037,7 @@ function SkyDome() {
   );
 }
 
-function Studio({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId }) {
+function Studio({ live, rig, narrow, backdrop, sun }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId; sun: number }) {
   const sky = backdrop === "sky";
   const scene = useThree((s) => s.scene);
   const cove = useRef<THREE.MeshStandardMaterial>(null);
@@ -897,6 +1045,7 @@ function Studio({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow:
   const key = useRef<THREE.SpotLight>(null);
   const rim = useRef<THREE.SpotLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
+  const turntable = useRef<THREE.Group>(null);
 
   // infinity cove: floor curving up into the wall, painted lighter low down where the lamps reach
   // and falling away into shadow toward the grid, the way a real cyclorama reads on camera
@@ -935,7 +1084,7 @@ function Studio({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow:
   const seam = useMemo(() => new THREE.MeshBasicMaterial({ color: new THREE.Color(0.012, 0.012, 0.014) }), []);
   useEffect(() => () => { coveGeo.dispose(); glowGeo.dispose(); noise.dispose(); }, [coveGeo, glowGeo, noise]);
 
-  useFrame((state) => {
+  useFrame((state, dt) => {
     const now = state.clock.elapsedTime;
     if (scene.background instanceof THREE.Color) scene.background.copy(live.bg);
     if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(live.bg);
@@ -956,11 +1105,14 @@ function Studio({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow:
       rim.current.intensity = live.rimI * power(rig, now, 2.0, 0.6);
     }
     if (hemi.current) hemi.current.intensity = live.hemi * (0.25 + 0.75 * power(rig, now, 1.6, 0.8));
+    // on the move the slab streams past under the car (one tile of the sheen is 2R / 5 across)
+    noise.offset.x += (rig.drive * dt) / ((2 * FLOOR_R) / 5);
+    if (turntable.current) turntable.current.visible = rig.drive < 0.2;
   });
 
   return (
     <group>
-      {sky && <SkyDome />}
+      {sky && <SkyDome sun={sun} />}
       <mesh geometry={coveGeo} receiveShadow visible={!sky}>
         <meshStandardMaterial ref={cove} color="#34363b" vertexColors roughness={0.92} metalness={0} side={THREE.BackSide} />
       </mesh>
@@ -1015,16 +1167,18 @@ function Studio({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow:
       </group>
 
       {/* turntable: a flush disc set into the floor, edged in brushed steel with a thin LED line */}
-      <mesh rotation-x={-Math.PI / 2} position-y={0.003} material={seam}>
-        <ringGeometry args={[TABLE_R - 0.025, TABLE_R + 0.012, 200]} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position-y={0.0035} receiveShadow>
-        <ringGeometry args={[TABLE_R + 0.012, TABLE_R + 0.07, 200]} />
-        <meshStandardMaterial color="#9a9ca2" metalness={1} roughness={0.32} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} position-y={0.004} material={ring}>
-        <ringGeometry args={[TABLE_R - 0.018, TABLE_R - 0.006, 200]} />
-      </mesh>
+      <group ref={turntable}>
+        <mesh rotation-x={-Math.PI / 2} position-y={0.003} material={seam}>
+          <ringGeometry args={[TABLE_R - 0.025, TABLE_R + 0.012, 200]} />
+        </mesh>
+        <mesh rotation-x={-Math.PI / 2} position-y={0.0035} receiveShadow>
+          <ringGeometry args={[TABLE_R + 0.012, TABLE_R + 0.07, 200]} />
+          <meshStandardMaterial color="#9a9ca2" metalness={1} roughness={0.32} />
+        </mesh>
+        <mesh rotation-x={-Math.PI / 2} position-y={0.004} material={ring}>
+          <ringGeometry args={[TABLE_R - 0.018, TABLE_R - 0.006, 200]} />
+        </mesh>
+      </group>
 
       {/* key light: a pool on the floor round the car that falls off into the cove */}
       <spotLight ref={key} position={[0, 9, 1.5]} angle={0.55} penumbra={1} intensity={0} decay={2} />
@@ -1047,7 +1201,7 @@ function Studio({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow:
  * clean shapes, as in a real studio: the overhead scrim for the roof line, a long low strip either
  * side for the horizon line down the doors, and a grey floor for the sills to pick up.
  */
-function Reflections({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId }) {
+function Reflections({ live, rig, narrow, backdrop, sun }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId; sun: number }) {
   const ceiling = useRef<THREE.Mesh>(null);
   const strips = useRef<(THREE.Mesh | null)[]>([]);
   const sides = useRef<(THREE.Mesh | null)[]>([]);
@@ -1077,7 +1231,7 @@ function Reflections({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; na
   return (
     <Environment resolution={narrow ? 256 : 512} frames={Infinity}>
       <color ref={bg} attach="background" args={["#08080a"]} />
-      {backdrop === "sky" && <SkyDome />}
+      {backdrop === "sky" && <SkyDome sun={sun} />}
       <Lightformer ref={ceiling} form="rect" position={[0, 6.4, 0]} rotation-x={Math.PI / 2} scale={[9.2, 3.4, 1]} />
       {Array.from({ length: STRIPS }, (_, i) => {
         const a = stripAngle(i);
@@ -1100,8 +1254,9 @@ function Reflections({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; na
   );
 }
 
-function Stage({ mood, backdrop, grid, tuning, rig, lite, bloom }: {
+function Stage({ mood, backdrop, grid, tuning, sun, rig, lite, bloom }: {
   mood: MoodId;
+  sun: number;
   backdrop: BackdropId;
   grid: boolean;
   tuning: Look["tuning"];
@@ -1110,10 +1265,15 @@ function Stage({ mood, backdrop, grid, tuning, rig, lite, bloom }: {
   bloom: RefObject<BloomEffect | null>;
 }) {
   const scene = useThree((st) => st.scene);
-  const goal = useMemo(() => withBackdrop(liveOf(moodById[mood]), backdrop), [mood, backdrop]);
+  const goal = useMemo(() => withBackdrop(liveOf(moodById[mood]), backdrop, sun), [mood, backdrop, sun]);
   const [live] = useState(() => withBackdrop(liveOf(moodById[mood]), backdrop));
   const fog = useRef<THREE.Fog>(null);
+  const gridRef = useRef<THREE.Mesh>(null);
+  const travelled = useRef(0);
   useFrame((state, dt) => {
+    // the grid streams past while the car drives (it repeats every 2.5 m section)
+    travelled.current = (travelled.current + rig.drive * dt) % 2.5;
+    if (gridRef.current) gridRef.current.position.x = -travelled.current;
     stepLive(live, goal, 1 - Math.exp(-dt * 2.6));
     if (bloom.current) bloom.current.intensity = live.bloom * tuning.bloom;
     scene.environmentIntensity += (tuning.reflections - scene.environmentIntensity) * Math.min(1, dt * 6);
@@ -1132,10 +1292,10 @@ function Stage({ mood, backdrop, grid, tuning, rig, lite, bloom }: {
       {/* colours come from the eased mood each frame */}
       <color attach="background" args={["#0a0a0b"]} />
       <fog ref={fog} attach="fog" args={["#0a0a0b", 14, 34]} />
-      <Reflections live={live} rig={rig} narrow={lite} backdrop={backdrop} />
-      <Studio live={live} rig={rig} narrow={lite} backdrop={backdrop} />
+      <Reflections live={live} rig={rig} narrow={lite} backdrop={backdrop} sun={sun} />
+      <Studio live={live} rig={rig} narrow={lite} backdrop={backdrop} sun={sun} />
       {grid && (
-        <Grid position={[0, 0.006, 0]} args={[40, 40]} infiniteGrid cellSize={0.5} sectionSize={2.5} cellThickness={0.6} sectionThickness={1.1}
+        <Grid ref={gridRef} position={[0, 0.006, 0]} args={[40, 40]} infiniteGrid cellSize={0.5} sectionSize={2.5} cellThickness={0.6} sectionThickness={1.1}
           cellColor={light ? "#6d6f74" : "#4a4c52"} sectionColor={light ? "#45474c" : "#8b8e96"} fadeDistance={24} fadeStrength={1.6} />
       )}
     </>
@@ -1463,6 +1623,7 @@ export default function ShowroomScene(props: SceneProps) {
       lamps: 0,
       cineLamps: false,
       eye: null,
+      drive: 0,
       look: null,
       headColor: new THREE.Color(props.look.tuning.headColor),
     }),
@@ -1480,7 +1641,7 @@ export default function ShowroomScene(props: SceneProps) {
       gl={{ antialias: false, powerPreference: "high-performance" }}
       onPointerMissed={() => props.onHover(null)}
     >
-      <Stage mood={props.mood} backdrop={props.look.backdrop} grid={props.look.grid} tuning={props.look.tuning} rig={rig} lite={lite} bloom={bloom} />
+      <Stage mood={props.mood} backdrop={props.look.backdrop} grid={props.look.grid || props.look.drive} tuning={props.look.tuning} sun={props.look.sun} rig={rig} lite={lite} bloom={bloom} />
       <Car {...props} rig={rig} />
       <Director view={props.view} panel={props.selected.length > 0} shot={props.shot} cinematic={props.cinematic} interior={props.look.interior} rig={rig}
         onCinematicShot={props.onCinematicShot} onCamera={props.onCamera} dof={dof} />

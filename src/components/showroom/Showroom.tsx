@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { groups, type Car, type CarPart, type PaintColor } from "@/content/cars";
 import Dock, { Chip, Chips, ColorField, icons, lacquer, Slider, Swatch, Swatches, type DockItem } from "./Dock";
 import { startEngine, type Engine } from "./engineSound";
+import { decodeLook, encodeLook } from "./shareLook";
 import type { CameraInfo } from "./ShowroomScene";
 import {
   backdrops,
@@ -22,6 +23,7 @@ import {
   type LiveryId,
   type Look,
   type MoodId,
+  type Pin,
   type Quality,
   type ShotId,
   type Tuning,
@@ -56,7 +58,11 @@ export default function Showroom({
     for (const p of car.parts) for (const id of p.members ?? [p.id]) m[id] = p.id;
     return m;
   }, [car]);
-  const fromUrl = useSearchParams().get("part");
+  const params = useSearchParams();
+  const fromUrl = params.get("part");
+  // a shared link's configuration, read once when the showroom opens
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const shared = useMemo(() => decodeLook(params.get("look")), []);
   const initialPart = given === undefined ? fromUrl : given;
   // old links name a single wheel or door (?part=wheel_fl); they open its whole set
   const [selected, setSelected] = useState<string | null>(initialPart ? (ownerOf[initialPart] ?? null) : null);
@@ -67,9 +73,9 @@ export default function Showroom({
   const [touched, setTouched] = useState(false);
 
   // the studio: lighting mood, paint, lamps, turntable, camera presets and the cinematic reel
-  const [mood, setMood] = useState<MoodId>("studio");
-  const [paintIdx, setPaintIdx] = useState(0);
-  const [lights, setLights] = useState(false);
+  const [mood, setMood] = useState<MoodId>(shared.mood && moodById[shared.mood] ? shared.mood : "studio");
+  const [paintIdx, setPaintIdx] = useState(shared.paintIdx !== undefined && car.paint.colors[shared.paintIdx] ? shared.paintIdx : 0);
+  const [lights, setLights] = useState(!!shared.lights);
   const [turntable, setTurntable] = useState(true);
   const [shot, setShot] = useState<{ id: ShotId; n: number } | null>(null);
   const [activeShot, setActiveShot] = useState<ShotId | null>(null);
@@ -86,14 +92,14 @@ export default function Showroom({
   const [keysOpen, setKeysOpen] = useState(false);
   // the dock: doors, brakes, finish, livery, the cockpit, the stage, quality, sound and fine tuning
   const [panel, setPanel] = useState<string | null>(null);
-  const [doors, setDoors] = useState(false);
-  const [brake, setBrake] = useState("");
-  const [iridescent, setIridescent] = useState(false);
-  const [livery, setLivery] = useState<LiveryId>("none");
-  const [liveryColor, setLiveryColor] = useState(liveryColors[0].hex);
+  const [doors, setDoors] = useState(!!shared.doors);
+  const [brake, setBrake] = useState(shared.brake ?? "");
+  const [iridescent, setIridescent] = useState(!!shared.iridescent);
+  const [livery, setLivery] = useState<LiveryId>(liveries.some((l) => l.id === shared.livery) ? shared.livery! : "none");
+  const [liveryColor, setLiveryColor] = useState(shared.liveryColor ?? liveryColors[0].hex);
   const [interior, setInterior] = useState(false);
   const [grid, setGrid] = useState(false);
-  const [backdrop, setBackdrop] = useState<BackdropId>("studio");
+  const [backdrop, setBackdrop] = useState<BackdropId>(backdrops.some((b) => b.id === shared.backdrop) ? shared.backdrop! : "studio");
   const [quality, setQuality] = useState<Quality>(() => {
     try {
       return localStorage.getItem("showroom-quality") === "performance" ? "performance" : "quality";
@@ -102,12 +108,24 @@ export default function Showroom({
     }
   });
   const [tuning, setTuning] = useState<Tuning>(defaultTuning);
-  const [custom, setCustom] = useState<PaintColor | null>(null);
+  const [custom, setCustom] = useState<PaintColor | null>(shared.custom?.hex ? shared.custom : null);
   const [sound, setSound] = useState(false);
   const [volume, setVolume] = useState(0.6);
   const engine = useRef<Engine | null>(null);
+  // the pose: drive, steering, stance and glass; the hotspots; the sky's hour; full screen
+  const [drive, setDrive] = useState(false);
+  const [steer, setSteer] = useState(shared.steer ?? 0);
+  const [ride, setRide] = useState(shared.ride ?? 0);
+  const [tint, setTint] = useState(shared.tint ?? 0);
+  const [pinsOn, setPinsOn] = useState(false);
+  const [sun, setSun] = useState(shared.sun ?? 0.6);
+  const [fullscreen, setFullscreen] = useState(false);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const toast = useCallback((msg: string) => {
+    setSaved(msg);
+    timers.current.push(window.setTimeout(() => setSaved(null), 2600));
+  }, []);
 
   const view = useCallback((id: ShotId) => {
     setShot((s) => ({ id, n: (s?.n ?? 0) + 1 }));
@@ -181,10 +199,9 @@ export default function Showroom({
       a.href = png;
       a.download = name;
       a.click();
-      setSaved(name);
-      timers.current.push(window.setTimeout(() => setSaved(null), 2600));
+      toast(`Saved ${name}`);
     },
-    [car.slug, activeShot, interior, snap.wallpaper],
+    [car.slug, activeShot, interior, snap.wallpaper, toast],
   );
 
   // the engine: turned over when sound goes on, switched off with it (and when the car changes)
@@ -200,6 +217,47 @@ export default function Showroom({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sound, car.cylinders]);
   useEffect(() => engine.current?.setVolume(volume), [volume]);
+  useEffect(() => engine.current?.cruise(drive), [drive, sound]);
+
+  useEffect(() => {
+    const on = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen?.().catch(() => {});
+  }, []);
+
+  const share = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("part");
+    url.searchParams.set(
+      "look",
+      encodeLook({
+        paintIdx: custom ? undefined : paintIdx || undefined,
+        custom: custom ?? undefined,
+        mood: mood !== "studio" ? mood : undefined,
+        backdrop: backdrop !== "studio" ? backdrop : undefined,
+        livery: livery !== "none" ? livery : undefined,
+        liveryColor: livery !== "none" ? liveryColor : undefined,
+        brake: brake || undefined,
+        iridescent: iridescent || undefined,
+        lights: lights || undefined,
+        doors: doors || undefined,
+        steer: steer || undefined,
+        ride: ride || undefined,
+        tint: tint || undefined,
+        sun: backdrop === "sky" ? sun : undefined,
+      }),
+    );
+    const link = url.toString();
+    navigator.clipboard?.writeText(link).then(
+      () => toast("Link copied"),
+      () => toast("Copy the link from the address bar"),
+    );
+    window.history.replaceState(null, "", url);
+  }, [custom, paintIdx, mood, backdrop, livery, liveryColor, brake, iridescent, lights, doors, steer, ride, tint, sun, toast]);
   const rev = useCallback(() => {
     if (!engine.current) setSound(true);
     else engine.current.rev();
@@ -224,9 +282,16 @@ export default function Showroom({
       backdrop,
       quality,
       tuning,
+      drive: drive && !interior,
+      steer,
+      ride,
+      tint,
+      pins: pinsOn,
+      sun,
     }),
-    [doors, car.doors, car.calipers, brake, iridescent, livery, liveryColor, interior, cinematic, grid, backdrop, quality, tuning],
+    [doors, car.doors, car.calipers, brake, iridescent, livery, liveryColor, interior, cinematic, grid, backdrop, quality, tuning, drive, steer, ride, tint, pinsOn, sun],
   );
+  const pins = useMemo<Pin[]>(() => car.parts.map((p) => ({ id: p.id, name: p.name, members: p.members ?? [p.id] })), [car]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -254,6 +319,9 @@ export default function Showroom({
         setSelected(null);
       } else if (k === "g") setGrid((v) => !v);
       else if (k === "r") rev();
+      else if (k === "v") setDrive((v) => !v);
+      else if (k === "h") setPinsOn((v) => !v);
+      else if (k === "f") toggleFullscreen();
       else if (k === "s") setTurntable((v) => !v);
       else if (k === "?" || (k === "/" && e.shiftKey)) setKeysOpen((v) => !v);
       else if (/^[1-6]$/.test(k)) view(shots[+k - 1].id);
@@ -264,7 +332,7 @@ export default function Showroom({
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [selected, step, cinematic, film, photo, view, onCycle, keysOpen, panel, interior, rev]);
+  }, [selected, step, cinematic, film, photo, view, onCycle, keysOpen, panel, interior, rev, toggleFullscreen]);
 
   const onHover = useCallback((id: string | null, x = 0, y = 0) => setHover(id && ownerOf[id] ? { id: ownerOf[id], x, y } : null), [ownerOf]);
   // the scene works with the model's groups: a set selects (and lights up) every member
@@ -348,8 +416,29 @@ export default function Showroom({
           </div>
         ),
       },
+      {
+        id: "pose",
+        label: "Pose",
+        icon: icons.pose,
+        active: !!steer || !!ride || !!tint,
+        panel: (
+          <div className="w-[19rem]">
+            <Slider label="Steering" value={steer} min={-32} max={32} step={1} onChange={setSteer} format={(v) => `${v > 0 ? "L " : v < 0 ? "R " : ""}${Math.abs(v)}°`} />
+            <Slider label="Ride height" value={ride * 1000} min={-50} max={50} step={1} onChange={(v) => setRide(v / 1000)} format={(v) => `${v > 0 ? "+" : ""}${v} mm`} />
+            <Slider label="Window tint" value={tint} min={0} max={1} step={0.05} onChange={setTint} format={(v) => `${Math.round(v * 100)}%`} />
+            <div className="mt-2 flex justify-end px-1">
+              <Chip on={false} onClick={() => {
+                setSteer(0);
+                setRide(0);
+                setTint(0);
+              }}>Reset</Chip>
+            </div>
+          </div>
+        ),
+      },
       { id: "doors", label: doors ? "Close doors" : "Open doors", hint: "D", icon: icons.doors, active: doors, onClick: () => setDoors((v) => !v) },
       { id: "lights", label: "Lights", hint: "L", icon: icons.lights, active: lights, onClick: () => setLights((v) => !v) },
+      { id: "pins", label: "Hotspots", hint: "H", icon: icons.pins, active: pinsOn, onClick: () => setPinsOn((v) => !v) },
       { id: "xray", label: "X-ray", hint: "X", icon: icons.xray, active: xray, onClick: () => setXray((v) => !v) },
       { id: "measure", label: "Measure", hint: "M", icon: icons.measure, active: measure, onClick: () => setMeasure((v) => !v) },
       { id: "keys", label: "Keyboard shortcuts", hint: "?", icon: icons.keys, onClick: () => setKeysOpen((v) => !v) },
@@ -363,6 +452,19 @@ export default function Showroom({
         active: interior,
         onClick: () => {
           setInterior((v) => !v);
+          setSelected(null);
+          setExploded(false);
+        },
+      },
+      {
+        id: "drive",
+        label: drive ? "Stop" : "Drive",
+        hint: "V",
+        icon: icons.drive,
+        active: drive,
+        onClick: () => {
+          setDrive((v) => !v);
+          setInterior(false);
           setSelected(null);
           setExploded(false);
         },
@@ -409,11 +511,17 @@ export default function Showroom({
         icon: icons.backdrop,
         active: backdrop !== "studio",
         panel: (
-          <Swatches>
-            {backdrops.map((b) => (
-              <Swatch key={b.id} label={b.name} on={b.id === backdrop} background={b.swatch} onClick={() => setBackdrop(b.id)} />
-            ))}
-          </Swatches>
+          <div className="grid gap-2">
+            <Swatches>
+              {backdrops.map((b) => (
+                <Swatch key={b.id} label={b.name} on={b.id === backdrop} background={b.swatch} onClick={() => setBackdrop(b.id)} />
+              ))}
+            </Swatches>
+            {backdrop === "sky" && (
+              <Slider label="Time of day" value={sun} min={0} max={1} step={0.01} onChange={setSun}
+                format={(v) => (v < 0.25 ? "Dawn" : v < 0.55 ? "Morning" : "Noon")} />
+            )}
+          </div>
         ),
       },
       { id: "grid", label: "Floor grid", hint: "G", icon: icons.grid, active: grid, onClick: () => setGrid((v) => !v) },
@@ -480,6 +588,7 @@ export default function Showroom({
           </div>
         ),
       },
+      { id: "share", label: "Copy share link", icon: icons.share, onClick: share },
       {
         id: "capture",
         label: "Capture",
@@ -529,6 +638,7 @@ export default function Showroom({
           onSnap={onSnap}
           onCamera={setCamera}
           look={look}
+          pins={pins}
           onCinematicShot={onCinematicShot}
           onHover={onHover}
           onPick={pick}
@@ -655,7 +765,7 @@ export default function Showroom({
         }`}
       >
         <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-accent" />
-        {saved ? `Saved ${saved}` : "\u00a0"}
+        {saved ?? "\u00a0"}
       </div>
 
       {keysOpen && <Keys onClose={() => setKeysOpen(false)} cycle={!!onCycle} />}
@@ -696,6 +806,16 @@ export default function Showroom({
           >
             {icons.film}
             Film
+          </button>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-pressed={fullscreen}
+            aria-label={fullscreen ? "Leave full screen" : "Full screen"}
+            title={`${fullscreen ? "Leave full screen" : "Full screen"} (F)`}
+            className="hud-btn hidden !px-3 border-fg/15 bg-[#121214]/70 backdrop-blur-md sm:grid sm:place-items-center"
+          >
+            {fullscreen ? icons.unfull : icons.full}
           </button>
         </div>
 
@@ -884,6 +1004,9 @@ const KEYS: [string, string][] = [
   ["P", "Take a photo"],
   ["L", "Lights"],
   ["R", "Rev the engine"],
+  ["V", "Drive"],
+  ["H", "Hotspots"],
+  ["F", "Full screen"],
   ["S", "Spin the turntable"],
   ["C", "Play the film"],
   ["← →", "Previous or next part (or car)"],
