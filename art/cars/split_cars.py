@@ -36,7 +36,7 @@ CARS = {
         dash_x=0.62,
         steering=((0.42, 0.43, 1.18), 0.26),
         engine=None,
-        explode={"engine": (0.3, 0, 0.8), "hood": (0.8, 0, 1.5)},
+        explode={"engine": (0, 0, 0.32), "radiator": (1.1, 0, 0.45)},
         lamp_depth=0.42,
         brakes=True,
     ),
@@ -94,7 +94,7 @@ CARS = {
         brake_mats={"DISK", "CALIPERGLOSS", "CALIPERGLOSSPAINT", "Mechanics"},
         engine=None,         # the download has none (only a black liner closing the bay): see powertrains.py
         force=[("hood", "BLACKBODY", (1.0, 1.6, 0.0, 0.1, 0.4, 0.8), 1.5)],   # that liner lifts off with the clamshell
-        explode={"engine": (0.35, 0, 1.15), "hood": (1.0, 0, 1.9)},
+        explode={"engine": (0, 0, 0.32)},
         lamp_depth=0.55,
         brakes=True,
     ),
@@ -109,7 +109,7 @@ CARS = {
         steering=((0.21, -0.40, 0.79), 0.2),     # right-hand drive
         split_tyres=True,
         engine=None,         # built in powertrains.py; the bay's inner wings and crash structure stay with the body
-        explode={"engine": (0.35, 0, 1.15), "hood": (1.0, 0, 1.9)},
+        explode={"engine": (0, 0, 0.32)},
         lamp_depth=0.5,
         brakes=True,
     ),
