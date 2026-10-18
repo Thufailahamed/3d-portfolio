@@ -29,7 +29,8 @@ export default function Header() {
   const menu = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const onJourney = JOURNEY.has(pathname) && !lite;
-  const onFlow = pathname === "/flow";
+  // the pavilion and the brick world draw their own chrome
+  const onFlow = pathname === "/flow" || pathname.startsWith("/lego") || pathname.startsWith("/hotwheels") || pathname.startsWith("/rover");
   // on the hero the giant name *is* the logo
   const hideLogo = onJourney && chapter === "hero";
 
@@ -169,6 +170,36 @@ export default function Header() {
                   <span className="label">{String(NAV.length + 1).padStart(2, "0")}</span>
                   <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
                     Cars
+                  </span>
+                </Link>
+              </li>
+            )}
+            {!lite && (
+              <li className="overflow-hidden">
+                <Link href="/lego" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
+                  <span className="label">{String(NAV.length + 2).padStart(2, "0")}</span>
+                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
+                    Bricks
+                  </span>
+                </Link>
+              </li>
+            )}
+            {!lite && (
+              <li className="overflow-hidden">
+                <Link href="/hotwheels" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
+                  <span className="label">{String(NAV.length + 3).padStart(2, "0")}</span>
+                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
+                    Ramps
+                  </span>
+                </Link>
+              </li>
+            )}
+            {!lite && (
+              <li className="overflow-hidden">
+                <Link href="/rover" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
+                  <span className="label">{String(NAV.length + 4).padStart(2, "0")}</span>
+                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
+                    Rover
                   </span>
                 </Link>
               </li>

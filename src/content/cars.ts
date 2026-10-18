@@ -17,6 +17,9 @@ export type CarView = {
   cameraNarrow: [number, number, number];
 };
 
+/** A colour for the paint picker; the first one in a car's list is the model's own paint. */
+export type PaintColor = { name: string; hex: string; metalness?: number; roughness?: number };
+
 export type Car = {
   slug: string;
   name: string;
@@ -28,6 +31,10 @@ export type Car = {
   facts: [string, string][];
   parts: CarPart[];
   view: CarView;
+  /** the body paint: its material name in the GLB and the colours the picker offers */
+  paint: { material: string; colors: PaintColor[] };
+  /** lamp materials (by name) inside Part_headlights / Part_taillights, lit by the lights switch */
+  lamps: { head: string[]; tail: string[] };
   credit?: { title: string; author: string; url: string; license?: string; licenseUrl?: string };
 };
 
@@ -283,6 +290,18 @@ export const cars: Car[] = [
     facts: lykanMeta.facts,
     parts: lykanParts,
     view: { target: [0, 0.5, 0], camera: [5.4, 2.0, 5.6], cameraNarrow: [8.2, 3.4, 8.6] },
+    paint: {
+      material: "Paint",
+      colors: [
+        { name: "Rosso Lykan", hex: "#7a0a12" },
+        { name: "Obsidian", hex: "#0c0d10", metalness: 0.5, roughness: 0.22 },
+        { name: "Pearl White", hex: "#e9e7e2", metalness: 0.3, roughness: 0.25 },
+        { name: "Acid Lime", hex: "#a9d81c", metalness: 0.55, roughness: 0.26 },
+        { name: "Midnight Blue", hex: "#13254f", metalness: 0.7, roughness: 0.28 },
+        { name: "Liquid Silver", hex: "#a4a8ad", metalness: 0.95, roughness: 0.18 },
+      ],
+    },
+    lamps: { head: ["LED", "LEDAmber"], tail: ["TailLED"] },
   },
   {
     slug: "jaguar-xj13",
@@ -300,6 +319,17 @@ export const cars: Car[] = [
     ],
     parts: jaguarParts,
     view: { target: [0, 0.42, 0], camera: [5.0, 1.8, 5.2], cameraNarrow: [7.8, 3.0, 8.2] },
+    paint: {
+      material: "Mesh15Mtl",
+      colors: [
+        { name: "Racing Green", hex: "#3a6e62" },
+        { name: "Opalescent Silver", hex: "#b4b8bc", metalness: 0.9, roughness: 0.22 },
+        { name: "Old English White", hex: "#e6dfcc", metalness: 0.2, roughness: 0.3 },
+        { name: "Carmen Red", hex: "#8c1010", metalness: 0.45, roughness: 0.3 },
+        { name: "Dark Blue", hex: "#1a2640", metalness: 0.6, roughness: 0.32 },
+      ],
+    },
+    lamps: { head: ["Mesh13Mtl", "Mesh61Mtl"], tail: ["Mesh71Mtl"] },
     credit: { title: "1959 Jaguar XJ13", author: "vecarz.com", url: "https://www.vecarz.com" },
   },
   {
@@ -318,6 +348,17 @@ export const cars: Car[] = [
     ],
     parts: toyotaParts,
     view: { target: [0, 0.85, 0], camera: [6.0, 2.4, 6.2], cameraNarrow: [9.0, 3.8, 9.4] },
+    paint: {
+      material: "Metallic",
+      colors: [
+        { name: "Precious White Pearl", hex: "#f4ecec" },
+        { name: "Attitude Black", hex: "#0e0f12", metalness: 0.55, roughness: 0.18 },
+        { name: "Avant-Garde Bronze", hex: "#6e5a44", metalness: 0.8, roughness: 0.25 },
+        { name: "Dark Red Mica", hex: "#5c1118", metalness: 0.65, roughness: 0.22 },
+        { name: "Silver Metallic", hex: "#a8abaf", metalness: 0.9, roughness: 0.2 },
+      ],
+    },
+    lamps: { head: ["Metallic_2", "Translucent"], tail: ["Metallic_1"] },
     credit: {
       title: "Toyota Landcruiser V8 2022",
       author: "Jean-llace cars",

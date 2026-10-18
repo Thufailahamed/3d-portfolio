@@ -1,0 +1,202 @@
+/**
+ * The showroom's studio: lighting moods, the camera's preset views and the cinematic sequence.
+ * Plain data, shared by the scene (which renders it) and the HUD (which offers it).
+ */
+
+export type MoodId = "studio" | "noir" | "golden" | "neon";
+
+export type Mood = {
+  id: MoodId;
+  name: string;
+  /** CSS background for the picker's swatch */
+  swatch: string;
+  bg: string;
+  cove: string;
+  floor: string;
+  /** light bars round the cove alternate between these two colours */
+  strips: [string, string];
+  /** brightness of the visible light bars (HDR, so they bloom) */
+  stripLevel: number;
+  ceiling: string;
+  ceilingLevel: number;
+  key: { color: string; intensity: number };
+  /** back light that draws the silhouette */
+  rim: { color: string; intensity: number };
+  hemi: number;
+  /** how hard the paint reflects the bars and the overhead soft box */
+  envStrip: number;
+  envCeiling: number;
+  /** LED ring round the turntable */
+  ring: string;
+  bloom: number;
+};
+
+export const moods: Mood[] = [
+  {
+    id: "studio",
+    name: "Studio",
+    swatch: "linear-gradient(135deg,#f4f1ea,#8d9096)",
+    bg: "#0a0a0b",
+    cove: "#3a3c41",
+    floor: "#1a1b1e",
+    strips: ["#fff7ec", "#fff7ec"],
+    stripLevel: 2.4,
+    ceiling: "#ffffff",
+    ceilingLevel: 2.6,
+    key: { color: "#fff6ec", intensity: 160 },
+    rim: { color: "#dfe8ff", intensity: 45 },
+    hemi: 0.6,
+    envStrip: 3,
+    envCeiling: 4,
+    ring: "#c8ff3d",
+    bloom: 0.55,
+  },
+  {
+    id: "noir",
+    name: "Noir",
+    swatch: "linear-gradient(135deg,#ffffff 0 18%,#1a1b1e 40%,#050506)",
+    bg: "#040405",
+    cove: "#121316",
+    floor: "#0b0b0d",
+    strips: ["#ffffff", "#ffffff"],
+    stripLevel: 0.9,
+    ceiling: "#ffffff",
+    ceilingLevel: 3.4,
+    key: { color: "#ffffff", intensity: 230 },
+    rim: { color: "#ffffff", intensity: 110 },
+    hemi: 0.12,
+    envStrip: 1.1,
+    envCeiling: 6.5,
+    ring: "#ffffff",
+    bloom: 0.45,
+  },
+  {
+    id: "golden",
+    name: "Golden hour",
+    swatch: "linear-gradient(135deg,#ffd29a,#ff8a3d 55%,#3b5aa8)",
+    bg: "#0d0906",
+    cove: "#3f2d1f",
+    floor: "#1d1510",
+    strips: ["#ffad5c", "#ffd9a6"],
+    stripLevel: 2.6,
+    ceiling: "#ffe0b8",
+    ceilingLevel: 1.6,
+    key: { color: "#ffc68a", intensity: 175 },
+    rim: { color: "#6f9cff", intensity: 80 },
+    hemi: 0.45,
+    envStrip: 3.2,
+    envCeiling: 2.8,
+    ring: "#ffad5c",
+    bloom: 0.75,
+  },
+  {
+    id: "neon",
+    name: "Neon",
+    swatch: "linear-gradient(135deg,#ff2bd6,#7a3cff 50%,#22e5ff)",
+    bg: "#07060b",
+    cove: "#1d1a2a",
+    floor: "#100f17",
+    strips: ["#ff2bd6", "#22e5ff"],
+    stripLevel: 3.2,
+    ceiling: "#b9a8ff",
+    ceilingLevel: 0.9,
+    key: { color: "#d8d0ff", intensity: 85 },
+    rim: { color: "#ff2bd6", intensity: 95 },
+    hemi: 0.3,
+    envStrip: 4.2,
+    envCeiling: 1.4,
+    ring: "#22e5ff",
+    bloom: 1.05,
+  },
+];
+
+export const moodById = Object.fromEntries(moods.map((m) => [m.id, m])) as Record<MoodId, Mood>;
+
+// ---------------------------------------------------------------------- camera views
+
+export type ShotId = "hero" | "front" | "side" | "rear" | "top" | "low";
+
+/**
+ * Preset views, in the car's frame (the nose points down +x). `dir` is where the camera sits seen
+ * from the orbit pivot; `dist` scales the car's hero distance. Hero uses the car's own camera.
+ */
+export const shots: { id: ShotId; name: string; dir?: [number, number, number]; dist: number }[] = [
+  { id: "hero", name: "Hero", dist: 1 },
+  { id: "front", name: "Front", dir: [1, 0.14, 0.001], dist: 0.72 },
+  { id: "side", name: "Side", dir: [0.001, 0.1, 1], dist: 0.92 },
+  { id: "rear", name: "Rear", dir: [-0.8, 0.3, -0.55], dist: 0.85 },
+  { id: "top", name: "Top", dir: [0.02, 1, 0.001], dist: 0.95 },
+  { id: "low", name: "Low", dir: [0.75, 0.035, 0.62], dist: 0.72 },
+];
+
+// ---------------------------------------------------------------------- cinematic
+
+type V3 = [number, number, number];
+/** car dimensions: half length, half width, height, and the orbit pivot's height */
+export type Dims = { l: number; w: number; h: number; y: number };
+
+export type CineShot = {
+  title: string;
+  /** seconds */
+  dur: number;
+  fov: [number, number];
+  from: (d: Dims) => V3;
+  to: (d: Dims) => V3;
+  look: (d: Dims) => [V3, V3];
+  /** headlights on for this shot */
+  lamps?: boolean;
+};
+
+/** A commercial-style reel: hard cuts between slow camera moves, each with its own caption. */
+export const cineShots: CineShot[] = [
+  {
+    title: "The silhouette",
+    dur: 5.5,
+    fov: [26, 24],
+    from: ({ l }) => [-l * 1.3, 0.32, l * 2.5],
+    to: ({ l }) => [l * 1.3, 0.32, l * 2.5],
+    look: ({ y }) => [[-0.3, y, 0], [0.3, y, 0]],
+  },
+  {
+    title: "The face",
+    dur: 5,
+    fov: [30, 24],
+    from: ({ l, w }) => [l * 3.1, 0.38, w * 0.9],
+    to: ({ l, w }) => [l * 2.2, 0.3, w * 0.35],
+    look: ({ l, y }) => [[l * 0.6, y * 0.9, 0], [l * 0.7, y * 0.85, 0]],
+    lamps: true,
+  },
+  {
+    title: "The details",
+    dur: 4.5,
+    fov: [24, 20],
+    from: ({ l, w }) => [l * 1.15, 0.42, w * 2.9],
+    to: ({ l, w }) => [l * 0.85, 0.36, w * 2.5],
+    look: ({ l, w, h }) => [[l * 0.62, h * 0.24, w * 0.85], [l * 0.6, h * 0.24, w * 0.85]],
+  },
+  {
+    title: "From above",
+    dur: 5,
+    fov: [34, 32],
+    from: ({ l }) => [l * 0.35, l * 3.2, l * 0.9],
+    to: ({ l }) => [-l * 0.35, l * 2.9, l * 0.95],
+    look: ({ y }) => [[0, y, 0], [0, y, 0]],
+  },
+  {
+    title: "Walking away",
+    dur: 5,
+    fov: [28, 26],
+    from: ({ l, w }) => [-l * 2.6, 0.5, -w * 2.2],
+    to: ({ l, w }) => [-l * 2.1, 1.0, -w * 3.4],
+    look: ({ l, y }) => [[-l * 0.35, y, 0], [-l * 0.2, y, 0]],
+    lamps: true,
+  },
+  {
+    title: "",
+    dur: 6,
+    fov: [30, 32],
+    from: ({ l }) => [l * 1.2, 0.35, l * 1.1],
+    to: ({ l }) => [l * 2.2, l * 0.9, l * 2.3],
+    look: ({ y }) => [[0, y * 0.9, 0], [0, y, 0]],
+  },
+];

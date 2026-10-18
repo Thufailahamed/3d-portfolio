@@ -993,3 +993,71 @@ html[data-weather="day"] [data-chapter="contact"] {
 @media (prefers-reduced-motion: reduce) {
   .sr-rise, .sr-panel { animation: none; }
 }
+/* the HUD steps aside while the film plays (the switch happens behind a cut to black) */
+.sr-root[data-cine] .sr-hud {
+  opacity: 0 !important;
+}
+.sr-root[data-cine] .sr-hud,
+.sr-root[data-cine] .sr-hud * {
+  pointer-events: none !important;
+}
+/* the film's per-scene progress line */
+.sr-progress {
+  width: 100%;
+  transform-origin: left;
+  animation: sr-progress linear both;
+}
+@keyframes sr-progress {
+  from { transform: scaleX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sr-progress { animation: none; }
+}
+
+/* brick edition: the loader stacks its bricks */
+.lego-loader-brick {
+  animation: lego-drop 1.6s cubic-bezier(0.5, 0, 0.3, 1) infinite;
+}
+@keyframes lego-drop {
+  0% { transform: translateY(-36px); opacity: 0; }
+  25%, 70% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(0); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lego-loader-brick { animation: none; }
+}
+
+/* die-cast speedway: stunt callouts punch in; the loader's car rides its bar */
+.hw-pop {
+  animation: hw-pop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+@keyframes hw-pop {
+  from { opacity: 0; transform: translateX(30px) scale(0.7) skewX(-8deg); }
+}
+.hw-loader-car {
+  box-shadow: 0 0 18px rgba(255, 150, 40, 0.8);
+  transition: left 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hw-pop { animation: none; }
+}
+
+/* brick edition photo mode: the shutter's flash, and the print sliding in */
+.lego-flash {
+  animation: lego-flash 0.55s ease-out both;
+}
+@keyframes lego-flash {
+  0% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+.lego-thumb {
+  animation: lego-thumb 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes lego-thumb {
+  from { opacity: 0; transform: translateY(18px) rotate(-4deg) scale(0.92); }
+  to { opacity: 1; transform: rotate(-2deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lego-flash { animation-duration: 0.01s; }
+  .lego-thumb { animation: none; }
+}
