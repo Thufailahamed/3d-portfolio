@@ -22,6 +22,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Boxes are (x0, x1, y0, y1, z0, z1) in metres after normalising; |y| is used where noted.
 CARS = {
@@ -35,6 +36,7 @@ CARS = {
         dash_x=0.62,
         steering=((0.42, 0.43, 1.18), 0.26),
         engine=None,
+        explode={"engine": (0.3, 0, 0.8), "hood": (0.8, 0, 1.5)},
         lamp_depth=0.42,
         brakes=True,
     ),
@@ -46,7 +48,9 @@ CARS = {
         lid=(-2.4, -0.25, 0.0, 0.92, 0.55, 1.0),
         cabin=(-0.27, 0.95, 0.0, 0.72, 0.08, 0.98),
         dash_x=0.55,
-        steering=((0.64, 0.33, 0.62), 0.2),
+        steering=((0.60, -0.20, 0.60), 0.2),     # right-hand drive
+        steering_first=True,
+        force=[("dashboard", None, (0.5, 0.8, 0.0, 0.45, 0.4, 0.8), 0.0)],   # the panel sits inside the clamshell's bounds
         engine=(-1.65, -0.27, 0.0, 0.5, 0.12, 0.9),
         lamp_depth=0.45,
         brakes=False,      # wire wheels: the spokes would read as brake parts
@@ -88,7 +92,9 @@ CARS = {
         steering=((-0.12, 0.37, 0.67), 0.2),
         split_tyres=True,
         brake_mats={"DISK", "CALIPERGLOSS", "CALIPERGLOSSPAINT", "Mechanics"},
-        engine=(0.4, 1.5, 0.0, 0.55, 0.15, 0.8),      # front-mid V12, behind the front axle
+        engine=None,         # the download has none (only a black liner closing the bay): see powertrains.py
+        force=[("hood", "BLACKBODY", (1.0, 1.6, 0.0, 0.1, 0.4, 0.8), 1.5)],   # that liner lifts off with the clamshell
+        explode={"engine": (0.35, 0, 1.15), "hood": (1.0, 0, 1.9)},
         lamp_depth=0.55,
         brakes=True,
     ),
@@ -102,7 +108,8 @@ CARS = {
         dash_x=0.3,
         steering=((0.21, -0.40, 0.79), 0.2),     # right-hand drive
         split_tyres=True,
-        engine=(0.7, 1.9, 0.0, 0.55, 0.25, 0.85),
+        engine=None,         # built in powertrains.py; the bay's inner wings and crash structure stay with the body
+        explode={"engine": (0.35, 0, 1.15), "hood": (1.0, 0, 1.9)},
         lamp_depth=0.5,
         brakes=True,
     ),
@@ -116,6 +123,7 @@ EXPLODE = {   # Blender axes (x fwd, y left, z up); converted to glTF on export
     "door_rr": (-0.1, -1.0, 0.25), "door_left": (0, 1.0, 0.3), "door_right": (0, -1.0, 0.3),
     "wheel_fl": (0, 1.0, 0), "wheel_fr": (0, -1.0, 0), "wheel_rl": (0, 1.0, 0), "wheel_rr": (0, -1.0, 0),
     "brake_fl": (0, 0.6, 0), "brake_fr": (0, -0.6, 0), "brake_rl": (0, 0.6, 0), "brake_rr": (0, -0.6, 0),
+    "radiator": (1.1, 0, 0.2),
 }
 
 
@@ -224,6 +232,21 @@ def classify(isl, dims, cfg):
     L, Wd, H = dims
     paint, glass = cfg["paint"], cfg["glass"]
     report = {}
+
+    # 0. a wheel that sits inside the bonnet's bounds would ride off with it, so some cars find it first
+    if cfg.get("steering_first"):
+        (sx, sy, sz), sr = cfg["steering"]
+        for i in isl:
+            if not i.part and i.mat not in paint and (i.c - Vector((sx, sy, sz))).length < sr and max(i.d) < 2 * sr + 0.05:
+                i.part = "steering"
+
+    # 0b. pieces a car's config assigns outright: (part, material or None for any trim, box, min length)
+    for pid, m, box_, min_dx in cfg.get("force", []):
+        for i in isl:
+            if i.part or i.d.x < min_dx or not inside(i, box_):
+                continue
+            if i.mat == m if m else (i.mat not in paint and i.mat not in glass):
+                i.part = pid
 
     # 1. tyres: round in side view, sitting on the floor, out at the corners
     tyres = {}
@@ -340,7 +363,7 @@ def classify(isl, dims, cfg):
 
 
 # ------------------------------------------------------------------ build parts and export
-def build_parts(car, isl):
+def build_parts(car, isl, explode):
     me = car.data
     face_part = [None] * len(me.polygons)
     for i in isl:
@@ -373,13 +396,32 @@ def build_parts(car, isl):
         pm.update()
         e = bpy.data.objects.new(f"Part_{pid}", None)
         bpy.context.scene.collection.objects.link(e)
-        x, y, z = EXPLODE.get(pid, (0, 0, 1.0))
+        x, y, z = explode.get(pid, (0, 0, 1.0))
         e["part"] = pid
         e["explode"] = [x, z, -y]
         ob.parent = e
         objs += [e, ob]
     bpy.data.objects.remove(car)
     return objs, pids
+
+
+def add_built(key, objs, pids, explode):
+    """Parts modelled for cars that came without them (art/cars/powertrains.py), parented under their part."""
+    import powertrains
+    for pid, obs in powertrains.build(key).items():
+        e = bpy.data.objects.get(f"Part_{pid}")
+        if e is None:
+            e = bpy.data.objects.new(f"Part_{pid}", None)
+            bpy.context.scene.collection.objects.link(e)
+            x, y, z = explode.get(pid, (0, 0, 1.0))
+            e["part"] = pid
+            e["explode"] = [x, z, -y]
+            objs.append(e)
+            pids.append(pid)
+        for ob in obs:
+            ob.parent = e
+            objs.append(ob)
+        print("BUILT", pid, len(obs), "objects", sum(len(o.data.polygons) for o in obs if o.type == "MESH"), "faces")
 
 
 def shrink_textures(limit=1024):
@@ -455,7 +497,9 @@ if __name__ == "__main__":
     for k, v in report.items():
         print("REPORT", k, v)
     print("PARTS", dict(collections.Counter(i.part for i in isl)))
-    objs, pids = build_parts(car, isl)
+    explode = {**EXPLODE, **cfg.get("explode", {})}
+    objs, pids = build_parts(car, isl, explode)
+    add_built(key, objs, pids, explode)
     shrink_textures()
     export(key, objs)
     if "debug" in args:

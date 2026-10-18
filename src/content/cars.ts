@@ -191,16 +191,31 @@ const toyotaParts: CarPart[] = [
   },
   {
     id: "hood",
-    name: "Hood and engine",
+    name: "Bonnet",
+    group: "Exterior",
+    summary: "A long, flat bonnet with a raised centre section, hinged at the windscreen over the engine bay.",
+    specs: [["Opens", "Front-hinged at the scuttle"]],
+  },
+  {
+    id: "engine",
+    name: "3.4 L twin-turbo V6",
     group: "Powertrain",
-    summary: "Under the hood sits a twin-turbo V6. The 300 series dropped the V8 that earlier Land Cruisers offered.",
+    summary:
+      "The V35A-FTS: a 60° V6 with a turbocharger low on each bank, under a plastic cover. The 300 series dropped the V8 that earlier Land Cruisers offered.",
     specs: [
       ["Petrol", "3.4 L V35A-FTS twin-turbo V6, 305 kW (409 hp), 650 Nm"],
       ["Diesel", "3.3 L F33A-FTV twin-turbo V6, 227 kW (304 hp), 700 Nm"],
       ["Gearbox", "10-speed automatic"],
       ["Drive", "Four-wheel drive"],
     ],
-    note: "The model's source file calls it a V8; the 300 series has none.",
+    note: "In this model: the download came with an empty engine bay, so the V6, its turbos and the gearbox were modelled for the showroom.",
+  },
+  {
+    id: "radiator",
+    name: "Radiator and fan",
+    group: "Powertrain",
+    summary: "The radiator behind the grille, with its fan and shroud, and the coolant bottle beside it.",
+    specs: [["Coolant", "Toyota long-life (pink)"]],
   },
   ...(["fl", "fr", "rl", "rr"] as const).map((c): CarPart => ({
     id: `door_${c}`,
@@ -473,6 +488,7 @@ const vulcanParts: CarPart[] = [
       ["Gearbox", "6-speed sequential"],
       ["Drive", "Rear-wheel drive"],
     ],
+    note: "In this model: the download had no engine, so the V12, its headers, carbon intake and dry-sump tank were modelled for the showroom.",
   },
   {
     id: "chassis",
@@ -575,13 +591,16 @@ const supraParts: CarPart[] = [
   },
   {
     id: "engine",
-    name: "Engine bay",
+    name: "3.0 L turbo inline-six",
     group: "Powertrain",
-    summary: "GT300 lets teams run a range of engines. A balance-of-performance table sets power and weight so different cars can race each other.",
+    summary:
+      "An inline-six with one large turbocharger on the exhaust side, a carbon intake plenum on the other and a dry sump. GT300 lets teams run a range of engines; a balance-of-performance table sets power and weight.",
     specs: [
+      ["Layout", "Inline-six, single turbo"],
       ["Rules", "Balance of performance"],
       ["Drive", "Rear-wheel drive"],
     ],
+    note: "In this model: the download had no engine, so this one was modelled for the showroom after the road car's B58 layout.",
   },
   {
     id: "chassis",
