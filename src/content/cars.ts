@@ -35,6 +35,12 @@ export type Car = {
   paint: { material: string; colors: PaintColor[] };
   /** lamp materials (by name) inside Part_headlights / Part_taillights, lit by the lights switch */
   lamps: { head: string[]; tail: string[] };
+  /** how the doors open: a conventional swing on front hinges, or up and out (butterfly / dihedral) */
+  doors: "swing" | "butterfly";
+  /** painted brake caliper materials (by name), for the brake colour picker; empty if the model has none */
+  calipers: string[];
+  /** engine cylinders, for the synthesised engine note */
+  cylinders: number;
   credit?: { title: string; author: string; url: string; license?: string; licenseUrl?: string };
 };
 
@@ -665,6 +671,9 @@ const lineUp: Car[] = [
       ],
     },
     lamps: { head: ["LED", "LEDAmber"], tail: ["TailLED"] },
+    doors: "butterfly",
+    calipers: ["Caliper"],
+    cylinders: 6,
   },
   {
     slug: "jaguar-xj13",
@@ -693,6 +702,9 @@ const lineUp: Car[] = [
       ],
     },
     lamps: { head: ["Mesh13Mtl", "Mesh61Mtl"], tail: ["Mesh71Mtl"] },
+    doors: "swing",
+    calipers: [],
+    cylinders: 12,
     credit: { title: "1959 Jaguar XJ13", author: "vecarz.com", url: "https://www.vecarz.com" },
   },
   {
@@ -722,6 +734,9 @@ const lineUp: Car[] = [
       ],
     },
     lamps: { head: ["Metallic_2", "Translucent"], tail: ["Metallic_1"] },
+    doors: "swing",
+    calipers: [],
+    cylinders: 6,
     credit: {
       title: "Toyota Landcruiser V8 2022",
       author: "Jean-llace cars",
@@ -757,6 +772,9 @@ const lineUp: Car[] = [
       ],
     },
     lamps: { head: ["super_headlight"], tail: ["super_brakelight"] },
+    doors: "swing",
+    calipers: [],
+    cylinders: 8,
     credit: {
       title: "Ferrari f40",
       author: "Black Snow",
@@ -792,6 +810,9 @@ const lineUp: Car[] = [
       ],
     },
     lamps: { head: ["Material.040_45"], tail: ["lg2_tailight_f40.001", "lg2_tailight_f40.001_2", "lg2_tailight_f40.001_3"] },
+    doors: "swing",
+    calipers: ["Material.040_31"],
+    cylinders: 8,
     credit: {
       title: "Ferrari F40 Liberty Walk",
       author: "VTX",
@@ -827,6 +848,9 @@ const lineUp: Car[] = [
       ],
     },
     lamps: { head: ["HEADLIGHT", "REFLECTOR"], tail: ["TAILLIGHTS_INNER"] },
+    doors: "butterfly",
+    calipers: ["CALIPERGLOSSPAINT"],
+    cylinders: 12,
     credit: {
       title: "Aston Martin Vulcan",
       author: "Outlaw Games",
@@ -854,6 +878,9 @@ const lineUp: Car[] = [
     // the livery is printed into the body texture, so it is the only finish offered
     paint: { material: "01_-_Default", colors: [{ name: "Team livery", hex: "#e6e6e6" }] },
     lamps: { head: ["06_-_Default"], tail: ["06_-_Default"] },
+    doors: "swing",
+    calipers: [],
+    cylinders: 6,
     credit: {
       title: "ToyotaGR Supra GT300",
       author: "vecarz",

@@ -4,9 +4,28 @@ import { useProgress } from "@react-three/drei";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { groups, type Car, type CarPart } from "@/content/cars";
+import { groups, type Car, type CarPart, type PaintColor } from "@/content/cars";
+import Dock, { Chip, Chips, ColorField, icons, lacquer, Slider, Swatch, Swatches, type DockItem } from "./Dock";
+import { startEngine, type Engine } from "./engineSound";
 import type { CameraInfo } from "./ShowroomScene";
-import { cineShots, moodById, moods, shots, type MoodId, type ShotId } from "./studio";
+import {
+  backdrops,
+  brakeColors,
+  cineShots,
+  defaultTuning,
+  liveries,
+  liveryColors,
+  moodById,
+  moods,
+  shots,
+  type BackdropId,
+  type LiveryId,
+  type Look,
+  type MoodId,
+  type Quality,
+  type ShotId,
+  type Tuning,
+} from "./studio";
 
 const ShowroomScene = dynamic(() => import("./ShowroomScene"), { ssr: false });
 
@@ -54,18 +73,39 @@ export default function Showroom({
   const [turntable, setTurntable] = useState(true);
   const [shot, setShot] = useState<{ id: ShotId; n: number } | null>(null);
   const [activeShot, setActiveShot] = useState<ShotId | null>(null);
-  const [studioOpen, setStudioOpen] = useState(false);
   const [cinematic, setCinematic] = useState(false);
   const [blackout, setBlackout] = useState(false);
   const [scene, setScene] = useState(0);
   // tools: dimension lines, the see-through body, photos, and the keys for all of it
   const [measure, setMeasure] = useState(false);
   const [xray, setXray] = useState(false);
-  const [snap, setSnap] = useState(0);
+  const [snap, setSnap] = useState({ n: 0, wallpaper: false });
   const flash = useRef<HTMLDivElement>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [camera, setCamera] = useState<CameraInfo | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
+  // the dock: doors, brakes, finish, livery, the cockpit, the stage, quality, sound and fine tuning
+  const [panel, setPanel] = useState<string | null>(null);
+  const [doors, setDoors] = useState(false);
+  const [brake, setBrake] = useState("");
+  const [iridescent, setIridescent] = useState(false);
+  const [livery, setLivery] = useState<LiveryId>("none");
+  const [liveryColor, setLiveryColor] = useState(liveryColors[0].hex);
+  const [interior, setInterior] = useState(false);
+  const [grid, setGrid] = useState(false);
+  const [backdrop, setBackdrop] = useState<BackdropId>("studio");
+  const [quality, setQuality] = useState<Quality>(() => {
+    try {
+      return localStorage.getItem("showroom-quality") === "performance" ? "performance" : "quality";
+    } catch {
+      return "quality";
+    }
+  });
+  const [tuning, setTuning] = useState<Tuning>(defaultTuning);
+  const [custom, setCustom] = useState<PaintColor | null>(null);
+  const [sound, setSound] = useState(false);
+  const [volume, setVolume] = useState(0.6);
+  const engine = useRef<Engine | null>(null);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -88,7 +128,8 @@ export default function Showroom({
           setSelected(null);
           setExploded(false);
           setListOpen(false);
-          setStudioOpen(false);
+          setPanel(null);
+          setInterior(false);
           setActiveShot(null);
         }
       }, 550),
@@ -128,14 +169,14 @@ export default function Showroom({
 
   const exterior = useMemo(() => car.parts.filter((p) => p.group === "Exterior").flatMap((p) => p.members ?? [p.id]), [car]);
 
-  const photo = useCallback(() => {
-    setSnap((n) => n + 1);
+  const photo = useCallback((wallpaper = false) => {
+    setSnap((s) => ({ n: s.n + 1, wallpaper }));
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
       flash.current?.animate([{ opacity: 0.55 }, { opacity: 0 }], { duration: 500, easing: "ease-out" });
   }, []);
   const onSnap = useCallback(
     (png: string) => {
-      const name = `${car.slug}-${activeShot ?? "studio"}.png`;
+      const name = `${car.slug}-${interior ? "cockpit" : (activeShot ?? "studio")}${snap.wallpaper ? "-4k" : ""}.png`;
       const a = document.createElement("a");
       a.href = png;
       a.download = name;
@@ -143,7 +184,48 @@ export default function Showroom({
       setSaved(name);
       timers.current.push(window.setTimeout(() => setSaved(null), 2600));
     },
-    [car.slug, activeShot],
+    [car.slug, activeShot, interior, snap.wallpaper],
+  );
+
+  // the engine: turned over when sound goes on, switched off with it (and when the car changes)
+  useEffect(() => {
+    if (!sound) return;
+    const e = startEngine(car.cylinders, volume);
+    engine.current = e;
+    return () => {
+      e?.stop();
+      engine.current = null;
+    };
+    // the volume is set live below, not by restarting
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sound, car.cylinders]);
+  useEffect(() => engine.current?.setVolume(volume), [volume]);
+  const rev = useCallback(() => {
+    if (!engine.current) setSound(true);
+    else engine.current.rev();
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("showroom-quality", quality);
+    } catch {}
+  }, [quality]);
+
+  const look = useMemo<Look>(
+    () => ({
+      doors,
+      doorStyle: car.doors,
+      calipers: car.calipers,
+      brake,
+      iridescent,
+      livery,
+      liveryColor,
+      interior: interior && !cinematic,
+      grid,
+      backdrop,
+      quality,
+      tuning,
+    }),
+    [doors, car.doors, car.calipers, brake, iridescent, livery, liveryColor, interior, cinematic, grid, backdrop, quality, tuning],
   );
 
   useEffect(() => {
@@ -154,6 +236,8 @@ export default function Showroom({
       if (e.key === "Escape") {
         if (cinematic) film(false);
         else if (keysOpen) setKeysOpen(false);
+        else if (panel) setPanel(null);
+        else if (interior) setInterior(false);
         else setSelected(null);
       } else if (k === "c") film(!cinematic);
       else if (cinematic) return;
@@ -164,6 +248,12 @@ export default function Showroom({
       } else if (k === "m") setMeasure((v) => !v);
       else if (k === "x") setXray((v) => !v);
       else if (k === "p") photo();
+      else if (k === "d") setDoors((v) => !v);
+      else if (k === "i") {
+        setInterior((v) => !v);
+        setSelected(null);
+      } else if (k === "g") setGrid((v) => !v);
+      else if (k === "r") rev();
       else if (k === "s") setTurntable((v) => !v);
       else if (k === "?" || (k === "/" && e.shiftKey)) setKeysOpen((v) => !v);
       else if (/^[1-6]$/.test(k)) view(shots[+k - 1].id);
@@ -174,7 +264,7 @@ export default function Showroom({
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [selected, step, cinematic, film, photo, view, onCycle, keysOpen]);
+  }, [selected, step, cinematic, film, photo, view, onCycle, keysOpen, panel, interior, rev]);
 
   const onHover = useCallback((id: string | null, x = 0, y = 0) => setHover(id && ownerOf[id] ? { id: ownerOf[id], x, y } : null), [ownerOf]);
   // the scene works with the model's groups: a set selects (and lights up) every member
@@ -182,6 +272,234 @@ export default function Showroom({
   const selectedIds = useMemo(() => membersOf(selected), [membersOf, selected]);
   const hoveredIds = useMemo(() => membersOf(cinematic ? null : (hover?.id ?? null)), [membersOf, cinematic, hover?.id]);
   const onReady = useCallback((found: string[]) => setIds(found), []);
+
+  // ---------------------------------------------------------------- the dock
+  const paintNow = custom ?? car.paint.colors[paintIdx] ?? car.paint.colors[0];
+  const setTune = (t: Partial<Tuning>) => setTuning((cur) => ({ ...cur, ...t }));
+  const dockRows: DockItem[][] = [
+    [
+      {
+        id: "car",
+        label: "Car model",
+        icon: icons.car,
+        hint: "← →",
+        panel: switcher ?? <p className="px-1 text-sm text-fg/60">{car.name}</p>,
+      },
+      {
+        id: "paint",
+        label: `Paint · ${paintNow.name}`,
+        icon: icons.paint,
+        active: paintIdx > 0 || !!custom,
+        panel: (
+          <Swatches>
+            {car.paint.colors.map((c, i) => (
+              <Swatch key={c.name} label={c.name} on={!custom && i === paintIdx} background={lacquer(c.hex)} onClick={() => {
+                setCustom(null);
+                setPaintIdx(i);
+              }} />
+            ))}
+            {/* any colour at all */}
+            <label title="Custom colour" className={`relative grid h-8 w-8 cursor-pointer place-items-center overflow-hidden rounded-full border ${custom ? "border-fg ring-2 ring-fg/20 ring-offset-2 ring-offset-[#121214]" : "border-fg/20"}`}
+              style={{ background: "conic-gradient(#ff3b3b,#ffd93b,#5bff3b,#3bd9ff,#5b3bff,#ff3bd9,#ff3b3b)" }}>
+              <input type="color" aria-label="Custom paint colour" className="absolute inset-0 cursor-pointer opacity-0" value={custom?.hex ?? "#3a6ed8"}
+                onChange={(e) => setCustom({ name: "Custom", hex: e.target.value, metalness: custom?.metalness ?? 0.55, roughness: custom?.roughness ?? 0.28 })} />
+            </label>
+          </Swatches>
+        ),
+      },
+      {
+        id: "brakes",
+        label: "Brake calipers",
+        icon: icons.brakes,
+        active: !!brake,
+        disabled: !car.calipers.length,
+        panel: (
+          <Swatches>
+            {brakeColors.map((c) => (
+              <Swatch key={c.name} label={c.name} on={brake === c.hex} onClick={() => setBrake(c.hex)}
+                background={c.hex ? lacquer(c.hex) : "repeating-linear-gradient(45deg,#333 0 4px,#1b1b1d 4px 8px)"} />
+            ))}
+          </Swatches>
+        ),
+      },
+      { id: "iridescence", label: "Pearl iridescence", icon: icons.iridescence, active: iridescent, onClick: () => setIridescent((v) => !v) },
+      {
+        id: "livery",
+        label: "Livery",
+        icon: icons.livery,
+        active: livery !== "none",
+        panel: (
+          <div className="grid gap-3">
+            <Chips>
+              {liveries.map((l) => (
+                <Chip key={l.id} on={livery === l.id} onClick={() => setLivery(l.id)}>
+                  {l.name}
+                </Chip>
+              ))}
+            </Chips>
+            <Swatches>
+              {liveryColors.map((c) => (
+                <Swatch key={c.name} label={`${c.name} livery`} on={liveryColor === c.hex} background={lacquer(c.hex)} onClick={() => {
+                  setLiveryColor(c.hex);
+                  if (livery === "none") setLivery("stripes");
+                }} />
+              ))}
+            </Swatches>
+          </div>
+        ),
+      },
+      { id: "doors", label: doors ? "Close doors" : "Open doors", hint: "D", icon: icons.doors, active: doors, onClick: () => setDoors((v) => !v) },
+      { id: "lights", label: "Lights", hint: "L", icon: icons.lights, active: lights, onClick: () => setLights((v) => !v) },
+      { id: "xray", label: "X-ray", hint: "X", icon: icons.xray, active: xray, onClick: () => setXray((v) => !v) },
+      { id: "measure", label: "Measure", hint: "M", icon: icons.measure, active: measure, onClick: () => setMeasure((v) => !v) },
+      { id: "keys", label: "Keyboard shortcuts", hint: "?", icon: icons.keys, onClick: () => setKeysOpen((v) => !v) },
+    ],
+    [
+      {
+        id: "interior",
+        label: interior ? "Step outside" : "Driver's seat",
+        hint: "I",
+        icon: icons.interior,
+        active: interior,
+        onClick: () => {
+          setInterior((v) => !v);
+          setSelected(null);
+          setExploded(false);
+        },
+      },
+      {
+        id: "views",
+        label: "Camera views",
+        hint: "1–6",
+        icon: icons.views,
+        active: !!activeShot,
+        panel: (
+          <Chips>
+            {shots.map((sh, i) => (
+              <Chip key={sh.id} on={activeShot === sh.id} title={`${sh.name} (${i + 1})`} onClick={() => {
+                setInterior(false);
+                view(sh.id);
+              }}>
+                {sh.name}
+              </Chip>
+            ))}
+          </Chips>
+        ),
+      },
+      { id: "spin", label: "Turntable", hint: "S", icon: icons.spin, active: turntable, onClick: () => {
+        setTurntable((v) => !v);
+        setActiveShot(null);
+      } },
+      {
+        id: "mood",
+        label: `Lighting · ${moodById[mood].name}`,
+        icon: icons.mood,
+        active: mood !== "studio",
+        panel: (
+          <Swatches>
+            {moods.map((m) => (
+              <Swatch key={m.id} label={`${m.name} lighting`} on={m.id === mood} background={m.swatch} onClick={() => setMood(m.id)} />
+            ))}
+          </Swatches>
+        ),
+      },
+      {
+        id: "backdrop",
+        label: `Background · ${backdrops.find((b) => b.id === backdrop)?.name}`,
+        icon: icons.backdrop,
+        active: backdrop !== "studio",
+        panel: (
+          <Swatches>
+            {backdrops.map((b) => (
+              <Swatch key={b.id} label={b.name} on={b.id === backdrop} background={b.swatch} onClick={() => setBackdrop(b.id)} />
+            ))}
+          </Swatches>
+        ),
+      },
+      { id: "grid", label: "Floor grid", hint: "G", icon: icons.grid, active: grid, onClick: () => setGrid((v) => !v) },
+      {
+        id: "quality",
+        label: `Graphics · ${quality === "quality" ? "Quality" : "Performance"}`,
+        icon: icons.quality,
+        active: quality === "performance",
+        panel: (
+          <div className="grid max-w-[20rem] gap-2">
+            <Chips>
+              <Chip on={quality === "performance"} onClick={() => setQuality("performance")}>Performance</Chip>
+              <Chip on={quality === "quality"} onClick={() => setQuality("quality")}>Quality</Chip>
+            </Chips>
+            <p className="px-1 text-xs leading-relaxed text-fg/50">
+              {quality === "quality"
+                ? "Full resolution, ambient occlusion, anti-aliasing and sharp reflections."
+                : "Lighter rendering for a smoother frame rate: one pixel per pixel, no ambient occlusion."}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "sound",
+        label: sound ? "Engine sound · on" : "Engine sound",
+        hint: "R revs",
+        icon: icons.sound,
+        active: sound,
+        panel: (
+          <div className="grid w-[17rem] gap-2">
+            <Chips>
+              <Chip on={sound} onClick={() => setSound((v) => !v)}>{sound ? "Engine off" : "Start engine"}</Chip>
+              <Chip on={false} onClick={rev}>Rev</Chip>
+            </Chips>
+            <Slider label="Volume" value={volume} min={0} max={1} step={0.05} onChange={setVolume} format={(v) => `${Math.round(v * 100)}%`} />
+            <p className="px-1 text-[11px] leading-relaxed text-fg/45">A synthesised {car.cylinders}-cylinder note, not a recording of this car.</p>
+          </div>
+        ),
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        icon: icons.settings,
+        panel: (
+          <div className="w-[19rem]">
+            <ColorField label="Paint" value={custom?.hex ?? paintNow.hex} onChange={(hex) => setCustom({ name: "Custom", hex, metalness: custom?.metalness ?? paintNow.metalness ?? 0.5, roughness: custom?.roughness ?? paintNow.roughness ?? 0.3 })} />
+            <Slider label="Metallic" value={custom?.metalness ?? paintNow.metalness ?? 0.5} min={0} max={1} step={0.01}
+              onChange={(metalness) => setCustom({ ...paintNow, ...custom, name: "Custom", metalness })} />
+            <Slider label="Roughness" value={custom?.roughness ?? paintNow.roughness ?? 0.3} min={0.02} max={1} step={0.01}
+              onChange={(roughness) => setCustom({ ...paintNow, ...custom, name: "Custom", roughness })} />
+            <ColorField label="Headlights" value={tuning.headColor} onChange={(headColor) => {
+              setTune({ headColor });
+              setLights(true);
+            }} />
+            <Slider label="Reflections" value={tuning.reflections} min={0} max={2} step={0.05} onChange={(reflections) => setTune({ reflections })} />
+            <Slider label="Bloom" value={tuning.bloom} min={0} max={3} step={0.05} onChange={(bloom) => setTune({ bloom })} />
+            <Slider label="Spin speed" value={tuning.spin} min={0} max={4} step={0.1} onChange={(spin) => setTune({ spin })} format={(v) => `${v.toFixed(1)}×`} />
+            <div className="mt-2 flex justify-end px-1">
+              <Chip on={false} onClick={() => {
+                setTuning(defaultTuning);
+                setCustom(null);
+              }}>Reset</Chip>
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: "capture",
+        label: "Capture",
+        hint: "P",
+        icon: icons.capture,
+        panel: (
+          <Chips>
+            <Chip on={false} onClick={() => {
+              photo();
+              setPanel(null);
+            }}>Photo</Chip>
+            <Chip on={false} onClick={() => {
+              photo(true);
+              setPanel(null);
+            }}>4K wallpaper</Chip>
+          </Chips>
+        ),
+      },
+    ],
+  ];
 
   return (
     <div
@@ -198,7 +516,7 @@ export default function Showroom({
           exploded={exploded}
           hovered={hoveredIds}
           paintMaterial={car.paint.material}
-          paint={paintIdx ? car.paint.colors[paintIdx] : null}
+          paint={custom ?? (paintIdx ? car.paint.colors[paintIdx] : null)}
           lamps={car.lamps}
           lights={lights}
           mood={mood}
@@ -210,6 +528,7 @@ export default function Showroom({
           snap={snap}
           onSnap={onSnap}
           onCamera={setCamera}
+          look={look}
           onCinematicShot={onCinematicShot}
           onHover={onHover}
           onPick={pick}
@@ -227,8 +546,8 @@ export default function Showroom({
 
       {/* left column: title, numbers, and the part index on wide screens */}
       <div
-        className={`sr-hud pointer-events-none absolute bottom-24 left-gutter right-gutter top-20 flex flex-col transition-opacity duration-500 md:top-24 lg:right-auto lg:w-[min(30rem,36vw)] ${
-          part ? "max-md:opacity-0 max-md:[&_*]:pointer-events-none" : ""
+        className={`sr-hud pointer-events-none absolute bottom-24 left-gutter right-gutter top-20 flex flex-col lg:bottom-36 transition-opacity duration-500 md:top-24 lg:right-auto lg:w-[min(30rem,36vw)] ${
+          interior ? "opacity-0 [&_*]:!pointer-events-none" : part ? "max-md:opacity-0 max-md:[&_*]:pointer-events-none" : ""
         }`}
       >
         <p key={`m${car.slug}`} className="sr-rise label flex items-center gap-2">
@@ -246,7 +565,7 @@ export default function Showroom({
         <nav
           aria-label="Parts"
           data-lenis-prevent
-          className={`pointer-events-auto fixed bottom-20 left-gutter right-gutter z-20 max-h-[55dvh] overflow-y-auto rounded-2xl border border-fg/10 bg-[#121214]/90 p-4 shadow-2xl backdrop-blur-xl
+          className={`pointer-events-auto fixed bottom-[11.5rem] left-gutter right-gutter z-20 max-h-[50dvh] overflow-y-auto rounded-2xl border border-fg/10 bg-[#121214]/90 p-4 shadow-2xl backdrop-blur-xl
             ${listOpen ? "block" : "hidden"}
             lg:static lg:mt-10 lg:block lg:max-h-none lg:min-h-0 lg:w-64 lg:flex-1 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none lg:[mask-image:linear-gradient(to_bottom,black_85%,transparent)]`}
         >
@@ -294,7 +613,7 @@ export default function Showroom({
       <dl
         key={`f${car.slug}`}
         className={`sr-hud pointer-events-none absolute right-gutter top-28 hidden w-48 transition-all duration-500 md:block ${
-          part ? "translate-x-6 opacity-0" : "opacity-100"
+          part || interior ? "translate-x-6 opacity-0" : "opacity-100"
         }`}
       >
         {car.facts.map(([k, v], i) => (
@@ -341,35 +660,25 @@ export default function Showroom({
 
       {keysOpen && <Keys onClose={() => setKeysOpen(false)} cycle={!!onCycle} />}
 
-      {/* bottom bar: controls, car picker, credit */}
-      <div className="sr-hud absolute inset-x-gutter bottom-5 z-30 flex items-end justify-between gap-4">
-        <div className="flex gap-2">
+      {/* bottom bar: parts, explode and the film on the left (above the dock below lg), the credit on the right */}
+      <div className="sr-hud pointer-events-none absolute inset-x-gutter bottom-[8.25rem] z-30 flex items-end justify-between gap-4 md:bottom-[8.75rem] lg:bottom-5">
+        <div className="pointer-events-auto flex gap-2">
           <button
             type="button"
             className="hud-btn border-fg/15 bg-[#121214]/70 backdrop-blur-md lg:hidden"
             aria-expanded={listOpen}
             onClick={() => {
               setListOpen((v) => !v);
-              setStudioOpen(false);
+              setPanel(null);
             }}
           >
             {listOpen ? "Close" : `Parts · ${order.length}`}
           </button>
           <button
             type="button"
-            className={`hud-btn border-fg/15 backdrop-blur-md md:hidden ${studioOpen ? "!bg-fg !text-bg" : "bg-[#121214]/70"}`}
-            aria-expanded={studioOpen}
-            onClick={() => {
-              setStudioOpen((v) => !v);
-              setListOpen(false);
-            }}
-          >
-            Studio
-          </button>
-          <button
-            type="button"
             className={`hud-btn flex items-center gap-2 border-fg/15 backdrop-blur-md ${exploded ? "!bg-fg !text-bg" : "bg-[#121214]/70"}`}
             aria-pressed={exploded}
+            title="Explode (E)"
             onClick={() => {
               setExploded((v) => !v);
               setSelected(null);
@@ -379,16 +688,18 @@ export default function Showroom({
             <ExplodeIcon open={exploded} />
             {exploded ? "Reassemble" : "Explode"}
           </button>
+          <button
+            type="button"
+            onClick={() => film(true)}
+            title="Play the film (C)"
+            className="hud-btn flex items-center gap-2 !border-accent !bg-accent font-semibold !text-bg"
+          >
+            {icons.film}
+            Film
+          </button>
         </div>
 
-        {/* centred between the left-hand buttons and (on the widest screens) the credit */}
-        {switcher && (
-          <div className="absolute bottom-0 left-1/2 hidden max-w-[calc(100vw-22rem)] -translate-x-1/2 lg:block 2xl:max-w-[calc(100vw-40rem)]">
-            {switcher}
-          </div>
-        )}
-
-        <div className="hidden max-w-[16rem] flex-col items-end gap-2 text-right 2xl:flex">
+        <div className="pointer-events-auto hidden max-w-[16rem] flex-col items-end gap-2 text-right 2xl:flex">
           <p className={`label !text-[10px] transition-opacity duration-700 ${touched ? "opacity-0" : "opacity-100"}`}>
             Drag to orbit · click a part
           </p>
@@ -420,31 +731,7 @@ export default function Showroom({
         </p>
       )}
 
-      <StudioDock
-        car={car}
-        hidden={!!part}
-        open={studioOpen}
-        mood={mood}
-        onMood={setMood}
-        paintIdx={paintIdx}
-        onPaint={setPaintIdx}
-        lights={lights}
-        onLights={() => setLights((v) => !v)}
-        turntable={turntable}
-        onTurntable={() => {
-          setTurntable((v) => !v);
-          setActiveShot(null);
-        }}
-        activeShot={activeShot}
-        onShot={view}
-        onFilm={() => film(true)}
-        measure={measure}
-        onMeasure={() => setMeasure((v) => !v)}
-        xray={xray}
-        onXray={() => setXray((v) => !v)}
-        onPhoto={photo}
-        onKeys={() => setKeysOpen((v) => !v)}
-      />
+      <Dock rows={dockRows} open={panel} onOpen={setPanel} hidden={cinematic} />
 
       <Film car={car} on={cinematic} scene={scene} onExit={() => film(false)} />
       <div aria-hidden className={`pointer-events-none absolute inset-0 z-[60] bg-black transition-opacity duration-500 ${blackout ? "opacity-100" : "opacity-0"}`} />
@@ -529,7 +816,7 @@ function Details({
       aria-label={`${part.name} details`}
       data-lenis-prevent
       className="sr-hud sr-panel absolute inset-x-0 bottom-0 z-30 max-h-[52dvh] overflow-y-auto rounded-t-3xl border-t border-fg/10 bg-[#121214]/85 p-6 pb-24 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.8)] backdrop-blur-2xl
-        md:inset-x-auto md:bottom-auto md:right-gutter md:top-24 md:max-h-[calc(100dvh-9.5rem)] md:w-[400px] md:rounded-3xl md:border md:pb-6"
+        md:inset-x-auto md:bottom-auto md:right-gutter md:top-24 md:max-h-[calc(100dvh-16rem)] md:w-[400px] md:rounded-3xl md:border md:pb-6"
     >
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -586,236 +873,17 @@ function Details({
   );
 }
 
-/** The studio controls: lighting mood, paint, camera presets, lamps, turntable and the film. */
-function StudioDock({
-  car,
-  hidden,
-  open,
-  mood,
-  onMood,
-  paintIdx,
-  onPaint,
-  lights,
-  onLights,
-  turntable,
-  onTurntable,
-  activeShot,
-  onShot,
-  onFilm,
-  measure,
-  onMeasure,
-  xray,
-  onXray,
-  onPhoto,
-  onKeys,
-}: {
-  car: Car;
-  hidden: boolean;
-  open: boolean;
-  mood: MoodId;
-  onMood: (m: MoodId) => void;
-  paintIdx: number;
-  onPaint: (i: number) => void;
-  lights: boolean;
-  onLights: () => void;
-  turntable: boolean;
-  onTurntable: () => void;
-  activeShot: ShotId | null;
-  onShot: (id: ShotId) => void;
-  onFilm: () => void;
-  measure: boolean;
-  onMeasure: () => void;
-  xray: boolean;
-  onXray: () => void;
-  onPhoto: () => void;
-  onKeys: () => void;
-}) {
-  const paint = car.paint.colors[paintIdx] ?? car.paint.colors[0];
-  const ring = "scale-110 border-fg ring-2 ring-fg/20 ring-offset-2 ring-offset-[#121214]";
-  return (
-    <section
-      aria-label="Studio"
-      className={`sr-hud absolute bottom-20 left-gutter right-gutter z-20 rounded-2xl border border-fg/10 bg-[#121214]/80 p-4 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.9)] backdrop-blur-xl transition-all duration-500
-        md:left-auto md:block md:w-[17.5rem] md:bg-[#121214]/65
-        ${open ? "block" : "hidden"}
-        ${hidden ? "pointer-events-none translate-x-6 opacity-0" : "opacity-100"}`}
-    >
-      <Row label="Light" value={moodById[mood].name}>
-        <div className="flex gap-2">
-          {moods.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              aria-label={`${m.name} lighting`}
-              aria-pressed={m.id === mood}
-              title={m.name}
-              onClick={() => onMood(m.id)}
-              className={`h-7 w-7 rounded-full border transition-all duration-300 ${m.id === mood ? ring : "border-fg/20 hover:border-fg/60"}`}
-              style={{ background: m.swatch }}
-            />
-          ))}
-        </div>
-      </Row>
-
-      <Row label="Paint" value={paint.name}>
-        <div className="flex flex-wrap gap-2">
-          {car.paint.colors.map((c, i) => (
-            <button
-              key={c.name}
-              type="button"
-              aria-label={`${c.name} paint`}
-              aria-pressed={i === paintIdx}
-              title={c.name}
-              onClick={() => onPaint(i)}
-              className={`h-7 w-7 rounded-full border transition-all duration-300 ${i === paintIdx ? ring : "border-fg/20 hover:border-fg/60"}`}
-              style={{
-                // a little lacquered sphere
-                background: `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.55), rgba(255,255,255,0) 42%), radial-gradient(circle at 70% 80%, rgba(0,0,0,0.45), rgba(0,0,0,0) 60%), ${c.hex}`,
-              }}
-            />
-          ))}
-        </div>
-      </Row>
-
-      <Row label="View">
-        <div className="grid grid-cols-6 gap-1">
-          {shots.map((s, i) => (
-            <button
-              key={s.id}
-              type="button"
-              title={`${s.name} (${i + 1})`}
-              onClick={() => onShot(s.id)}
-              aria-pressed={activeShot === s.id}
-              className={`rounded-md border py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] transition-colors ${
-                activeShot === s.id ? "border-fg bg-fg text-bg" : "border-fg/12 text-fg/60 hover:border-fg/40 hover:text-fg"
-              }`}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-      </Row>
-
-      <Row label="Tools">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1.5">
-          <Tool on={measure} onClick={onMeasure} label="Measure" hint="M">
-            <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-              <path d="M1.5 9.5h11M1.5 7.5v4M12.5 7.5v4" />
-              <path d="M4 9.5v-1.2M6.5 9.5v-2M9 9.5v-1.2" />
-              <path d="M3.5 3.5h7M3.5 2.5v2M10.5 2.5v2" opacity=".5" />
-            </svg>
-          </Tool>
-          <Tool on={xray} onClick={onXray} label="X-ray" hint="X">
-            <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-              <path d="M1.5 9c1-2.6 2.6-4 5.5-4s4.5 1.4 5.5 4" strokeDasharray="1.6 1.4" />
-              <path d="M1.5 9h11" />
-              <circle cx="4" cy="10" r="1.2" />
-              <circle cx="10" cy="10" r="1.2" />
-              <rect x="5.6" y="6.6" width="2.8" height="1.8" />
-            </svg>
-          </Tool>
-          <Tool on={false} onClick={onPhoto} label="Photo" hint="P">
-            <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
-              <path d="M1.5 4.5h2.6l1-1.6h3.8l1 1.6h2.6v7h-11z" />
-              <circle cx="7" cy="7.8" r="2.1" />
-            </svg>
-          </Tool>
-          <button
-            type="button"
-            onClick={onKeys}
-            title="Keyboard shortcuts (?)"
-            aria-label="Keyboard shortcuts"
-            className="grid w-8 place-items-center rounded-md border border-fg/12 font-mono text-[11px] text-fg/60 transition-colors hover:border-fg/40 hover:text-fg"
-          >
-            ?
-          </button>
-        </div>
-      </Row>
-
-      <div className="mt-4 flex gap-2">
-        <Toggle on={lights} onClick={onLights} label="Lamps" hint="L">
-          <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
-            <path d="M8 3.5c2.2 0 3.5 1.6 3.5 3.5S10.2 10.5 8 10.5H6.5v-7H8z" />
-            <path d="M4.5 4.5H1.5M4.5 7H1.5M4.5 9.5H1.5" />
-          </svg>
-        </Toggle>
-        <Toggle on={turntable} onClick={onTurntable} label="Spin" hint="S">
-          <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
-            <ellipse cx="7" cy="8.5" rx="5.5" ry="2.2" />
-            <path d="M10.5 3.2l1.4 1.1-1.6.8" />
-            <path d="M3 5.2C4 4.2 5.4 3.8 7 3.8c1.9 0 3.6.5 4.6 1.4" />
-          </svg>
-        </Toggle>
-        <button
-          type="button"
-          onClick={onFilm}
-          title="Play the film (C)"
-          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-accent px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-bg transition-transform duration-300 hover:scale-[1.03]"
-        >
-          <svg aria-hidden width="9" height="10" viewBox="0 0 9 10" fill="currentColor">
-            <path d="M0 0l9 5-9 5z" />
-          </svg>
-          Film
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function Row({ label, value, children }: { label: string; value?: string; children: ReactNode }) {
-  return (
-    <div className="mb-4 last:mb-0">
-      <p className="label mb-2 flex items-center justify-between gap-3 !text-[10px]">
-        {label}
-        {value && <span className="truncate normal-case tracking-normal text-fg/80">{value}</span>}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-function Toggle({ on, onClick, label, hint, children }: { on: boolean; onClick: () => void; label: string; hint?: string; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      title={hint ? `${label} (${hint})` : label}
-      className={`flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] transition-colors duration-300 ${
-        on ? "border-fg bg-fg text-bg" : "border-fg/15 text-fg/70 hover:border-fg/50 hover:text-fg"
-      }`}
-    >
-      {children}
-      {label}
-    </button>
-  );
-}
-
-/** A studio tool: an icon over its name, lit while it is on. */
-function Tool({ on, onClick, label, hint, children }: { on: boolean; onClick: () => void; label: string; hint: string; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      title={`${label} (${hint})`}
-      className={`flex flex-col items-center gap-1 rounded-md border py-2 font-mono text-[9px] uppercase tracking-[0.06em] transition-colors ${
-        on ? "border-fg bg-fg text-bg" : "border-fg/12 text-fg/60 hover:border-fg/40 hover:text-fg"
-      }`}
-    >
-      {children}
-      {label}
-    </button>
-  );
-}
-
 const KEYS: [string, string][] = [
   ["E", "Explode or reassemble"],
   ["1–6", "Hero, front, side, rear, top, low"],
+  ["I", "Driver's seat"],
+  ["D", "Open or close the doors"],
   ["M", "Measure"],
   ["X", "X-ray the bodywork"],
+  ["G", "Floor grid"],
   ["P", "Take a photo"],
-  ["L", "Lamps"],
+  ["L", "Lights"],
+  ["R", "Rev the engine"],
   ["S", "Spin the turntable"],
   ["C", "Play the film"],
   ["← →", "Previous or next part (or car)"],

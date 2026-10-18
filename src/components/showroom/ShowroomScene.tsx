@@ -1,14 +1,15 @@
 "use client";
 
-import { ContactShadows, Environment, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
+import { ContactShadows, Environment, Grid, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
 import { Bloom, DepthOfField, EffectComposer, N8AO, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { BlendFunction, ToneMappingMode, type BloomEffect, type DepthOfFieldEffect } from "postprocessing";
 import * as THREE from "three";
 
 import type { CarView, PaintColor } from "@/content/cars";
-import { cineShots, moodById, shots, type Dims, type Mood, type MoodId, type ShotId } from "./studio";
+import { cineShots, moodById, shots, type BackdropId, type Dims, type Look, type Mood, type MoodId, type ShotId } from "./studio";
 
 const ACCENT = new THREE.Color("#c8ff3d");
 const GHOST = 0.18;
@@ -61,11 +62,13 @@ export type SceneProps = {
   measure: boolean;
   /** parts made see-through so the mechanicals show (the bodywork, for the X-ray view) */
   xray: string[];
-  /** changes to ask for a photo of the current frame */
-  snap: number;
+  /** `n` changes to ask for a photo of the current frame; a wallpaper renders it 3840 px wide */
+  snap: { n: number; wallpaper: boolean };
   onSnap: (png: string) => void;
   /** the camera as a photographer would read it: lens, height, angle round the car */
   onCamera: (c: CameraInfo) => void;
+  /** what the dock sets: doors, brakes, finish, livery, the cockpit view, the stage and quality */
+  look: Look;
   onCinematicShot: (i: number) => void;
   onHover: (id: string | null, x?: number, y?: number) => void;
   onPick: (id: string) => void;
@@ -90,6 +93,10 @@ type Rig = {
   sweep: number;
   lamps: number;
   cineLamps: boolean;
+  /** the driver's eye and where it looks, in the car's frame (for the cockpit view) */
+  eye: THREE.Vector3 | null;
+  look: THREE.Vector3 | null;
+  headColor: THREE.Color;
 };
 
 const ease = (t: number) => t * t * (3 - 2 * t);
@@ -186,16 +193,95 @@ function partOf(o: THREE.Object3D | null): string | null {
 }
 
 type Lamp = { s: MatState; head: boolean; lit: boolean; base: Base };
-const HEAD = new THREE.Color(1, 0.93, 0.82);
 const TAIL = new THREE.Color(1, 0.04, 0.02);
 
-function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lamps, lights, turntable, cinematic, measure, xray, onHover, onPick, onReady, rig }: SceneProps & { rig: Rig }) {
+type Door = { rec: PartRec; hinge: THREE.Vector3; side: number; base: THREE.Quaternion; t: number };
+const DOOR_SWING = THREE.MathUtils.degToRad(64);
+const DOOR_UP = THREE.MathUtils.degToRad(68);
+const DOOR_OUT = THREE.MathUtils.degToRad(22);
+const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
+const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), pv = new THREE.Vector3(), hv = new THREE.Vector3();
+
+/** The livery, painted in the car's own frame by the paint shader: stripes, a side band or a two-tone roof. */
+const liveryIndex = { none: 0, stripes: 1, band: 2, twotone: 3 } as const;
+function addLivery(mat: THREE.Material, u: Record<string, THREE.IUniform>) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nuniform mat4 uCarInv;\nvarying vec3 vCarPos;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvCarPos = (uCarInv * modelMatrix * vec4(transformed, 1.0)).xyz;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform int uLivery;\nuniform vec3 uLiveryColor;\nuniform vec4 uBox;\nvarying vec3 vCarPos;")
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        if (uLivery > 0) {
+          // uBox: centre line z, floor y, height, half width
+          vec3 p = vCarPos;
+          float z = abs(p.z - uBox.x), y = p.y - uBox.y, h = uBox.z, aa = 0.005, m = 0.0;
+          if (uLivery == 1) {
+            m = smoothstep(0.045, 0.045 + aa, z) * (1.0 - smoothstep(0.17, 0.17 + aa, z)) * step(h * 0.3, y);
+          } else if (uLivery == 2) {
+            float c = h * 0.36;
+            m = smoothstep(c - 0.045, c - 0.045 + aa, y) * (1.0 - smoothstep(c + 0.03, c + 0.03 + aa, y)) * smoothstep(uBox.w * 0.55, uBox.w * 0.6, z);
+          } else {
+            m = smoothstep(h * 0.66, h * 0.66 + aa, y);
+          }
+          diffuseColor.rgb = mix(diffuseColor.rgb, uLiveryColor, m);
+        }`,
+      );
+  };
+  mat.customProgramCacheKey = () => "livery";
+  mat.needsUpdate = true;
+}
+
+/** Swap a standard material for a physical one with the same look, so it can take iridescence. */
+function toPhysical(rec: PartRec, s: MatState) {
+  if ((s.mat as THREE.MeshPhysicalMaterial).isMeshPhysicalMaterial) return;
+  const old = s.mat as unknown as THREE.MeshStandardMaterial;
+  const phys = new THREE.MeshPhysicalMaterial();
+  THREE.MeshStandardMaterial.prototype.copy.call(phys, old);
+  phys.userData = old.userData;
+  phys.clearcoat = 0.8;
+  phys.clearcoatRoughness = 0.06;
+  rec.obj.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if (Array.isArray(mesh.material)) mesh.material = mesh.material.map((m) => (m === old ? phys : m));
+    else if (mesh.material === old) mesh.material = phys;
+  });
+  s.mat = phys;
+  old.dispose();
+}
+
+function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lamps, lights, turntable, cinematic, measure, xray, look, onHover, onPick, onReady, rig }: SceneProps & { rig: Rig }) {
   const { scene } = useGLTF(url, "/draco/");
   const home = useMemo(() => new THREE.Vector3(...view.target), [view]);
   const parts = useParts(scene);
   const table = useRef<THREE.Group>(null);
-  const finish = useRef<{ paint: MatState[]; lamps: Lamp[] }>({ paint: [], lamps: [] });
-  const goal = useMemo(() => ({ color: new THREE.Color(), metal: 0, rough: 0 }), []);
+  const finish = useRef<{ paint: MatState[]; lamps: Lamp[]; calipers: MatState[] }>({ paint: [], lamps: [], calipers: [] });
+  const goal = useMemo(() => ({ color: new THREE.Color(), metal: 0, rough: 0, brake: new THREE.Color() }), []);
+  const livery = useMemo<Record<string, THREE.IUniform>>(
+    () => ({ uLivery: { value: 0 }, uLiveryColor: { value: new THREE.Color() }, uCarInv: { value: new THREE.Matrix4() }, uBox: { value: new THREE.Vector4() } }),
+    [],
+  );
+
+  // doors hinge at their front edge, on the outside: a swing outward, or up and out
+  const doors = useMemo(() => {
+    const list: Door[] = [];
+    for (const rec of parts.values()) {
+      if (!rec.id.startsWith("door")) continue;
+      const b = rec.box, c = rec.center;
+      const side = c.z >= 0 ? 1 : -1;
+      const hinge = new THREE.Vector3(b.max.x - 0.04, look.doorStyle === "butterfly" ? b.min.y + (b.max.y - b.min.y) * 0.75 : c.y, side > 0 ? b.max.z : b.min.z);
+      const base = (rec.obj.userData.baseQ as THREE.Quaternion | undefined)?.clone() ?? rec.obj.quaternion.clone();
+      rec.obj.userData.baseQ = base.clone();
+      list.push({ rec, hinge, side, base, t: 0 });
+    }
+    // a front door before its rear neighbour, so the rear one never opens first
+    return list;
+  }, [parts, look.doorStyle]);
+  useEffect(() => () => doors.forEach((d) => d.rec.obj.quaternion.copy(d.base)), [doors]);
 
   useEffect(() => onReady([...parts.keys()]), [parts, onReady]);
   useEffect(() => {
@@ -209,15 +295,30 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     for (const p of parts.values()) all.union(p.box);
     const size = all.getSize(new THREE.Vector3());
     rig.dims = { l: Math.max(size.x, size.z) / 2, w: Math.min(size.x, size.z) / 2, h: size.y, y: home.y };
-  }, [parts, rig, home]);
+    const mid = all.getCenter(new THREE.Vector3());
+    livery.uBox.value.set(mid.z, all.min.y, size.y, size.z / 2);
+    // the driver's eye: behind and above the steering wheel, or a guess from the car's size
+    const wheel = parts.get("steering");
+    if (wheel) {
+      rig.eye = wheel.center.clone().add(new THREE.Vector3(-0.5, 0.26, 0));
+    } else {
+      rig.eye = new THREE.Vector3(mid.x - size.x * 0.06, all.min.y + size.y * 0.72, mid.z + size.z * 0.2);
+    }
+    rig.look = rig.eye.clone().add(new THREE.Vector3(1, -0.1, 0));
+  }, [parts, rig, home, livery]);
 
   // find the paint and the lamps among the part's material copies (runs after useParts' effect)
   useEffect(() => {
     const paintSet = new Set<MatState>();
     const lampList: Lamp[] = [];
+    const caliperSet = new Set<MatState>();
     for (const rec of parts.values()) {
       for (const s of rec.mats) {
-        if (s.mat.name === paintMaterial) paintSet.add(s);
+        if (s.mat.name === paintMaterial) {
+          toPhysical(rec, s);
+          paintSet.add(s);
+        }
+        if (look.calipers.includes(s.mat.name)) caliperSet.add(s);
         const head = rec.id === "headlights" && lamps.head.includes(s.mat.name);
         const tail = rec.id === "taillights" && lamps.tail.includes(s.mat.name);
         if (!head && !tail) continue;
@@ -227,14 +328,15 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
       }
     }
     for (const s of paintSet) {
-      // a fresh coat of lacquer on every colour
-      if ("clearcoat" in s.mat) {
-        s.mat.clearcoat = Math.max(s.mat.clearcoat, 0.8);
-        s.mat.clearcoatRoughness = Math.min(s.mat.clearcoatRoughness, 0.06);
-      }
+      // a fresh coat of lacquer on every colour, a pearl that shifts with the angle, and the livery
+      s.mat.clearcoat = Math.max(s.mat.clearcoat, 0.8);
+      s.mat.clearcoatRoughness = Math.min(s.mat.clearcoatRoughness, 0.06);
+      s.mat.iridescenceIOR = 1.45;
+      s.mat.iridescenceThicknessRange = [180, 720];
+      addLivery(s.mat, livery);
     }
-    finish.current = { paint: [...paintSet], lamps: lampList };
-  }, [parts, paintMaterial, lamps]);
+    finish.current = { paint: [...paintSet], lamps: lampList, calipers: [...caliperSet] };
+  }, [parts, paintMaterial, lamps, look.calipers, livery]);
 
   // first hit that belongs to a part that isn't faded out
   const pick = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
@@ -270,8 +372,21 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
       }
     }
 
+    // doors: swing about their hinges (on top of any slide-out from the explode)
+    for (const d of doors) {
+      d.t += ((look.doors && !cinematic ? 1 : 0) - d.t) * k * 0.7;
+      const u = ease(d.t);
+      if (look.doorStyle === "butterfly") qa.setFromAxisAngle(AX, d.side * DOOR_OUT * u).multiply(qb.setFromAxisAngle(AZ, -DOOR_UP * u));
+      else qa.setFromAxisAngle(AY, d.side * DOOR_SWING * u);
+      const o = d.rec.obj;
+      hv.copy(d.hinge).addScaledVector(d.rec.out, ease(d.rec.t));
+      pv.copy(o.position).sub(hv).applyQuaternion(qa).add(hv);
+      o.position.copy(pv);
+      o.quaternion.copy(qa).multiply(d.base);
+    }
+
     // paint: ease into the picked colour
-    const { paint: coat, lamps: lampList } = finish.current;
+    const { paint: coat, lamps: lampList, calipers } = finish.current;
     const base0 = coat[0]?.mat.userData.base as Base | undefined;
     if (base0?.color) {
       if (paint) goal.color.set(paint.hex);
@@ -279,12 +394,26 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
       goal.metal = paint?.metalness ?? base0.metalness ?? 0.5;
       goal.rough = paint?.roughness ?? base0.roughness ?? 0.3;
       const kp = k * 0.7;
+      const iri = look.iridescent ? 1 : 0;
       for (const s of coat) {
         s.mat.color.lerp(goal.color, kp);
         s.mat.metalness += (goal.metal - s.mat.metalness) * kp;
         s.mat.roughness += (goal.rough - s.mat.roughness) * kp;
+        s.mat.iridescence = Math.abs(iri - s.mat.iridescence) < 0.01 ? iri : s.mat.iridescence + (iri - s.mat.iridescence) * kp;
       }
     }
+    // the livery's colour and the car's frame for the shader
+    livery.uLivery.value = liveryIndex[look.livery];
+    livery.uLiveryColor.value.set(look.liveryColor);
+    if (table.current) livery.uCarInv.value.copy(table.current.matrixWorld).invert();
+    // brake calipers
+    for (const s of calipers) {
+      const base = s.mat.userData.base as Base;
+      if (look.brake) goal.brake.set(look.brake);
+      else if (base.color) goal.brake.copy(base.color);
+      s.mat.color.lerp(goal.brake, k * 0.7);
+    }
+    rig.headColor.set(look.tuning.headColor);
 
     // lamps: a quick ignition flicker, then full glow
     const on = lights || (cinematic && rig.cineLamps);
@@ -298,7 +427,7 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
           s.mat.emissive.copy(base.emissive);
           s.mat.emissiveIntensity = base.emissiveIntensity * (1 + lv * 2.5);
         } else {
-          s.mat.emissive.copy(head ? HEAD : TAIL).multiplyScalar(lv);
+          s.mat.emissive.copy(head ? rig.headColor : TAIL).multiplyScalar(lv);
           s.mat.emissiveIntensity = head ? 7 : 5;
         }
       }
@@ -307,9 +436,9 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     // the turntable: a slow spin while nobody is busy; squared up for the camera presets
     const g = table.current;
     if (g) {
-      if (measure && !cinematic) rig.square = true;
+      if ((measure || look.interior) && !cinematic) rig.square = true;
       const idle = turntable && !selected.length && !cinematic && !rig.square && performance.now() - rig.lastDrag > 4000;
-      rig.speed += ((idle && !reducedMotion() ? 0.12 : 0) - rig.speed) * k * 0.4;
+      rig.speed += ((idle && !reducedMotion() ? 0.12 * look.tuning.spin : 0) - rig.speed) * k * 0.4;
       if (rig.square) {
         const near = Math.round(g.rotation.y / TAU) * TAU;
         g.rotation.y += (near - g.rotation.y) * k * 0.9;
@@ -526,7 +655,11 @@ function HeadBeams({ rec, rig }: { rec: PartRec; rig: Rig }) {
   useFrame(() => {
     const lv = rig.lamps;
     mat.uniforms.uOpacity.value = lv * 0.16;
-    for (const l of lights.current) if (l) l.intensity = lv * 70;
+    mat.uniforms.uColor.value.copy(rig.headColor);
+    for (const l of lights.current) if (l) {
+      l.intensity = lv * 70;
+      l.color.copy(rig.headColor);
+    }
     for (const b of beams.current) if (b) b.visible = lv > 0.01;
   });
 
@@ -622,6 +755,34 @@ const liveOf = (m: Mood): Live => ({
   envCeiling: m.envCeiling,
   bloom: m.bloom,
 });
+/** The backdrop repaints the set under the mood's lights: a white cyc, a black void, or open sky. */
+function withBackdrop(l: Live, b: BackdropId): Live {
+  if (b === "white") {
+    l.bg.set("#c9cacd");
+    l.cove.set("#f0f0f2");
+    l.floor.set("#8e9094");
+    l.horizon.set("#3a3b3e");
+    l.hemi += 0.5;
+  } else if (b === "void") {
+    l.bg.set("#000000");
+    l.cove.set("#000000");
+    l.horizon.set("#000000");
+    l.stripLevel = 0;
+    l.ceilingLevel = 0;
+    l.floor.set("#0c0c0e");
+  } else if (b === "sky") {
+    l.bg.set("#b3c9e6");
+    l.horizon.set("#000000");
+    l.stripLevel = 0;
+    l.ceilingLevel = 0;
+    l.floor.set("#26272b");
+    l.hemi += 0.6;
+    l.envStrip *= 0.4;
+    l.envCeiling *= 0.4;
+  }
+  return l;
+}
+
 function stepLive(cur: Live, goal: Live, k: number) {
   for (const key of Object.keys(cur) as (keyof Live)[]) {
     const c = cur[key], g = goal[key];
@@ -681,7 +842,55 @@ function floorNoise(size = 256) {
   return tex;
 }
 
-function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }) {
+const skyVert = /* glsl */ `
+  varying vec3 vDir;
+  void main() {
+    vDir = normalize(position);
+    vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_Position = p.xyww;
+  }
+`;
+const skyFrag = /* glsl */ `
+  uniform vec3 uSun;
+  varying vec3 vDir;
+  void main() {
+    vec3 d = normalize(vDir);
+    float up = clamp(d.y, 0.0, 1.0);
+    // haze at the horizon into a deep blue overhead, a warm glow round a low sun
+    vec3 zenith = vec3(0.05, 0.17, 0.52);
+    vec3 horizon = vec3(0.70, 0.79, 0.90);
+    vec3 col = mix(horizon, zenith, pow(up, 0.55));
+    float s = max(dot(d, normalize(uSun)), 0.0);
+    col += vec3(1.0, 0.78, 0.52) * (pow(s, 8.0) * 0.35 + pow(s, 900.0) * 6.0);
+    // below the horizon: the haze carries on, a touch darker, under the floor's edge
+    col = mix(col, horizon * 0.85, smoothstep(0.0, -0.08, d.y));
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+/** A simple daylight sky: horizon haze, blue overhead and a low sun behind the car. */
+function SkyDome() {
+  const mat = useMemo(
+    () => new THREE.ShaderMaterial({
+      uniforms: { uSun: { value: new THREE.Vector3(-0.55, 0.18, -0.8) } },
+      vertexShader: skyVert,
+      fragmentShader: skyFrag,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+    }),
+    [],
+  );
+  useEffect(() => () => mat.dispose(), [mat]);
+  return (
+    <mesh material={mat} scale={500} renderOrder={-10} raycast={() => null}>
+      <sphereGeometry args={[1, 48, 24]} />
+    </mesh>
+  );
+}
+
+function Studio({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId }) {
+  const sky = backdrop === "sky";
   const scene = useThree((s) => s.scene);
   const cove = useRef<THREE.MeshStandardMaterial>(null);
   const floor = useRef<THREE.MeshStandardMaterial>(null);
@@ -751,13 +960,15 @@ function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }
 
   return (
     <group>
-      <mesh geometry={coveGeo} receiveShadow>
+      {sky && <SkyDome />}
+      <mesh geometry={coveGeo} receiveShadow visible={!sky}>
         <meshStandardMaterial ref={cove} color="#34363b" vertexColors roughness={0.92} metalness={0} side={THREE.BackSide} />
       </mesh>
-      <mesh geometry={glowGeo} material={glow} scale={[0.995, 1, 0.995]} raycast={() => null} />
+      <mesh geometry={glowGeo} material={glow} scale={[0.995, 1, 0.995]} raycast={() => null} visible={!sky} />
 
       {/* dark polished concrete: blurred, slightly wavering reflections, with a satin sheen that varies across the slab */}
-      <mesh rotation-x={-Math.PI / 2} receiveShadow>
+      {/* under open sky the slab runs out to the horizon, where the haze swallows it */}
+      <mesh rotation-x={-Math.PI / 2} receiveShadow scale={sky ? 5 : 1}>
         <circleGeometry args={[FLOOR_R + 0.02, 160]} />
         <MeshReflectorMaterial
           ref={floor as never}
@@ -776,8 +987,8 @@ function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }
         />
       </mesh>
 
-      {/* softboxes standing round the cove: a diffuser in a black frame */}
-      {strips.map((m, i) => {
+      {/* softboxes standing round the cove: a diffuser in a black frame (struck for the void and the sky) */}
+      {backdrop !== "sky" && backdrop !== "void" && strips.map((m, i) => {
         const a = stripAngle(i);
         return (
           <group key={i} position={[Math.sin(a) * (WALL_R - 0.6), COVE_R + 2.3, Math.cos(a) * (WALL_R - 0.6)]} rotation-y={a + Math.PI}>
@@ -793,7 +1004,7 @@ function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }
       })}
 
       {/* the overhead scrim: one long diffuser down the length of the car, the line every studio car shot has on its roof */}
-      <group position-y={6.4} rotation-x={Math.PI / 2}>
+      <group position-y={6.4} rotation-x={Math.PI / 2} visible={backdrop !== "sky" && backdrop !== "void"}>
         <mesh position-z={-0.01}>
           <planeGeometry args={[9.6, 3.8]} />
           <meshBasicMaterial color="#040405" side={THREE.DoubleSide} />
@@ -836,7 +1047,7 @@ function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }
  * clean shapes, as in a real studio: the overhead scrim for the roof line, a long low strip either
  * side for the horizon line down the doors, and a grey floor for the sills to pick up.
  */
-function Reflections({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }) {
+function Reflections({ live, rig, narrow, backdrop }: { live: Live; rig: Rig; narrow: boolean; backdrop: BackdropId }) {
   const ceiling = useRef<THREE.Mesh>(null);
   const strips = useRef<(THREE.Mesh | null)[]>([]);
   const sides = useRef<(THREE.Mesh | null)[]>([]);
@@ -866,6 +1077,7 @@ function Reflections({ live, rig, narrow }: { live: Live; rig: Rig; narrow: bool
   return (
     <Environment resolution={narrow ? 256 : 512} frames={Infinity}>
       <color ref={bg} attach="background" args={["#08080a"]} />
+      {backdrop === "sky" && <SkyDome />}
       <Lightformer ref={ceiling} form="rect" position={[0, 6.4, 0]} rotation-x={Math.PI / 2} scale={[9.2, 3.4, 1]} />
       {Array.from({ length: STRIPS }, (_, i) => {
         const a = stripAngle(i);
@@ -888,24 +1100,44 @@ function Reflections({ live, rig, narrow }: { live: Live; rig: Rig; narrow: bool
   );
 }
 
-function Stage({ mood, rig, narrow, bloom }: { mood: MoodId; rig: Rig; narrow: boolean; bloom: RefObject<BloomEffect | null> }) {
-  const goal = useMemo(() => liveOf(moodById[mood]), [mood]);
-  const [live] = useState(() => liveOf(moodById[mood]));
+function Stage({ mood, backdrop, grid, tuning, rig, lite, bloom }: {
+  mood: MoodId;
+  backdrop: BackdropId;
+  grid: boolean;
+  tuning: Look["tuning"];
+  rig: Rig;
+  lite: boolean;
+  bloom: RefObject<BloomEffect | null>;
+}) {
+  const scene = useThree((st) => st.scene);
+  const goal = useMemo(() => withBackdrop(liveOf(moodById[mood]), backdrop), [mood, backdrop]);
+  const [live] = useState(() => withBackdrop(liveOf(moodById[mood]), backdrop));
+  const fog = useRef<THREE.Fog>(null);
   useFrame((state, dt) => {
     stepLive(live, goal, 1 - Math.exp(-dt * 2.6));
-    if (bloom.current) bloom.current.intensity = live.bloom;
+    if (bloom.current) bloom.current.intensity = live.bloom * tuning.bloom;
+    scene.environmentIntensity += (tuning.reflections - scene.environmentIntensity) * Math.min(1, dt * 6);
+    if (fog.current) {
+      fog.current.near = backdrop === "sky" ? 12 : 14;
+      fog.current.far = backdrop === "sky" ? 46 : 34;
+    }
     const now = state.clock.elapsedTime;
     if (rig.t0 < 0) rig.t0 = reducedMotion() ? now - 10 : now;
     // first sweep once the lights are up, then one every 12 s
     if (now - rig.sweep > 12 && now - rig.t0 > 2.4) rig.sweep = now;
   });
+  const light = backdrop === "white";
   return (
     <>
       {/* colours come from the eased mood each frame */}
       <color attach="background" args={["#0a0a0b"]} />
-      <fog attach="fog" args={["#0a0a0b", 14, 34]} />
-      <Reflections live={live} rig={rig} narrow={narrow} />
-      <Studio live={live} rig={rig} narrow={narrow} />
+      <fog ref={fog} attach="fog" args={["#0a0a0b", 14, 34]} />
+      <Reflections live={live} rig={rig} narrow={lite} backdrop={backdrop} />
+      <Studio live={live} rig={rig} narrow={lite} backdrop={backdrop} />
+      {grid && (
+        <Grid position={[0, 0.006, 0]} args={[40, 40]} infiniteGrid cellSize={0.5} sectionSize={2.5} cellThickness={0.6} sectionThickness={1.1}
+          cellColor={light ? "#6d6f74" : "#4a4c52"} sectionColor={light ? "#45474c" : "#8b8e96"} fadeDistance={24} fadeStrength={1.6} />
+      )}
     </>
   );
 }
@@ -922,9 +1154,11 @@ const tmp = new THREE.Vector3();
  * the picked part sits in the free space: above the bottom sheet on phones, left of the side panel
  * on wider screens.
  */
-function Director({ view, panel, shot, cinematic, rig, onCinematicShot, onCamera, dof }: {
+function Director({ view, panel, shot, cinematic, interior, rig, onCinematicShot, onCamera, dof }: {
   view: CarView;
   panel: boolean;
+  /** the cockpit view: in the driver's seat, free to look round */
+  interior: boolean;
   shot: SceneProps["shot"];
   cinematic: boolean;
   rig: Rig;
@@ -934,7 +1168,10 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, onCamera
 }) {
   const reading = useRef({ at: 0, key: "" });
   const narrow = useThree((s) => s.size.width < 768);
-  const controls = useRef<{ target: THREE.Vector3; update: () => void; enabled: boolean } | null>(null);
+  const controls = useRef<OrbitControlsImpl | null>(null);
+  const inside = useRef({ on: false, settled: false });
+  const eyeW = useMemo(() => new THREE.Vector3(), []);
+  const lookW = useMemo(() => new THREE.Vector3(), []);
   const shift = useRef({ x: 0, y: 0 });
   const goal = useRef<THREE.Vector3 | null>(null);
   const cine = useRef({ start: -1, index: -1 });
@@ -1043,6 +1280,59 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, onCamera
     }
 
     if (c) c.enabled = true;
+
+    // the cockpit: glide in through the side window to the driver's eye, then look round from there
+    if (interior && rig.eye && rig.look && rig.table && c) {
+      const m = rig.table.matrixWorld;
+      eyeW.copy(rig.eye).applyMatrix4(m);
+      lookW.copy(rig.look).applyMatrix4(m);
+      const ahead = tmp.copy(lookW).sub(eyeW).normalize().multiplyScalar(0.06).add(eyeW);
+      if (!inside.current.on) {
+        inside.current = { on: true, settled: false };
+        goal.current = null;
+        fov.current = 64;
+      }
+      // set every frame: a re-render hands the controls their outside props again
+      const settled = inside.current.settled;
+      c.minDistance = settled ? 0.06 : 0.001;
+      c.maxDistance = settled ? 0.06 : 40;
+      c.maxPolarAngle = Math.PI * 0.85;
+      c.minPolarAngle = Math.PI * 0.15;
+      c.enableZoom = false;
+      c.rotateSpeed = -0.35; // drag the view, not the world
+      if (!settled) {
+        cam.position.lerp(eyeW, k * 0.7);
+        c.target.lerp(ahead, k * 0.9);
+        if (cam.position.distanceTo(eyeW) < 0.02) inside.current.settled = true;
+      }
+      c.update();
+      if (cam.near !== 0.01) {
+        cam.near = 0.01;
+        cam.updateProjectionMatrix();
+      }
+      if (Math.abs(cam.fov - fov.current) > 0.01) {
+        cam.fov += (fov.current - cam.fov) * k * 0.6;
+        cam.updateProjectionMatrix();
+      }
+      if (cam.view?.enabled) cam.clearViewOffset();
+      shift.current.x = shift.current.y = 0;
+      return;
+    }
+    if (inside.current.on && c) {
+      // back out to the hero view
+      inside.current = { on: false, settled: false };
+      c.minDistance = 1.2;
+      c.maxDistance = 12;
+      c.maxPolarAngle = Math.PI * 0.505;
+      c.minPolarAngle = 0;
+      c.enableZoom = true;
+      c.rotateSpeed = 1;
+      cam.near = 0.05;
+      cam.updateProjectionMatrix();
+      fov.current = baseFov;
+      goal.current = hero.clone();
+    }
+
     if (Math.abs(cam.fov - fov.current) > 0.01) {
       cam.fov += (fov.current - cam.fov) * k * 0.6;
       cam.updateProjectionMatrix();
@@ -1082,7 +1372,7 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, onCamera
   const start = useMemo(() => (reducedMotion() ? hero : intro).toArray() as [number, number, number], [hero, intro]);
   return (
     <>
-      <PerspectiveCamera makeDefault position={start} fov={baseFov} near={0.05} far={60} />
+      <PerspectiveCamera makeDefault position={start} fov={baseFov} near={0.05} far={1200} />
       <OrbitControls ref={controls as never} makeDefault enableDamping dampingFactor={0.08} minDistance={1.2} maxDistance={12}
         maxPolarAngle={Math.PI * 0.505} enablePan={false}
         onStart={() => {
@@ -1095,19 +1385,38 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, onCamera
   );
 }
 
-/** A photo of the frame just drawn: runs after the composer, while the drawing buffer still holds it. */
-function Snapper({ snap, onSnap }: { snap: number; onSnap: (png: string) => void }) {
+/**
+ * A photo of the frame just drawn: runs after the composer, while the drawing buffer still holds
+ * it. A wallpaper first raises the pixel ratio to 3840 px across, waits for the composer to catch
+ * up, then takes the shot and puts the ratio back.
+ */
+function Snapper({ snap, onSnap }: { snap: SceneProps["snap"]; onSnap: (png: string) => void }) {
   const gl = useThree((s) => s.gl);
-  const taken = useRef(snap);
+  const setDpr = useThree((s) => s.setDpr);
+  const width = useThree((s) => s.size.width);
+  const taken = useRef(snap.n);
+  const job = useRef<{ frames: number; dpr: number } | null>(null);
   useFrame(() => {
-    if (snap === taken.current) return;
-    taken.current = snap;
-    onSnap(gl.domElement.toDataURL("image/png"));
+    if (job.current) {
+      if (--job.current.frames > 0) return;
+      onSnap(gl.domElement.toDataURL("image/png"));
+      setDpr(job.current.dpr);
+      job.current = null;
+      return;
+    }
+    if (snap.n === taken.current) return;
+    taken.current = snap.n;
+    if (snap.wallpaper) {
+      const dpr = gl.getPixelRatio();
+      setDpr(Math.min(4, 3840 / width));
+      job.current = { frames: 3, dpr };
+    } else onSnap(gl.domElement.toDataURL("image/png"));
   }, 2);
   return null;
 }
 
-function Post({ narrow, cinematic, bloom, dof }: {
+function Post({ narrow, lite, cinematic, bloom, dof }: {
+  lite: boolean;
   narrow: boolean;
   cinematic: boolean;
   bloom: RefObject<BloomEffect | null>;
@@ -1116,9 +1425,9 @@ function Post({ narrow, cinematic, bloom, dof }: {
   // ambient occlusion seats the car on the floor and darkens its panel gaps and wheel arches; a
   // touch of film grain keeps the dark gradients from banding. The reel adds a shallow depth of
   // field, in a fresh composer so the everyday view stays cheap.
-  const ao = !narrow && <N8AO halfRes quality="medium" aoRadius={0.9} distanceFalloff={0.6} intensity={2.2} color="#000000" />;
+  const ao = !lite && <N8AO halfRes quality="medium" aoRadius={0.9} distanceFalloff={0.6} intensity={2.2} color="#000000" />;
   return cinematic ? (
-    <EffectComposer key="cine" multisampling={narrow ? 0 : 4}>
+    <EffectComposer key={`cine${lite}`} multisampling={lite ? 0 : 4}>
       {ao || <></>}
       <DepthOfField ref={dof} worldFocusRange={2.2} bokehScale={narrow ? 2.5 : 4.5} />
       <Bloom ref={bloom} mipmapBlur intensity={0.55} luminanceThreshold={1} luminanceSmoothing={0.15} radius={0.75} />
@@ -1127,7 +1436,7 @@ function Post({ narrow, cinematic, bloom, dof }: {
       <Vignette offset={0.25} darkness={0.75} />
     </EffectComposer>
   ) : (
-    <EffectComposer key="view" multisampling={narrow ? 0 : 4}>
+    <EffectComposer key={`view${lite}`} multisampling={lite ? 0 : 4}>
       {ao || <></>}
       <Bloom ref={bloom} mipmapBlur intensity={0.55} luminanceThreshold={1} luminanceSmoothing={0.15} radius={0.7} />
       <ToneMapping mode={ToneMappingMode.AGX} />
@@ -1139,6 +1448,8 @@ function Post({ narrow, cinematic, bloom, dof }: {
 
 export default function ShowroomScene(props: SceneProps) {
   const narrow = typeof window !== "undefined" && window.innerWidth < 768;
+  // performance mode: one pixel per pixel, no ambient occlusion or MSAA, lighter reflections
+  const lite = narrow || props.look.quality === "performance";
   const rig = useMemo<Rig>(
     () => ({
       focus: new THREE.Vector3(...props.view.target),
@@ -1151,6 +1462,9 @@ export default function ShowroomScene(props: SceneProps) {
       sweep: -100,
       lamps: 0,
       cineLamps: false,
+      eye: null,
+      look: null,
+      headColor: new THREE.Color(props.look.tuning.headColor),
     }),
     // one rig per car (the showroom is remounted for each)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1162,16 +1476,16 @@ export default function ShowroomScene(props: SceneProps) {
   return (
     <Canvas
       shadows={{ type: THREE.PCFShadowMap }}
-      dpr={[1, 2]}
+      dpr={lite ? 1 : [1, 2]}
       gl={{ antialias: false, powerPreference: "high-performance" }}
       onPointerMissed={() => props.onHover(null)}
     >
-      <Stage mood={props.mood} rig={rig} narrow={narrow} bloom={bloom} />
+      <Stage mood={props.mood} backdrop={props.look.backdrop} grid={props.look.grid} tuning={props.look.tuning} rig={rig} lite={lite} bloom={bloom} />
       <Car {...props} rig={rig} />
-      <Director view={props.view} panel={props.selected.length > 0} shot={props.shot} cinematic={props.cinematic} rig={rig}
+      <Director view={props.view} panel={props.selected.length > 0} shot={props.shot} cinematic={props.cinematic} interior={props.look.interior} rig={rig}
         onCinematicShot={props.onCinematicShot} onCamera={props.onCamera} dof={dof} />
       <Snapper snap={props.snap} onSnap={props.onSnap} />
-      <Post narrow={narrow} cinematic={props.cinematic} bloom={bloom} dof={dof} />
+      <Post narrow={narrow} lite={lite} cinematic={props.cinematic} bloom={bloom} dof={dof} />
     </Canvas>
   );
 }

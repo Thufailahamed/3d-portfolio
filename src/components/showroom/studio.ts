@@ -212,3 +212,70 @@ export const cineShots: CineShot[] = [
     look: ({ y }) => [[0, y * 0.9, 0], [0, y, 0]],
   },
 ];
+
+// ---------------------------------------------------------------------- the dock's car and stage options
+
+export type LiveryId = "none" | "stripes" | "band" | "twotone";
+export const liveries: { id: LiveryId; name: string }[] = [
+  { id: "none", name: "None" },
+  { id: "stripes", name: "Twin stripes" },
+  { id: "band", name: "Side band" },
+  { id: "twotone", name: "Two-tone roof" },
+];
+export const liveryColors = [
+  { name: "White", hex: "#f2f0ea" },
+  { name: "Black", hex: "#0b0b0c" },
+  { name: "Lime", hex: "#c8ff3d" },
+  { name: "Red", hex: "#c8141c" },
+  { name: "Gold", hex: "#c9a24a" },
+];
+
+export const brakeColors = [
+  { name: "Model's own", hex: "" },
+  { name: "Race red", hex: "#d4141b" },
+  { name: "Yellow", hex: "#f5c400" },
+  { name: "Lime", hex: "#b6f23a" },
+  { name: "Orange", hex: "#ff6a13" },
+  { name: "Blue", hex: "#1f5bff" },
+  { name: "Black", hex: "#111113" },
+  { name: "Silver", hex: "#b9bcc0" },
+];
+
+/** What stands behind the car: the lit cove, a white cyclorama, a black void or an open sky. */
+export type BackdropId = "studio" | "white" | "void" | "sky";
+export const backdrops: { id: BackdropId; name: string; swatch: string }[] = [
+  { id: "studio", name: "Studio", swatch: "radial-gradient(circle at 50% 70%,#8a8d94,#202125 70%)" },
+  { id: "white", name: "White cyc", swatch: "radial-gradient(circle at 50% 70%,#ffffff,#c7c8cb 75%)" },
+  { id: "void", name: "Void", swatch: "radial-gradient(circle at 50% 80%,#2a2a2e,#000 60%)" },
+  { id: "sky", name: "Open sky", swatch: "linear-gradient(180deg,#5d86c4,#c9d6e4 60%,#3a3b3e 61%)" },
+];
+
+export type Quality = "performance" | "quality";
+
+/** The developer settings: finer control than the swatches give. */
+export type Tuning = {
+  headColor: string;
+  /** strength of the studio's reflections in the paint */
+  reflections: number;
+  bloom: number;
+  /** turntable speed, 1 = the default slow spin */
+  spin: number;
+};
+export const defaultTuning: Tuning = { headColor: "#ffeed1", reflections: 1, bloom: 1, spin: 1 };
+
+/** Everything the dock sets on the car and the stage, handed to the scene in one piece. */
+export type Look = {
+  doors: boolean;
+  doorStyle: "swing" | "butterfly";
+  calipers: string[];
+  /** caliper paint; empty for the model's own */
+  brake: string;
+  iridescent: boolean;
+  livery: LiveryId;
+  liveryColor: string;
+  interior: boolean;
+  grid: boolean;
+  backdrop: BackdropId;
+  quality: Quality;
+  tuning: Tuning;
+};
