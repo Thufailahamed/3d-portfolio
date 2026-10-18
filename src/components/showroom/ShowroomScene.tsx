@@ -43,9 +43,10 @@ type Base = {
 export type SceneProps = {
   url: string;
   view: CarView;
-  selected: string | null;
+  /** the model's part groups that are picked (a set such as the four wheels moves together) */
+  selected: string[];
   exploded: boolean;
-  hovered: string | null;
+  hovered: string[];
   paintMaterial: string;
   /** null: the model's own paint */
   paint: PaintColor | null;
@@ -236,9 +237,10 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
   useFrame((_, dt) => {
     const k = 1 - Math.exp(-dt * 5);
     for (const p of parts.values()) {
-      const out = exploded || p.id === selected ? 1 : 0;
-      const ghost = selected && !exploded && p.id !== selected ? 1 : 0;
-      const hover = p.id === hovered && p.id !== selected ? 1 : 0;
+      const picked = selected.includes(p.id);
+      const out = exploded || picked ? 1 : 0;
+      const ghost = selected.length && !exploded && !picked ? 1 : 0;
+      const hover = hovered.includes(p.id) && !picked ? 1 : 0;
       p.t += (out - p.t) * k;
       p.obj.position.copy(p.home).addScaledVector(p.out, ease(p.t));
       const g0 = p.ghost, h0 = p.hover;
@@ -294,7 +296,7 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     // the turntable: a slow spin while nobody is busy; squared up for the camera presets
     const g = table.current;
     if (g) {
-      const idle = turntable && !selected && !cinematic && !rig.square && performance.now() - rig.lastDrag > 4000;
+      const idle = turntable && !selected.length && !cinematic && !rig.square && performance.now() - rig.lastDrag > 4000;
       rig.speed += ((idle && !reducedMotion() ? 0.12 : 0) - rig.speed) * k * 0.4;
       if (rig.square) {
         const near = Math.round(g.rotation.y / TAU) * TAU;
@@ -304,9 +306,11 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     }
 
     // ease the orbit pivot onto the picked part (where it has slid to), back to the car when cleared
-    const sel = selected ? parts.get(selected) : undefined;
-    const target = sel ? sel.center.clone().addScaledVector(sel.out, ease(sel.t)) : home.clone();
-    if (sel && g) target.applyMatrix4(g.matrixWorld);
+    // (for a set, the middle of all its members)
+    const sel = selected.map((id) => parts.get(id)).filter((p) => p !== undefined);
+    const target = sel.length ? new THREE.Vector3() : home.clone();
+    for (const p of sel) target.add(p.center.clone().addScaledVector(p.out, ease(p.t)).divideScalar(sel.length));
+    if (sel.length && g) target.applyMatrix4(g.matrixWorld);
     rig.focus.lerp(target, k * 0.8);
   });
 
@@ -915,7 +919,7 @@ export default function ShowroomScene(props: SceneProps) {
     >
       <Stage mood={props.mood} rig={rig} narrow={narrow} bloom={bloom} />
       <Car {...props} rig={rig} />
-      <Director view={props.view} panel={!!props.selected} shot={props.shot} cinematic={props.cinematic} rig={rig}
+      <Director view={props.view} panel={props.selected.length > 0} shot={props.shot} cinematic={props.cinematic} rig={rig}
         onCinematicShot={props.onCinematicShot} dof={dof} />
       <Post narrow={narrow} cinematic={props.cinematic} bloom={bloom} dof={dof} />
     </Canvas>

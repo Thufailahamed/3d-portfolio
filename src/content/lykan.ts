@@ -14,6 +14,8 @@ export type LykanPart = {
   summary: string;
   specs: [string, string][];
   note?: string;
+  /** the model's `Part_<id>` groups this part moves together (defaults to its own id) */
+  members?: string[];
 };
 
 export const lykan = {

@@ -10,6 +10,7 @@ import { cineShots, moodById, moods, shots, type MoodId, type ShotId } from "./s
 const ShowroomScene = dynamic(() => import("./ShowroomScene"), { ssr: false });
 
 const pad = (n: number) => String(n).padStart(2, "0");
+const NONE: string[] = [];
 
 /**
  * Exploded-view showroom for one car: click a part (or pick it from the index) to slide it out and
@@ -26,9 +27,16 @@ export default function Showroom({
   initialPart?: string | null;
 }) {
   const partById = useMemo(() => Object.fromEntries(car.parts.map((p) => [p.id, p])) as Record<string, CarPart>, [car]);
+  // the model's part groups → the part that owns them (all four wheels belong to "wheels")
+  const ownerOf = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of car.parts) for (const id of p.members ?? [p.id]) m[id] = p.id;
+    return m;
+  }, [car]);
   const fromUrl = useSearchParams().get("part");
   const initialPart = given === undefined ? fromUrl : given;
-  const [selected, setSelected] = useState<string | null>(initialPart && partById[initialPart] ? initialPart : null);
+  // old links name a single wheel or door (?part=wheel_fl); they open its whole set
+  const [selected, setSelected] = useState<string | null>(initialPart ? (ownerOf[initialPart] ?? null) : null);
   const [exploded, setExploded] = useState(false);
   const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null);
   const [ids, setIds] = useState<string[] | null>(null);
@@ -78,7 +86,7 @@ export default function Showroom({
   const onCinematicShot = useCallback((i: number) => setScene(i), []);
 
   // only parts the model actually has, in the content's order
-  const order = useMemo(() => car.parts.filter((p) => !ids || ids.includes(p.id)), [car, ids]);
+  const order = useMemo(() => car.parts.filter((p) => !ids || (p.members ?? [p.id]).some((id) => ids.includes(id))), [car, ids]);
   const part = selected ? partById[selected] : null;
   const index = part ? order.findIndex((p) => p.id === part.id) : -1;
 
@@ -87,7 +95,7 @@ export default function Showroom({
     setListOpen(false);
     setTouched(true);
   }, []);
-  const pick = useCallback((id: string) => partById[id] && select(id), [partById, select]);
+  const pick = useCallback((id: string) => ownerOf[id] && select(ownerOf[id]), [ownerOf, select]);
 
   const step = useCallback(
     (d: number) => {
@@ -123,7 +131,11 @@ export default function Showroom({
     return () => removeEventListener("keydown", onKey);
   }, [selected, step, cinematic, film]);
 
-  const onHover = useCallback((id: string | null, x = 0, y = 0) => setHover(id && partById[id] ? { id, x, y } : null), [partById]);
+  const onHover = useCallback((id: string | null, x = 0, y = 0) => setHover(id && ownerOf[id] ? { id: ownerOf[id], x, y } : null), [ownerOf]);
+  // the scene works with the model's groups: a set selects (and lights up) every member
+  const membersOf = useCallback((id: string | null) => (id ? (partById[id]?.members ?? [id]) : NONE), [partById]);
+  const selectedIds = useMemo(() => membersOf(selected), [membersOf, selected]);
+  const hoveredIds = useMemo(() => membersOf(cinematic ? null : (hover?.id ?? null)), [membersOf, cinematic, hover?.id]);
   const onReady = useCallback((found: string[]) => setIds(found), []);
 
   return (
@@ -137,9 +149,9 @@ export default function Showroom({
         <ShowroomScene
           url={car.model}
           view={car.view}
-          selected={selected}
+          selected={selectedIds}
           exploded={exploded}
-          hovered={cinematic ? null : (hover?.id ?? null)}
+          hovered={hoveredIds}
           paintMaterial={car.paint.material}
           paint={paintIdx ? car.paint.colors[paintIdx] : null}
           lamps={car.lamps}

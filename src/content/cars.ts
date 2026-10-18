@@ -622,7 +622,7 @@ const supraParts: CarPart[] = [
 ];
 
 // ---------------------------------------------------------------------- the line-up
-export const cars: Car[] = [
+const lineUp: Car[] = [
   {
     slug: "lykan-hypersport",
     name: lykanMeta.name,
@@ -844,5 +844,56 @@ export const cars: Car[] = [
     },
   },
 ];
+
+// ---------------------------------------------------------------------- matching parts move as one
+// Four wheels (or brakes, or doors) are one part in the showroom: pick a tyre and all four come out.
+const SETS: { prefix: string; id: string; name: string }[] = [
+  { prefix: "wheel_", id: "wheels", name: "Wheels" },
+  { prefix: "brake_", id: "brakes", name: "Brakes" },
+  { prefix: "door_", id: "doors", name: "Doors" },
+];
+// which member a position label belongs to, for specs that differ front to rear or side to side
+const where = (id: string) => {
+  const c = id.split("_")[1];
+  return c === "left" || c === "right" ? c : c[0] === "f" ? "front" : "rear";
+};
+
+function grouped(parts: CarPart[]): CarPart[] {
+  const out: CarPart[] = [];
+  for (const p of parts) {
+    const set = SETS.find((s) => p.id.startsWith(s.prefix));
+    if (!set) {
+      out.push(p);
+      continue;
+    }
+    if (out.some((q) => q.id === set.id)) continue;
+    const members = parts.filter((q) => q.id.startsWith(set.prefix));
+    // a spec shared by every member stays one row; one that differs gets a row per position
+    const specs: [string, string][] = [["Count", String(members.length)]];
+    const keys = [...new Set(members.flatMap((m) => m.specs.map(([k]) => k)))].filter((k) => k !== "Position" && k !== "Side");
+    for (const k of keys) {
+      const byWhere = new Map<string, string>();
+      for (const m of members) {
+        const v = m.specs.find(([mk]) => mk === k)?.[1];
+        if (v) byWhere.set(where(m.id), v);
+      }
+      const values = [...new Set(byWhere.values())];
+      if (values.length === 1) specs.push([k, values[0]]);
+      else for (const [w, v] of byWhere) specs.push([`${k} (${w})`, v]);
+    }
+    out.push({
+      id: set.id,
+      name: set.name,
+      group: p.group,
+      summary: p.summary,
+      specs,
+      note: p.note,
+      members: members.map((m) => m.id),
+    });
+  }
+  return out;
+}
+
+export const cars: Car[] = lineUp.map((c) => ({ ...c, parts: grouped(c.parts) }));
 
 export const carBySlug = Object.fromEntries(cars.map((c) => [c.slug, c])) as Record<string, Car>;
