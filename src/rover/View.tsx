@@ -12,7 +12,9 @@ const Scene = dynamic(() => import("./Scene"), { ssr: false });
 
 const ACCENT = "#c8ff3d";
 const WARN = "#ffb020";
-const mono = { fontFamily: "var(--font-jetbrains), ui-monospace, monospace" } as const;
+const mono = { fontFamily: "var(--font-rover-mono), var(--font-jetbrains), ui-monospace, monospace" } as const;
+const sans = { fontFamily: "var(--font-rover-sans), var(--font-inter-tight), system-ui, sans-serif" } as const;
+const serif = { fontFamily: "var(--font-rover-serif), Georgia, serif" } as const;
 const helioOf = (w: World) => (w.parent ? WORLDS.find((p) => p.name === w.parent)! : w);
 
 const fmt = (n: number, d = 0) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -37,10 +39,7 @@ function fmtDays(d: number) {
 
 function Panel({ children, className = "", style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
-    <div
-      className={`rover-panel pointer-events-auto rounded-2xl border border-white/[0.08] bg-[linear-gradient(180deg,rgba(24,28,37,.78),rgba(9,11,16,.74))] shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_30px_80px_-30px_rgba(0,0,0,.95)] backdrop-blur-xl backdrop-saturate-150 ${className}`}
-      style={style}
-    >
+    <div className={`rover-panel pointer-events-auto rounded-md border border-white/[0.09] bg-[#0c0d0f]/[0.88] text-[#ecebe6] shadow-[0_24px_48px_-24px_rgba(0,0,0,.9)] backdrop-blur-md ${className}`} style={style}>
       {children}
     </div>
   );
@@ -48,11 +47,11 @@ function Panel({ children, className = "", style }: { children: React.ReactNode;
 
 function Stat({ k, v, sub }: { k: string; v: string; sub?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-white/[0.06] py-[6px] last:border-0">
-      <span className="text-[10px] uppercase tracking-[0.14em] text-white/45">{k}</span>
+    <div className="flex items-baseline justify-between gap-4 border-b border-white/[0.07] py-[7px] last:border-0">
+      <span className="shrink-0 text-[12px] text-white/45">{k}</span>
       <span className="text-right text-[12px] text-white/90 tabular-nums" style={mono}>
         {v}
-        {sub && <span className="ml-1 text-white/40">{sub}</span>}
+        {sub && <span className="ml-1.5 text-white/40">{sub}</span>}
       </span>
     </div>
   );
@@ -68,8 +67,7 @@ function Btn({ onClick, children, active, title, className = "" }: { onClick: ()
         control.unlock();
         onClick();
       }}
-      className={`pointer-events-auto flex h-9 items-center justify-center gap-1.5 rounded-xl px-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-[background,color,box-shadow,transform] active:scale-[0.97] ${active ? "bg-[#c8ff3d] text-[#0b0d12] shadow-[0_0_24px_-8px_rgba(200,255,61,.8)]" : "bg-[#0b0d12]/60 text-white/80 ring-1 ring-inset ring-white/10 backdrop-blur hover:bg-white/[0.08] hover:text-white hover:ring-white/20"} ${className}`}
-      style={mono}
+      className={`pointer-events-auto flex h-9 items-center justify-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium transition-colors ${active ? "bg-[#ecebe6] text-[#0c0d0f]" : "border border-white/[0.09] bg-[#0c0d0f]/80 text-white/75 backdrop-blur-md hover:border-white/20 hover:text-white"} ${className}`}
     >
       {children}
     </button>
@@ -197,7 +195,7 @@ function PlanetDot({ w, size = 16 }: { w: World; size?: number }) {
         className="absolute inset-0 rounded-full"
         style={{
           backgroundImage: [
-            `radial-gradient(circle at 34% 30%, rgba(255,255,255,.3), rgba(255,255,255,0) 34%)`,
+            `radial-gradient(circle at 34% 30%, rgba(255,255,255,.16), rgba(255,255,255,0) 34%)`,
             `radial-gradient(circle at 30% 28%, rgba(0,0,0,0) 40%, rgba(0,0,0,.5) 66%, rgba(0,0,0,.93) 98%)`,
             ...surfaceOf(l).filter(Boolean),
           ].join(","),
@@ -212,26 +210,18 @@ function PlanetDot({ w, size = 16 }: { w: World; size?: number }) {
 // ———————————————————————————— mission select ————————————————————————————
 
 const LIGHT_MIN_PER_AU = 8.3167;
-const MAX_G = Math.max(...WORLDS.map((w) => w.g));
 
-function Tile({ k, v, sub, bar, children }: { k: string; v: string; sub?: string; bar?: number; children?: React.ReactNode }) {
+/** one cell of the card's figures: a plain label, a number set large, a quiet note */
+function Figure({ k, v, sub, className = "" }: { k: string; v: string; sub?: string; className?: string }) {
   return (
-    <div className="min-w-0 rounded-xl bg-white/[0.035] p-3 ring-1 ring-inset ring-white/[0.05]">
-      <p className="text-[9.5px] uppercase tracking-[0.16em] text-white/45" style={mono}>
-        {k}
-      </p>
-      <p className="mt-1 truncate text-[17px] font-semibold leading-tight tracking-tight text-white tabular-nums">{v}</p>
+    <div className={`min-w-0 px-5 py-3.5 ${className}`}>
+      <p className="text-[11.5px] text-white/45">{k}</p>
+      <p className="mt-1 truncate text-[21px] font-medium leading-none tracking-[-0.01em] text-white tabular-nums">{v}</p>
       {sub && (
-        <p className="mt-0.5 truncate text-[10.5px] text-white/45" title={sub}>
+        <p className="mt-1.5 truncate text-[11px] text-white/40" title={sub}>
           {sub}
         </p>
       )}
-      {bar !== undefined && (
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.08]">
-          <div className="h-full rounded-full" style={{ width: `${Math.max(3, Math.min(1, bar) * 100)}%`, background: `linear-gradient(90deg, ${rgba(ACCENT, 0.5)}, ${ACCENT})` }} />
-        </div>
-      )}
-      {children}
     </div>
   );
 }
@@ -262,47 +252,39 @@ function WorldPicker() {
   const idx = WORLDS.findIndex((x) => x.id === w.id);
   const step = (d: number) => control.select(WORLDS[(idx + d + WORLDS.length) % WORLDS.length].id);
   const here = w.id === from.id;
-  const gEarth = w.g / EARTH_G;
+  const pad = (n: number) => String(n).padStart(2, "0");
   return (
     <>
-      <Panel className="absolute left-4 top-[76px] w-[256px] overflow-hidden max-md:hidden">
-        <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-white/45" style={mono}>
-            Destinations
-          </p>
-          <p className="text-[10px] text-white/30" style={mono}>
-            {WORLDS.length} worlds
+      <Panel className="absolute left-4 top-[72px] w-[248px] max-md:hidden">
+        <div className="flex items-baseline justify-between border-b border-white/[0.07] px-4 py-3">
+          <p className="text-[12.5px] font-medium text-white">Destinations</p>
+          <p className="text-[11px] text-white/35 tabular-nums" style={mono}>
+            {pad(WORLDS.length)}
           </p>
         </div>
-        <ul className="max-h-[calc(100vh-260px)] overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
-          {WORLDS.map((x) => {
+        <ul className="max-h-[calc(100vh-250px)] overflow-y-auto py-1.5 [scrollbar-width:thin]">
+          {WORLDS.map((x, i) => {
             const on = selected === x.id;
             return (
-              <li key={x.id} className="relative">
-                {x.parent && <span aria-hidden className="absolute bottom-1/2 left-[19px] top-[-6px] w-2.5 rounded-bl-md border-b border-l border-white/15" />}
+              <li key={x.id}>
                 <button
                   type="button"
                   onMouseEnter={() => useRover.getState().set({ hover: x.id })}
                   onMouseLeave={() => useRover.getState().set({ hover: null })}
                   onClick={() => control.select(x.id)}
-                  className={`group relative flex w-full items-center gap-3 rounded-xl py-[7px] pr-2.5 text-left transition-colors ${x.parent ? "pl-8" : "pl-2.5"} ${on ? "bg-white/[0.09] ring-1 ring-inset ring-white/10" : "hover:bg-white/[0.045]"}`}
+                  className={`group relative flex w-full items-center gap-2.5 py-[6px] pr-4 text-left transition-colors ${on ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}`}
                 >
-                  {on && <span aria-hidden className="absolute -left-2 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full" style={{ background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` }} />}
-                  <PlanetDot w={x} size={x.parent ? 15 : 20} />
-                  <span className="min-w-0 flex-1">
-                    <span className={`block truncate text-[13px] leading-tight ${on ? "font-medium text-white" : "text-white/75 group-hover:text-white"}`}>{x.name}</span>
-                    <span className="block text-[9.5px] leading-tight text-white/35" style={mono}>
-                      {x.parent ? `moon of ${x.parent}` : `${x.au.toFixed(2)} AU`}
-                      {current === x.id && <span style={{ color: ACCENT }}> · rover here</span>}
-                    </span>
+                  <span aria-hidden className="absolute inset-y-1 left-0 w-[2px] transition-opacity" style={{ background: ACCENT, opacity: on ? 1 : 0 }} />
+                  <span className="w-9 shrink-0 pl-4 text-[10.5px] text-white/25 tabular-nums" style={mono}>
+                    {pad(i + 1)}
                   </span>
-                  <span className="flex w-11 flex-col items-end gap-1">
-                    <span className={`text-[10px] tabular-nums ${on ? "text-white/80" : "text-white/45"}`} style={mono}>
-                      {(x.g / EARTH_G).toFixed(2)}g
-                    </span>
-                    <span className="h-[2px] w-full overflow-hidden rounded-full bg-white/[0.08]">
-                      <span className="block h-full rounded-full" style={{ width: `${Math.max(4, (x.g / MAX_G) * 100)}%`, background: on ? ACCENT : "rgba(255,255,255,.35)" }} />
-                    </span>
+                  {x.parent && <span aria-hidden className="-mr-1 h-2.5 w-2 shrink-0 -translate-y-1 rounded-bl-[3px] border-b border-l border-white/20" />}
+                  <PlanetDot w={x} size={x.parent ? 13 : 16} />
+                  <span className={`min-w-0 flex-1 truncate text-[13.5px] ${on ? "text-white" : x.parent ? "text-white/55 group-hover:text-white/85" : "text-white/75 group-hover:text-white"}`}>{x.name}</span>
+                  {current === x.id && <span className="h-1.5 w-1.5 rounded-full" title="Rover is here" style={{ background: ACCENT }} />}
+                  <span className={`text-[11px] tabular-nums ${on ? "text-white/75" : "text-white/35"}`} style={mono}>
+                    {(x.g / EARTH_G).toFixed(2)}
+                    <span className="text-white/30"> g</span>
                   </span>
                 </button>
               </li>
@@ -311,175 +293,172 @@ function WorldPicker() {
         </ul>
       </Panel>
 
-      <Panel className="absolute bottom-4 right-4 flex max-h-[calc(100vh-92px)] w-[min(384px,calc(100vw-32px))] flex-col overflow-hidden max-md:left-4 max-md:max-h-[56vh]">
-        {/* header: the world, with a lit globe */}
-        <div className="relative shrink-0 overflow-hidden px-5 pb-4 pt-5">
-          <div aria-hidden className="pointer-events-none absolute -right-10 -top-12 h-48 w-48 rounded-full opacity-40 blur-3xl" style={{ background: w.look.c1 }} />
-          <div className="relative flex items-start gap-4">
-            <span className={`mt-0.5 ${w.look.rings ? "mx-[24px]" : ""}`}>
-              <PlanetDot w={w} size={58} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/50" style={mono}>
+      <Panel className="absolute bottom-4 right-4 flex max-h-[calc(100vh-88px)] w-[min(372px,calc(100vw-32px))] flex-col overflow-hidden max-md:left-4 max-md:max-h-[56vh]">
+        {/* masthead */}
+        <div className="shrink-0 px-5 pb-5 pt-4">
+          <div className="flex items-center justify-between text-[11px] text-white/40">
+            <p className="tabular-nums" style={mono}>
+              {pad(idx + 1)} <span className="text-white/20">/</span> {pad(WORLDS.length)}
+              <span className="ml-3 font-sans text-white/50" style={sans}>
                 {w.kind}
-                {w.parent ? ` · ${w.parent}` : ""}
-                {current === w.id && (
-                  <span className="rounded-full px-1.5 py-px text-[8.5px] font-bold tracking-[0.12em] text-[#0b0d12]" style={{ background: ACCENT }}>
-                    You are here
-                  </span>
-                )}
-              </p>
-              <h2 className="mt-0.5 text-[28px] font-semibold leading-none tracking-tight text-white">{w.name}</h2>
-              <p className="mt-2 flex items-start gap-1 text-[11.5px] leading-snug text-white/55">
-                <span className="mt-px text-white/40">
-                  <Icon name="pin" size={12} />
-                </span>
-                {w.site}
-              </p>
-            </div>
-            <div className="flex gap-1">
+                {w.parent ? ` of ${w.parent}` : ""}
+              </span>
+            </p>
+            <div className="-mr-1.5 flex">
               {(["left", "right"] as const).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  aria-label={d === "left" ? "Previous world" : "Next world"}
-                  onClick={() => step(d === "left" ? -1 : 1)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-white/50 ring-1 ring-inset ring-white/10 transition-colors hover:bg-white/10 hover:text-white"
-                >
+                <button key={d} type="button" aria-label={d === "left" ? "Previous world" : "Next world"} onClick={() => step(d === "left" ? -1 : 1)} className="flex h-7 w-7 items-center justify-center rounded text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white">
                   <Icon name={d} size={14} />
                 </button>
               ))}
             </div>
           </div>
+          <div className="mt-3 flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-[54px] leading-[0.9] tracking-[-0.01em] text-white" style={serif}>
+                {w.name}
+              </h2>
+              <p className="mt-2.5 text-[12.5px] leading-snug text-white/50">
+                {current === w.id && <span style={{ color: ACCENT }}>Rover on site · </span>}
+                {w.site}
+              </p>
+            </div>
+            <span className={`mb-1 shrink-0 ${w.look.rings ? "ml-8 mr-7" : ""}`}>
+              <PlanetDot w={w} size={64} />
+            </span>
+          </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-1 [scrollbar-width:thin]">
-          {/* key numbers */}
-          <div className="grid grid-cols-2 gap-2">
-            <Tile k="Gravity" v={`${gEarth.toFixed(2)} g`} sub={`${w.g} m/s² · rover ${fmt(899 * gEarth)} kgf`} bar={w.g / MAX_G} />
-            <Tile k="Surface" v={fmtTemp(w.atm.tempC)} sub={w.atm.tempRange} />
-            <Tile k="Pressure" v={fmtPressure(w.atm.pressureBar)} sub={w.surface === "deck" ? "no solid surface" : w.atm.pressureBar > 0 ? `${fmt((w.atm.pressureBar / 1.013) * 100, w.atm.pressureBar < 0.1 ? 2 : 0)}% of Earth` : "airless"} />
-            <Tile k="Day" v={w.dayLength.replace(/\s*\(.*\)/, "")} sub={`${fmt(w.radiusKm)} km radius`} />
-          </div>
+        {/* figures */}
+        <div className="grid shrink-0 grid-cols-2 border-y border-white/[0.07]">
+          <Figure k="Gravity" v={`${(w.g / EARTH_G).toFixed(2)} g`} sub={`${w.g} m/s²`} className="border-r border-white/[0.07]" />
+          <Figure k="Surface" v={fmtTemp(w.atm.tempC)} sub={w.atm.tempRange} />
+          <Figure k="Pressure" v={fmtPressure(w.atm.pressureBar)} sub={w.surface === "deck" ? "no solid surface" : w.atm.pressureBar > 0 ? `${fmt((w.atm.pressureBar / 1.013) * 100, w.atm.pressureBar < 0.1 ? 2 : 0)}% of Earth's` : "airless"} className="border-r border-t border-white/[0.07]" />
+          <Figure k="Length of day" v={w.dayLength.replace(/\s*\(.*\)/, "")} sub={`${fmt(w.radiusKm)} km radius`} className="border-t border-white/[0.07]" />
+        </div>
 
-          {/* tabs */}
-          <div className="relative mt-4 grid grid-cols-2 rounded-xl bg-white/[0.04] p-1 ring-1 ring-inset ring-white/[0.05]">
-            <span aria-hidden className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-lg bg-white/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,.08)] transition-transform duration-300" style={{ left: 4, transform: tab === "world" ? "translateX(100%)" : "none" }} />
-            {(["mission", "world"] as const).map((t) => (
-              <button key={t} type="button" onClick={() => setTab(t)} className={`relative py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition-colors ${tab === t ? "text-white" : "text-white/45 hover:text-white/75"}`} style={mono}>
-                {t === "mission" ? "Mission" : "Environment"}
-              </button>
-            ))}
-          </div>
+        {/* tabs */}
+        <div className="flex shrink-0 gap-5 border-b border-white/[0.07] px-5">
+          {(["mission", "world"] as const).map((t) => (
+            <button key={t} type="button" onClick={() => setTab(t)} className={`relative py-2.5 text-[12.5px] transition-colors ${tab === t ? "text-white" : "text-white/40 hover:text-white/70"}`}>
+              {t === "mission" ? "Mission" : "Environment"}
+              <span aria-hidden className="absolute inset-x-0 -bottom-px h-px transition-opacity" style={{ background: "#ecebe6", opacity: tab === t ? 1 : 0 }} />
+            </button>
+          ))}
+        </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 [scrollbar-width:thin]">
           {tab === "mission" ? (
-            <div className="mt-3">
+            <>
               {here ? (
-                <p className="rounded-xl bg-white/[0.035] p-3 text-[12px] leading-relaxed text-white/60 ring-1 ring-inset ring-white/[0.05]">
+                <p className="text-[13px] leading-relaxed text-white/60">
                   {current === w.id ? `The rover is already on ${w.name}. Land again to start a fresh traverse at ${w.site.split(",")[0]}.` : `Home turf: no launch window needed. The rover is trucked straight to ${w.site.split(",")[0]} for a test drive.`}
                 </p>
               ) : (
-                <div className="rounded-xl bg-white/[0.035] p-3 ring-1 ring-inset ring-white/[0.05]">
-                  <div className="flex items-center gap-2">
-                    <PlanetDot w={from} size={20} />
-                    <div className="relative h-8 flex-1">
-                      <svg className="absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden>
-                        <path d="M2 28 Q50 -6 98 28" fill="none" stroke={rgba(ACCENT, 0.7)} strokeWidth="1.4" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" className="rover-dash" />
-                      </svg>
-                      <span className="absolute left-1/2 top-[5px] -translate-x-1/2 whitespace-nowrap rounded-full bg-[#0b0d12] px-2 py-px text-[10px] text-white/80 ring-1 ring-white/10" style={mono}>
-                        {local ? `${days} days` : fmtDays(days)}
-                      </span>
-                    </div>
-                    <PlanetDot w={w} size={20} />
+                <div>
+                  <div className="flex items-center justify-between text-[11.5px] text-white/45">
+                    <span>Launch</span>
+                    <span>
+                      {local ? "Local transfer" : "Hohmann transfer"} · Δv {dv.toFixed(1)} km/s
+                    </span>
+                    <span>Arrive</span>
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-[10.5px]" style={mono}>
-                    <div>
-                      <p className="uppercase tracking-[0.12em] text-white/40">Launch</p>
-                      <p className="mt-0.5 text-white/90">{win ? fmtDate(win.launch) : "Any day"}</p>
-                      <p className="text-white/40">{win ? (win.launch - day < 1 ? <span style={{ color: ACCENT }}>open now</span> : `in ${fmtDays(win.launch - day)}`) : `from ${from.name}`}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="uppercase tracking-[0.12em] text-white/40">Δv</p>
-                      <p className="mt-0.5 text-white/90">{dv.toFixed(1)} km/s</p>
-                      <p className="text-white/40">{local ? "local hop" : "Hohmann"}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="uppercase tracking-[0.12em] text-white/40">Arrive</p>
-                      <p className="mt-0.5 text-white/90">{win ? fmtDate(win.arrive) : `+${days} days`}</p>
-                      <p className="text-white/40">{w.edl.chute ? "chute + crane" : "powered"}</p>
-                    </div>
+                  <div className="relative my-2.5 flex items-center">
+                    <span className="h-[7px] w-[7px] rounded-full border border-white/70" />
+                    <span className="h-px flex-1 bg-[repeating-linear-gradient(90deg,rgba(255,255,255,.45)_0_3px,transparent_3px_6px)]" />
+                    <span className="rounded-sm bg-white/[0.07] px-1.5 py-px text-[11px] text-white/80 tabular-nums" style={mono}>
+                      {local ? `${days} d` : fmtDays(days)}
+                    </span>
+                    <span className="h-px flex-1 bg-[repeating-linear-gradient(90deg,rgba(255,255,255,.45)_0_3px,transparent_3px_6px)]" />
+                    <span className="h-[7px] w-[7px] rounded-full" style={{ background: ACCENT }} />
+                  </div>
+                  <div className="flex justify-between text-[13px] tabular-nums" style={mono}>
+                    <span className="text-white">{win ? fmtDate(win.launch) : "Any day"}</span>
+                    <span className="text-right text-white">{win ? fmtDate(win.arrive) : `+${days} days`}</span>
+                  </div>
+                  <div className="mt-0.5 flex justify-between text-[11px] text-white/40">
+                    <span>{win ? (win.launch - day < 1 ? <span style={{ color: ACCENT }}>Window open now</span> : `Window opens in ${fmtDays(win.launch - day)}`) : `from ${from.name}`}</span>
+                    <span>{w.edl.chute ? "Parachute and sky crane" : "Powered descent"}</span>
                   </div>
                 </div>
               )}
+
               {w.id !== "earth" && (
-                <div className="mt-2 rounded-xl bg-white/[0.035] p-3 ring-1 ring-inset ring-white/[0.05]">
-                  <div className="flex items-center justify-between">
-                    <p className="flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.16em] text-white/45" style={mono}>
-                      <Icon name="signal" size={12} /> Signal to Earth
-                    </p>
-                    <p className="text-[12px] text-white tabular-nums" style={mono}>
-                      {fmtDelay(delayNow)} <span className="text-white/40">one way</span>
+                <div className="mt-5 border-t border-white/[0.07] pt-4">
+                  <div className="flex items-baseline justify-between">
+                    <p className="text-[11.5px] text-white/45">Signal delay to Earth</p>
+                    <p className="text-[13px] text-white tabular-nums" style={mono}>
+                      {fmtDelay(delayNow)}
+                      <span className="ml-1.5 font-sans text-[11px] text-white/40" style={sans}>
+                        one way
+                      </span>
                     </p>
                   </div>
                   {dmin !== dmax && (
                     <>
-                      <div className="relative mt-2.5 h-1 rounded-full bg-white/[0.08]">
-                        <span className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#0b0d12]" style={{ left: `${Math.min(100, Math.max(0, ((delayNow - dmin) / (dmax - dmin)) * 100))}%`, background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` }} />
+                      <div className="relative mt-3 h-px bg-white/15">
+                        <span className="absolute -top-[3px] left-0 h-[7px] w-px bg-white/30" />
+                        <span className="absolute -top-[3px] right-0 h-[7px] w-px bg-white/30" />
+                        <span className="absolute -top-[5px] h-[11px] w-[2px] -translate-x-1/2" style={{ left: `${Math.min(100, Math.max(0, ((delayNow - dmin) / (dmax - dmin)) * 100))}%`, background: ACCENT }} />
                       </div>
-                      <div className="mt-1.5 flex justify-between text-[9.5px] text-white/35" style={mono}>
-                        <span>closest {fmtDelay(dmin)}</span>
-                        <span>{live.earth < 0.01 ? `${fmt(live.earth * 149597870.7)} km` : `${live.earth.toFixed(3)} AU`} today</span>
-                        <span>farthest {fmtDelay(dmax)}</span>
+                      <div className="mt-2 flex justify-between text-[10.5px] text-white/35 tabular-nums" style={mono}>
+                        <span>{fmtDelay(dmin)}</span>
+                        <span>{live.earth < 0.01 ? `${fmt(live.earth * 149597870.7)} km` : `${live.earth.toFixed(2)} AU`} away today</span>
+                        <span>{fmtDelay(dmax)}</span>
                       </div>
                     </>
                   )}
                 </div>
               )}
-              <p className="mt-3 border-l-2 pl-3 text-[11.5px] leading-relaxed text-white/55" style={{ borderColor: rgba(ACCENT, 0.5) }}>
+
+              <p className="mt-5 border-t border-white/[0.07] pt-4 text-[16.5px] leading-[1.35] text-white/70" style={{ ...serif, fontStyle: "italic" }}>
                 {w.edl.note}
               </p>
-            </div>
+            </>
           ) : (
-            <div className="mt-3">
+            <>
               <Stat k="Atmosphere" v={w.atm.composition.split(",")[0]} />
+              <Stat k="Rover weighs" v={`${fmt((899 * w.g) / EARTH_G)} kgf`} sub="mass 899 kg" />
               <Stat k="Temperature" v={w.atm.tempRange} />
-              <Stat k="Sun distance today" v={`${live.sun.toFixed(3)} AU`} sub={`${fmt(1361 / (live.sun * live.sun))} W/m²`} />
+              <Stat k="From the Sun" v={`${live.sun.toFixed(2)} AU`} sub={`${fmt(1361 / (live.sun * live.sun))} W/m²`} />
               <Stat k="Sunlight" v={`${fmt((1 / (live.sun * live.sun)) * 100, live.sun > 3 ? 1 : 0)}% of Earth's`} />
               <Stat k="Speed of sound" v={w.atm.sound ? `${w.atm.sound} m/s` : "no air"} />
-              <Stat k="Typical wind" v={w.atm.rho > 0 ? `${w.atm.wind} m/s` : "none"} sub={w.atm.rho > 0 ? `gusts ${w.atm.gust}` : undefined} />
+              <Stat k="Wind" v={w.atm.rho > 0 ? `${w.atm.wind} m/s` : "none"} sub={w.atm.rho > 0 ? `gusts ${w.atm.gust}` : undefined} />
               <Stat k="Ground" v={w.soil.name} />
-              <ul className="mt-3 space-y-1.5">
-                {w.facts.map((f) => (
-                  <li key={f} className="flex gap-2 text-[11.5px] leading-snug text-white/55">
-                    <span className="mt-[5px] h-1 w-1 shrink-0 rounded-full" style={{ background: ACCENT }} />
+              <ol className="mt-4 space-y-2.5 border-t border-white/[0.07] pt-4">
+                {w.facts.map((f, i) => (
+                  <li key={f} className="flex gap-3 text-[12.5px] leading-snug text-white/60">
+                    <span className="pt-px text-[10.5px] text-white/30 tabular-nums" style={mono}>
+                      {pad(i + 1)}
+                    </span>
                     {f}
                   </li>
                 ))}
-              </ul>
-            </div>
+              </ol>
+            </>
           )}
         </div>
 
-        <div className="shrink-0 border-t border-white/[0.06] p-4">
+        <div className="shrink-0 border-t border-white/[0.07] p-3">
           <button
             type="button"
             onClick={() => {
               control.unlock();
               control.go(w.id);
             }}
-            className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#c8ff3d] py-3.5 text-[12.5px] font-bold uppercase tracking-[0.18em] text-[#0b0d12] shadow-[0_10px_40px_-12px_rgba(200,255,61,.7),inset_0_1px_0_rgba(255,255,255,.5)] transition-transform hover:brightness-105 active:scale-[0.985]"
-            style={mono}
+            className="group flex w-full items-center justify-between rounded-[5px] bg-[#c8ff3d] px-4 py-3 text-[14px] font-semibold text-[#0c0d0f] transition-[filter,transform] hover:brightness-[1.06] active:scale-[0.99]"
           >
-            <span aria-hidden className="rover-sheen pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent" />
-            {current === w.id ? "Land again" : `Launch to ${w.name}`}
-            <span className="transition-transform group-hover:translate-x-1">
-              <Icon name="arrow" size={16} />
+            <span>{current === w.id ? `Land again on ${w.name}` : `Launch to ${w.name}`}</span>
+            <span className="flex items-center gap-2 text-[11.5px] font-medium text-[#0c0d0f]/60 tabular-nums" style={mono}>
+              {!here && (local ? `${days} d` : fmtDays(days))}
+              <span className="text-[#0c0d0f] transition-transform group-hover:translate-x-0.5">
+                <Icon name="arrow" size={16} />
+              </span>
             </span>
           </button>
           <ul className="mt-3 flex flex-wrap gap-1.5 md:hidden">
             {WORLDS.map((x) => (
               <li key={x.id}>
-                <button type="button" onClick={() => control.select(x.id)} className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] ${selected === x.id ? "bg-white/15 text-white" : "bg-white/5 text-white/60"}`}>
+                <button type="button" onClick={() => control.select(x.id)} className={`flex items-center gap-1.5 rounded px-2 py-1 text-[11.5px] ${selected === x.id ? "bg-white/[0.12] text-white" : "bg-white/[0.04] text-white/55"}`}>
                   <PlanetDot w={x} size={10} />
                   {x.name}
                 </button>
@@ -501,65 +480,54 @@ function TimeBar() {
   const set = useRover.getState().set;
   const step = (d: number) => set({ warp: Math.max(0, Math.min(WARPS.length - 1, warp + d)) });
   const date = dateOf(jd);
-  const iconBtn = "flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-white/10 hover:text-white";
+  const iconBtn = "flex h-8 w-8 items-center justify-center rounded text-white/60 transition-colors hover:bg-white/[0.07] hover:text-white";
   return (
-    <Panel className="absolute bottom-4 left-4 flex flex-wrap items-center gap-2 p-2 max-md:bottom-auto max-md:left-3 max-md:right-3 max-md:top-16 max-md:justify-center md:max-w-[calc(100vw-440px)]">
-      <div className="flex items-center gap-3 rounded-xl bg-white/[0.035] py-1.5 pl-3 pr-4 ring-1 ring-inset ring-white/[0.05]">
-        <span className="relative flex h-2 w-2">
-          {warp > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ background: ACCENT }} />}
-          <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: warp > 0 ? ACCENT : "rgba(255,255,255,.35)" }} />
-        </span>
-        <div>
-          <p className="text-[14px] font-semibold leading-tight text-white tabular-nums" style={mono}>
-            {fmtDate(jd)}
-          </p>
-          <p className="text-[9.5px] uppercase tracking-[0.16em] text-white/45" style={mono}>
-            {date.toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" })} · {WARPS[warp].label}
-          </p>
-        </div>
+    <Panel className="absolute bottom-4 left-4 flex flex-wrap items-stretch max-md:bottom-auto max-md:left-3 max-md:right-3 max-md:top-16 md:max-w-[calc(100vw-420px)]">
+      <div className="flex flex-col justify-center border-r border-white/[0.07] px-4 py-2 max-md:flex-1">
+        <p className="text-[14px] leading-tight text-white tabular-nums" style={mono}>
+          {fmtDate(jd)}
+        </p>
+        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-white/45">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: warp > 0 ? ACCENT : "rgba(255,255,255,.3)" }} />
+          {date.toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" })} · {WARPS[warp].label}
+        </p>
       </div>
-      <div className="flex items-center gap-0.5 rounded-xl bg-white/[0.035] p-0.5 ring-1 ring-inset ring-white/[0.05]">
+      <div className="flex items-center gap-0.5 border-r border-white/[0.07] px-2 max-md:border-r-0">
         <button type="button" title="Slower" aria-label="Slower" onClick={() => step(-1)} className={iconBtn}>
           <Icon name="rew" />
         </button>
-        <button
-          type="button"
-          title={warp === 0 ? "Play" : "Pause"}
-          aria-label={warp === 0 ? "Play" : "Pause"}
-          onClick={() => set({ warp: warp === 0 ? 3 : 0 })}
-          className={`${iconBtn} ${warp === 0 ? "!bg-[#c8ff3d] !text-[#0b0d12]" : ""}`}
-        >
+        <button type="button" title={warp === 0 ? "Play" : "Pause"} aria-label={warp === 0 ? "Play" : "Pause"} onClick={() => set({ warp: warp === 0 ? 3 : 0 })} className={`${iconBtn} ${warp === 0 ? "!bg-[#ecebe6] !text-[#0c0d0f]" : ""}`}>
           <Icon name={warp === 0 ? "play" : "pause"} />
         </button>
         <button type="button" title="Faster" aria-label="Faster" onClick={() => step(1)} className={iconBtn}>
           <Icon name="ff" />
         </button>
-        <span className="mx-0.5 h-5 w-px bg-white/10" />
-        <button type="button" title="Jump to today's real positions" onClick={control.now} className={`${iconBtn} w-auto gap-1.5 px-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em]`} style={mono}>
-          <Icon name="now" size={13} /> Now
+        <button type="button" title="Jump to today's real positions" onClick={control.now} className={`${iconBtn} w-auto px-2.5 text-[12.5px]`}>
+          Today
         </button>
       </div>
-      <div className="relative grid grid-cols-3 rounded-xl bg-white/[0.035] p-0.5 ring-1 ring-inset ring-white/[0.05]">
-        <span aria-hidden className="absolute bottom-0.5 top-0.5 w-[calc((100%-4px)/3)] rounded-lg bg-white shadow-[0_2px_10px_-2px_rgba(0,0,0,.5)] transition-transform duration-300" style={{ left: 2, transform: `translateX(${scale * 100}%)` }} />
+      <div className="flex items-center gap-4 border-r border-white/[0.07] px-4 max-md:flex-1 max-md:gap-3 max-md:border-t max-md:px-3">
         {SCALES.map((s, i) => (
-          <button
-            key={s.label}
-            type="button"
-            title={s.sub}
-            onClick={() => set({ scale: i })}
-            className={`relative whitespace-nowrap rounded-lg px-2.5 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${scale === i ? "text-[#0b0d12]" : "text-white/60 hover:text-white"}`}
-            style={mono}
-          >
+          <button key={s.label} type="button" title={s.sub} onClick={() => set({ scale: i })} className={`relative whitespace-nowrap py-3 text-[12.5px] transition-colors ${scale === i ? "text-white" : "text-white/40 hover:text-white/75"}`}>
             {s.label}
+            <span aria-hidden className="absolute inset-x-0 bottom-2 h-px transition-opacity" style={{ background: "#ecebe6", opacity: scale === i ? 1 : 0 }} />
           </button>
         ))}
       </div>
-      <Btn onClick={control.overview} active={focus === null} title="See the whole Solar System">
-        <Icon name="orbit" size={14} /> Overview
-      </Btn>
+      <div className="flex items-center px-2 max-md:border-t max-md:border-white/[0.07]">
+        <button
+          type="button"
+          title="See the whole Solar System"
+          onClick={control.overview}
+          className={`flex h-8 items-center gap-1.5 rounded px-2.5 text-[12.5px] transition-colors ${focus === null ? "text-white" : "text-white/55 hover:bg-white/[0.07] hover:text-white"}`}
+        >
+          <Icon name="orbit" size={14} /> Overview
+        </button>
+      </div>
     </Panel>
   );
 }
+
 
 /** names that float over the bodies (positioned every frame by the scene) */
 function SpaceLabels() {
@@ -1102,26 +1070,23 @@ export default function View() {
   const driving = phase === "drive" || phase === "lost";
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-black text-white" style={{ fontFamily: "var(--font-inter-tight), system-ui, sans-serif" }}>
+    <div className="fixed inset-0 overflow-hidden bg-black text-white" style={sans}>
       <style>{`
         .rover-pop { animation: rover-pop .35s cubic-bezier(.2,.9,.3,1.3) both; }
         @keyframes rover-pop { from { transform: translateY(-8px) scale(.96); opacity: 0 } to { transform: none; opacity: 1 } }
         .rover-flash { animation: rover-flash .35s ease-out both; }
         .space-label { transform-origin: 0 0; will-change: transform; }
-        .space-label-in { position: absolute; left: 0; bottom: 6px; transform: translateX(-50%); white-space: nowrap; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.62); padding: 2px 6px; border-radius: 4px; transition: color .2s, background .2s; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+        .space-label-in { position: absolute; left: 0; bottom: 6px; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-rover-sans), system-ui, sans-serif !important; font-size: 11.5px; letter-spacing: .01em; color: rgba(255,255,255,.66); padding: 1px 6px; border-radius: 3px; transition: color .2s, background .2s; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
         .space-label-in::after { content: ""; position: absolute; left: 50%; top: 100%; width: 1px; height: 6px; background: rgba(255,255,255,.35); }
-        .space-label[data-kind="moon"] .space-label-in { font-size: 9px; color: rgba(255,255,255,.42); }
+        .space-label[data-kind="moon"] .space-label-in { font-size: 10px; color: rgba(255,255,255,.42); }
         .space-label[data-kind="sun"] .space-label-in { color: rgba(255,226,170,.7); }
-        .space-label[data-kind="comet"] .space-label-in { color: rgba(140,210,255,.6); font-size: 9.5px; }
-        .space-label:hover .space-label-in, .space-label[data-active="true"] .space-label-in { color: #0b0d12; background: #c8ff3d; text-shadow: none; }
+        .space-label[data-kind="comet"] .space-label-in { color: rgba(140,210,255,.6); font-size: 10.5px; font-style: italic; }
+        .space-label:hover .space-label-in, .space-label[data-active="true"] .space-label-in { color: #0c0d0f; background: #ecebe6; text-shadow: none; }
+        .space-label[data-active="true"] .space-label-in::after { background: #c8ff3d; width: 2px; margin-left: -1px; }
         @keyframes rover-flash { from { opacity: .75 } to { opacity: 0 } }
-        .rover-dash { animation: rover-dash 1.2s linear infinite; }
-        @keyframes rover-dash { to { stroke-dashoffset: -12 } }
-        .rover-sheen { animation: rover-sheen 3.6s ease-in-out infinite; }
-        @keyframes rover-sheen { 0%, 60% { transform: translateX(0) skewX(-20deg) } 100% { transform: translateX(450%) skewX(-20deg) } }
-        .rover-panel { animation: rover-panel .5s cubic-bezier(.2,.8,.2,1) both; }
-        @keyframes rover-panel { from { opacity: 0; transform: translateY(8px) } }
-        @media (prefers-reduced-motion: reduce) { .rover-dash, .rover-sheen, .rover-panel { animation: none } }
+        .rover-panel { animation: rover-panel .45s cubic-bezier(.2,.8,.2,1) both; }
+        @keyframes rover-panel { from { opacity: 0; transform: translateY(6px) } }
+        @media (prefers-reduced-motion: reduce) { .rover-panel { animation: none } }
       `}</style>
       <div className="absolute inset-0">
         <Scene />
@@ -1133,14 +1098,14 @@ export default function View() {
           {/* top bar */}
           <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-2 px-4 pt-4">
             <div className="pointer-events-auto flex items-center gap-3">
-              <Link href="/" className="flex h-9 items-center rounded-lg bg-[#0b0d12]/70 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/80 ring-1 ring-white/12 backdrop-blur hover:text-white" style={mono}>
-                ←<span className="ml-1.5 max-sm:hidden">Portfolio</span>
+              <Link href="/" className="flex h-9 items-center gap-1.5 rounded-md border border-white/[0.09] bg-[#0c0d0f]/80 px-3 text-[12.5px] font-medium text-white/70 backdrop-blur-md transition-colors hover:border-white/20 hover:text-white">
+                ←<span className="max-sm:hidden">Portfolio</span>
               </Link>
-              <div className="max-sm:hidden">
-                <p className="text-[13px] font-semibold leading-tight text-white">Odyssey Rover</p>
-                <p className="text-[10px] uppercase tracking-[0.16em] text-white/45" style={mono}>
-                  {world ? `${worldById[world].name} · ${worldById[world].site.split(",")[0]}` : "Mission control"}
+              <div className="flex items-baseline gap-3 max-sm:hidden">
+                <p className="text-[24px] leading-none text-white" style={serif}>
+                  Odyssey Rover
                 </p>
+                <p className="text-[12px] text-white/40">{world ? `${worldById[world].name} · ${worldById[world].site.split(",")[0]}` : "Mission planning"}</p>
               </div>
             </div>
             <div className="pointer-events-auto flex flex-wrap items-center justify-end gap-1.5">
@@ -1148,10 +1113,10 @@ export default function View() {
                 <Link
                   href="/rover/control"
                   title="Mission Control: launch rockets and run satellites"
-                  className="flex h-9 items-center gap-1.5 rounded-lg bg-[#c8ff3d] px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#0b0d12] shadow-[0_0_24px_-6px_rgba(200,255,61,.7)] transition-transform hover:scale-[1.03]"
-                  style={mono}
+                  className="flex h-9 items-center gap-2 rounded-md border border-white/[0.09] bg-[#0c0d0f]/80 px-3 text-[12.5px] font-medium text-white/85 backdrop-blur-md transition-colors hover:border-white/20 hover:text-white"
                 >
-                  ◉<span className="max-sm:hidden">Mission Control</span>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: ACCENT }} />
+                  <span className="max-sm:hidden">Mission Control</span>
                 </Link>
               )}
               {(driving || (phase === "menu" && world)) && (
@@ -1198,11 +1163,8 @@ export default function View() {
           {phase === "menu" && <TimeBar />}
           {phase === "menu" && (
             <div className="absolute left-1/2 top-[22px] -translate-x-1/2 max-lg:hidden">
-              <p className="flex items-center gap-2.5 whitespace-nowrap rounded-full bg-[#0b0d12]/55 px-3.5 py-1.5 text-[9.5px] uppercase tracking-[0.2em] text-white/50 ring-1 ring-inset ring-white/[0.07] backdrop-blur-md" style={mono}>
-                <span className="text-white/80">Choose a world</span>
-                <span className="text-white/20">/</span> Click to select
-                <span className="text-white/20">/</span> Drag to orbit
-                <span className="text-white/20">/</span> Scroll to zoom
+              <p className="whitespace-nowrap pt-2 text-[12px] text-white/40 [text-shadow:0_1px_8px_rgba(0,0,0,.9)]">
+                Pick a world from the list or the map <span className="px-1 text-white/20">—</span> drag to orbit, scroll to zoom
               </p>
             </div>
           )}
@@ -1262,11 +1224,11 @@ export default function View() {
 
       {/* loader */}
       <div className={`pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black transition-opacity duration-700 ${ready ? "opacity-0" : "opacity-100"}`}>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-white/50" style={mono}>
-          Odyssey Rover · Mission control
+        <p className="text-[12px] text-white/40">Odyssey Rover</p>
+        <p className="mt-1 text-[40px] leading-none text-white" style={serif}>
+          Building the Solar System
         </p>
-        <p className="mt-2 text-2xl font-semibold text-white">Generating the Solar System</p>
-        <div className="mt-5 h-1 w-56 overflow-hidden rounded-full bg-white/10">
+        <div className="mt-6 h-px w-56 overflow-hidden bg-white/10">
           <div className="h-full transition-[width] duration-300" style={{ width: `${progress * 100}%`, background: ACCENT }} />
         </div>
       </div>
