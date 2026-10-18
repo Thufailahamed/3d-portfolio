@@ -5,7 +5,7 @@ import CarsView from "@/components/showroom/CarsView";
 export const metadata: Metadata = {
   title: "Cars",
   description:
-    "Exploded 3D models of the Lykan HyperSport, Jaguar XJ13 and Toyota Land Cruiser 300. Click any part to pull it out and read about it.",
+    "Exploded 3D models of seven cars, from the Lykan HyperSport and Ferrari F40 to the Aston Martin Vulcan and a Super GT Supra. Click any part to pull it out and read about it.",
 };
 
 // the view reads ?car= and ?part= on the client; the shell prerenders behind this boundary

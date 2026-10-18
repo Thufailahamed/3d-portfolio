@@ -12,6 +12,7 @@ Writes public/models/cars/<car>.glb with one `Part_<id>` empty per part carrying
 """
 
 import collections
+import colorsys
 import math
 import os
 import sys
@@ -49,6 +50,61 @@ CARS = {
         engine=(-1.65, -0.27, 0.0, 0.5, 0.12, 0.9),
         lamp_depth=0.45,
         brakes=False,      # wire wheels: the spokes would read as brake parts
+    ),
+    "ferrari-f40": dict(
+        length=4.358, front="-y",
+        paint={"material"}, glass={"F40_Glass", "F40_Glass.001", "F40_Window", "F40_Window.001", "F40_Headlights"},
+        doors=dict(min_len=0.8, max_len=1.4, min_h=0.25, x0=-1.0, x1=0.8, split_x=None),
+        hood=dict(x_min=0.9, z_min=0.55),
+        lid=(-2.25, -0.85, 0.0, 1.05, 0.55, 1.2),
+        cabin=(-0.95, 0.95, 0.0, 0.85, 0.1, 1.05),
+        dash_x=0.42,
+        steering=((0.36, 0.32, 0.69), 0.22),
+        engine=(-1.75, -0.45, 0.0, 0.6, 0.12, 0.9),
+        lamp_depth=0.6,
+        brakes=True,
+    ),
+    "ferrari-f40-lb": dict(
+        length=4.43, front="-y", decimate=0.3, split_tyres=True,
+        paint={"Material.040_16"}, glass={"Material.054", "Material.040_0"},
+        doors=dict(min_len=0.8, max_len=1.4, min_h=0.25, x0=-1.0, x1=0.8, split_x=None),
+        hood=dict(x_min=0.9, z_min=0.55),
+        lid=(-2.3, -0.85, 0.0, 1.05, 0.55, 1.2),
+        cabin=(-0.95, 0.95, 0.0, 0.85, 0.1, 1.08),
+        dash_x=0.42,
+        steering=((0.36, 0.32, 0.69), 0.22),
+        engine=(-1.75, -0.45, 0.0, 0.6, 0.12, 0.9),
+        lamp_depth=0.6,
+        brakes=True,
+    ),
+    "aston-martin-vulcan": dict(
+        length=4.807, front="-y",
+        paint={"CAR_PAINT", "CAR_PAINT2", "CAR_PAINT_CARBON"}, glass={"GLASS", "GLASS_BANNERS", "Material_3"},
+        doors=dict(min_len=0.7, max_len=1.5, min_h=0.25, x0=-1.0, x1=0.9, split_x=None),
+        hood=dict(x_min=0.8, z_min=0.6),
+        lid=(-2.45, -1.2, 0.0, 1.0, 0.5, 1.2),
+        cabin=(-1.1, 0.9, 0.0, 0.88, 0.07, 1.16),
+        dash_x=0.0,
+        steering=((-0.12, 0.37, 0.67), 0.2),
+        split_tyres=True,
+        brake_mats={"DISK", "CALIPERGLOSS", "CALIPERGLOSSPAINT", "Mechanics"},
+        engine=(0.4, 1.5, 0.0, 0.55, 0.15, 0.8),      # front-mid V12, behind the front axle
+        lamp_depth=0.55,
+        brakes=True,
+    ),
+    "toyota-supra-gt300": dict(
+        length=4.575, front="-y", decimate=0.6,
+        paint={"01_-_Default"}, glass={"windows_int", "06_-_Default"},
+        doors=dict(min_len=0.8, max_len=1.5, min_h=0.25, x0=-0.9, x1=0.7, split_x=None),
+        hood=dict(x_min=0.9, z_min=0.7),
+        lid=(-2.3, -1.4, 0.0, 0.9, 0.85, 1.45),
+        cabin=(-1.2, 0.75, 0.0, 0.85, 0.07, 1.15),
+        dash_x=0.3,
+        steering=((0.21, -0.40, 0.79), 0.2),     # right-hand drive
+        split_tyres=True,
+        engine=(0.7, 1.9, 0.0, 0.55, 0.25, 0.85),
+        lamp_depth=0.5,
+        brakes=True,
     ),
 }
 
@@ -95,6 +151,10 @@ def load(path, cfg):
     bpy.ops.object.join()
     car = bpy.context.object
     car.name = "Car"
+    if cfg.get("decimate"):      # some downloads are far too dense for the web
+        mod = car.modifiers.new("Decimate", "DECIMATE")
+        mod.ratio = cfg["decimate"]
+        bpy.ops.object.modifier_apply(modifier=mod.name)
     me = car.data
     me.transform(Matrix.Rotation(-math.pi / 2 if cfg["front"] == "+y" else math.pi / 2, 4, "Z"))
     lo, hi = bounds(me.vertices)
@@ -177,7 +237,13 @@ def classify(isl, dims, cfg):
     wheels = {}
     for q, t in tyres.items():
         R = t.d.z / 2
-        wheels[q] = dict(c=Vector((t.c.x, t.c.y, R)), R=R, w=max(t.d.y, 0.18))
+        cy, w = t.c.y, max(t.d.y, 0.18)
+        if cfg.get("split_tyres"):      # sidewalls modelled as separate rings: centre between them
+            ring = [i for i in isl if abs(i.d.z - t.d.z) < 0.04 and abs(i.c.x - t.c.x) < 0.05
+                    and abs(i.c.z - t.c.z) < 0.05 and i.c.y * t.c.y > 0 and abs(i.c.y - t.c.y) < 0.45]
+            y0, y1 = min(i.lo.y for i in ring), max(i.hi.y for i in ring)
+            cy, w = (y0 + y1) / 2, max(y1 - y0, 0.18)
+        wheels[q] = dict(c=Vector((t.c.x, cy, R)), R=R, w=w)
     report["wheels"] = {q: (round(w["c"].x, 2), round(w["c"].y, 2), round(w["R"], 3)) for q, w in wheels.items()}
     for q, w in wheels.items():
         c, R = w["c"], w["R"]
@@ -186,13 +252,16 @@ def classify(isl, dims, cfg):
             if i.part or i.mat in paint:
                 continue
             r_xz = math.hypot(i.c.x - c.x, i.c.z - c.z) + max(i.d.x, i.d.z) / 2
+            if cfg.get("split_tyres"):    # segmented treads: or the piece's far corner sits in the tyre
+                r_xz = min(r_xz, max(math.hypot(x - c.x, z - c.z) for x in (i.lo.x, i.hi.x) for z in (i.lo.z, i.hi.z)) / 1.04)
             if r_xz > R * 1.08 or max(i.d.x, i.d.z) > 2 * R * 1.05:
                 continue
             if not (c.y - 0.4 <= i.c.y <= c.y + 0.25 if s > 0 else c.y - 0.25 <= i.c.y <= c.y + 0.4):
                 continue
             inboard = abs(i.c.y) < abs(c.y) - 0.02
             small = max(i.d.x, i.d.z) < 1.25 * R
-            i.part = ("brake_" if inboard and small and cfg["brakes"] else "wheel_") + q
+            brake = i.mat in cfg["brake_mats"] if "brake_mats" in cfg else inboard and small
+            i.part = ("brake_" if brake and cfg["brakes"] else "wheel_") + q
 
     # 2. lamps at the very nose and tail
     for i in isl:
@@ -314,7 +383,14 @@ def build_parts(car, isl):
 
 
 def shrink_textures(limit=1024):
-    for img in bpy.data.images:
+    for img in list(bpy.data.images):
+        # the WebP writer cannot save grayscale (8-bit gray, or 16-bit gray + alpha) files
+        if img.size[0] and not img.is_float and 0 < img.depth < 24:      # reading size loads it
+            rgb = bpy.data.images.new(img.name + "_rgb", *img.size, alpha=img.depth == 16)
+            rgb.colorspace_settings.name = img.colorspace_settings.name
+            rgb.pixels = img.pixels[:]
+            img.user_remap(rgb)
+            img = rgb
         if img.size[0] > limit or img.size[1] > limit:
             f = limit / max(img.size)
             img.scale(max(1, int(img.size[0] * f)), max(1, int(img.size[1] * f)))
@@ -334,10 +410,6 @@ def export(key, objs):
     print("wrote", out, os.path.getsize(out) // 1024, "KB")
 
 
-PALETTE = [(0.9, 0.3, 0.2), (0.2, 0.7, 0.9), (0.95, 0.8, 0.2), (0.4, 0.85, 0.35), (0.75, 0.4, 0.9), (1, 0.55, 0.1),
-           (0.3, 0.4, 1.0), (0.9, 0.4, 0.65), (0.5, 0.9, 0.8), (0.65, 0.65, 0.65), (0.85, 0.85, 0.4), (0.3, 0.6, 0.3)]
-
-
 def debug_render(key, pids):
     sc = bpy.context.scene
     sc.render.engine = "BLENDER_WORKBENCH"
@@ -346,7 +418,7 @@ def debug_render(key, pids):
     for k, pid in enumerate(pids):
         ob = bpy.data.objects.get(f"{pid}_mesh")
         if ob:
-            ob.color = (*PALETTE[k % len(PALETTE)], 1)
+            ob.color = (*colorsys.hsv_to_rgb(k * 0.618 % 1, 0.65, 0.95), 1)
     cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam"))
     sc.collection.objects.link(cam)
     sc.camera = cam
@@ -358,7 +430,16 @@ def debug_render(key, pids):
         cam.data.lens = 35
         sc.render.filepath = os.path.join(ROOT, "art", "renders", "cars", f"{key}_{name}.png")
         bpy.ops.render.render(write_still=True)
-    print("legend", {pid: PALETTE[k % len(PALETTE)] for k, pid in enumerate(pids)})
+    # and pulled apart, so every part reads on its own
+    for e in sc.objects:
+        if e.type == "EMPTY" and "explode" in e:
+            x, z, ny = e["explode"]
+            e.location = Vector((x, -ny, z)) * 0.8
+    cam.location = (7.5, -7.0, 5.0)
+    cam.rotation_euler = (Vector((0, 0, 0.8)) - cam.location).to_track_quat("-Z", "Y").to_euler()
+    sc.render.filepath = os.path.join(ROOT, "art", "renders", "cars", f"{key}_parts_exploded.png")
+    bpy.ops.render.render(write_still=True)
+    print("legend", {pid: tuple(round(c, 2) for c in colorsys.hsv_to_rgb(k * 0.618 % 1, 0.65, 0.95)) for k, pid in enumerate(pids)})
 
 
 if __name__ == "__main__":

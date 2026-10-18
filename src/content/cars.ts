@@ -277,6 +277,350 @@ const toyotaParts: CarPart[] = [
   },
 ];
 
+// ---------------------------------------------------------------------- Ferrari F40
+const f40Wheel =
+  `A 17-inch Speedline three-piece wheel on a Pirelli P Zero, held by a single centre-lock nut. The rears are far wider to carry the turbo V8's torque.`;
+const f40Parts = (lb: boolean): CarPart[] => [
+  {
+    id: "body",
+    name: lb ? "Widebody shell" : "Composite body",
+    group: "Exterior",
+    summary: lb
+      ? "The F40's composite skin with a Liberty Walk-style widebody kit: bolt-on arches riveted over the original wings, a deeper splitter and side skirts."
+      : "Panels of Kevlar, carbon fibre and aluminium bonded to a tubular steel frame. Pininfarina shaped it in wind-tunnel sessions; there is almost no trim inside.",
+    specs: lb
+      ? [
+          ["Base car", "Ferrari F40"],
+          ["Kit", "Over-fender widebody (in this model)"],
+          ["Fixing", "Exposed rivets"],
+        ]
+      : [
+          ["Length", "4,358 mm"],
+          ["Width", "1,970 mm"],
+          ["Height", "1,124 mm"],
+          ["Wheelbase", "2,450 mm"],
+          ["Dry weight", "1,100 kg"],
+          ["Designer", "Pininfarina"],
+        ],
+    note: lb ? "Liberty Walk is a Nagoya tuning shop known for riveted over-fenders on supercars." : undefined,
+  },
+  {
+    id: "hood",
+    name: "Front clamshell",
+    group: "Exterior",
+    summary: "One piece from the nose to the windscreen, with the pop-up headlamps, the NACA ducts that feed the cabin and the radiator exits.",
+    specs: [["Opens", "Hinged at the front"]],
+  },
+  {
+    id: "lid",
+    name: "Rear clamshell and wing",
+    group: "Exterior",
+    summary: "The whole tail lifts as one piece, with the slatted Lexan engine cover and the fixed rear wing moulded in.",
+    specs: [
+      ["Window", "Louvred Lexan"],
+      ["Wing", "Fixed, integral"],
+    ],
+  },
+  {
+    id: "door_left",
+    name: "Left door",
+    group: "Exterior",
+    summary: "A light composite door with a sliding plastic window. Inside there is no handle, only a pull cord.",
+    specs: [["Side", "Left"]],
+  },
+  {
+    id: "door_right",
+    name: "Right door",
+    group: "Exterior",
+    summary: "The right-hand door, mirroring the left: composite shell, sliding window, pull-cord release.",
+    specs: [["Side", "Right"]],
+  },
+  {
+    id: "headlights",
+    name: "Headlamps",
+    group: "Exterior",
+    summary: "Pop-up headlamps behind the clamshell, with fixed lamps under clear covers in the nose for parking and indicators.",
+    specs: [["Main beams", "Pop-up"]],
+  },
+  {
+    id: "taillights",
+    name: "Tail lamps",
+    group: "Exterior",
+    summary: "Twin round lamps each side, set into the mesh-covered tail between the exhaust outlets.",
+    specs: [["Layout", "Two round lamps per side"]],
+  },
+  {
+    id: "engine",
+    name: "2.9 L twin-turbo V8",
+    group: "Powertrain",
+    summary:
+      "The Tipo F120A: a 90° V8 with four valves per cylinder and two IHI turbochargers, mounted longitudinally behind the cabin. Ferrari's last car approved by Enzo Ferrari himself.",
+    specs: [
+      ["Displacement", "2,936 cc"],
+      ["Power", "478 PS at 7,000 rpm"],
+      ["Torque", "577 Nm at 4,000 rpm"],
+      ["Gearbox", "5-speed manual"],
+      ["Top speed", "324 km/h"],
+    ],
+  },
+  {
+    id: "chassis",
+    name: "Floor and suspension",
+    group: "Chassis",
+    summary: "A tubular steel frame with composite panels, and double wishbones at every corner. No power steering, no brake servo and no ABS.",
+    specs: [
+      ["Suspension", "Double wishbones, all round"],
+      ["Assists", "None"],
+    ],
+  },
+  ...corners.map(([c, f, l]) => wheel(`wheel_${c}`, f, l, f40Wheel, [["Wheel", "17 in, centre-lock"]])),
+  ...corners.map(([c, f, l]): CarPart => ({
+    id: `brake_${c}`,
+    name: `${f ? "Front" : "Rear"} ${l ? "left" : "right"} brake`,
+    group: "Chassis",
+    summary: "A Brembo cross-drilled, ventilated steel disc with a four-piston caliper, worked without a servo.",
+    specs: [["Position", `${f ? "Front" : "Rear"} axle, ${l ? "left" : "right"}`]],
+  })),
+  {
+    id: "seats",
+    name: "Cockpit",
+    group: "Cabin",
+    summary: "Two fixed shell seats in red cloth, bare carbon-weave floors and no carpets, door cards or radio.",
+    specs: [["Seats", "2"]],
+  },
+  {
+    id: "dashboard",
+    name: "Instruments",
+    group: "Cabin",
+    summary: "A felt-covered dash with orange-on-black gauges, including the turbo boost gauge.",
+    specs: [["Boost gauge", "Yes"]],
+  },
+  {
+    id: "steering",
+    name: "Steering wheel",
+    group: "Cabin",
+    summary: "A three-spoke Momo wheel with the prancing horse in the boss, on the left in this model.",
+    specs: [["Side", "Left-hand drive (in this model)"]],
+  },
+];
+
+// ---------------------------------------------------------------------- Aston Martin Vulcan
+const vulcanParts: CarPart[] = [
+  {
+    id: "body",
+    name: "Carbon body",
+    group: "Exterior",
+    summary:
+      "A carbon-fibre monocoque and body built for the track only, never homologated for the road. Aston Martin built 24 cars.",
+    specs: [
+      ["Structure", "Carbon-fibre monocoque"],
+      ["Built", "24 cars, from 2015"],
+      ["Use", "Track only"],
+    ],
+  },
+  {
+    id: "hood",
+    name: "Bonnet",
+    group: "Exterior",
+    summary: "The long carbon bonnet over the V12, with big vents to pull hot air out of the engine bay and the front wheel arches.",
+    specs: [["Material", "Carbon fibre"]],
+  },
+  {
+    id: "lid",
+    name: "Rear deck and wing",
+    group: "Exterior",
+    summary: "The tail section with the swan-neck rear wing and the diffuser beneath, which together make most of the car's downforce.",
+    specs: [["Wing", "Swan-neck mounts"]],
+  },
+  {
+    id: "door_left",
+    name: "Left door",
+    group: "Exterior",
+    summary: "A carbon door that swings up and forward, with the mirror on its leading edge.",
+    specs: [["Side", "Left"]],
+  },
+  {
+    id: "door_right",
+    name: "Right door",
+    group: "Exterior",
+    summary: "The right-hand door, mirroring the left.",
+    specs: [["Side", "Right"]],
+  },
+  {
+    id: "headlights",
+    name: "Headlamps",
+    group: "Exterior",
+    summary: "Slim LED headlamps set into the nose beside the wide Aston Martin grille.",
+    specs: [["Type", "LED"]],
+  },
+  {
+    id: "taillights",
+    name: "Tail lamps",
+    group: "Exterior",
+    summary: "Thin LED blades that run across the tail under the wing, like those on the One-77.",
+    specs: [["Type", "LED blades"]],
+  },
+  {
+    id: "engine",
+    name: "7.0 L V12",
+    group: "Powertrain",
+    summary:
+      "A naturally aspirated V12 developed from Aston Martin's racing engines, mounted behind the front axle. It drives the rear wheels through a sequential gearbox.",
+    specs: [
+      ["Layout", "V12, front-mid-mounted"],
+      ["Displacement", "7.0 L"],
+      ["Power", "820 PS"],
+      ["Gearbox", "6-speed sequential"],
+      ["Drive", "Rear-wheel drive"],
+    ],
+  },
+  {
+    id: "chassis",
+    name: "Floor and suspension",
+    group: "Chassis",
+    summary: "The flat carbon floor and the racing suspension underneath it. The car was built with Multimatic, which also builds the Ford GT.",
+    specs: [["Partner", "Multimatic"]],
+  },
+  ...corners.map(([c, f, l]) =>
+    wheel(`wheel_${c}`, f, l, "A centre-lock forged wheel on a Michelin racing tyre.", [["Fixing", "Centre-lock"]]),
+  ),
+  ...corners.map(([c, f, l]): CarPart => ({
+    id: `brake_${c}`,
+    name: `${f ? "Front" : "Rear"} ${l ? "left" : "right"} brake`,
+    group: "Chassis",
+    summary: "A carbon-ceramic disc with a racing caliper, sized to stop the car again and again from top speed on track.",
+    specs: [
+      ["Disc", "Carbon-ceramic"],
+      ["Position", `${f ? "Front" : "Rear"} axle, ${l ? "left" : "right"}`],
+    ],
+  })),
+  {
+    id: "seats",
+    name: "Cockpit",
+    group: "Cabin",
+    summary: "Carbon racing seats inside the tub, with harnesses and a roll structure, plus room for a passenger.",
+    specs: [["Seats", "2"]],
+  },
+  {
+    id: "dashboard",
+    name: "Dashboard",
+    group: "Cabin",
+    summary: "A bare carbon dash with the switch panel and display a driver needs on track, and nothing else.",
+    specs: [["Trim", "Exposed carbon"]],
+  },
+  {
+    id: "steering",
+    name: "Steering wheel",
+    group: "Cabin",
+    summary: "A flat-topped racing wheel with its own screen and the controls for pit limiter, radio and traction settings.",
+    specs: [["Type", "Racing wheel with display"]],
+  },
+];
+
+// ---------------------------------------------------------------------- Toyota GR Supra GT300
+const supraParts: CarPart[] = [
+  {
+    id: "body",
+    name: "Race body",
+    group: "Exterior",
+    summary:
+      "The GR Supra rebuilt to Japan's Super GT rules for the GT300 class: wide arches, a roll cage inside and aero allowed by the regulations.",
+    specs: [
+      ["Series", "Super GT, GT300 class"],
+      ["Base car", "GR Supra (A90)"],
+    ],
+    note: "In this model: a team livery printed into the body texture, so the paint picker leaves it as it is.",
+  },
+  {
+    id: "hood",
+    name: "Bonnet",
+    group: "Exterior",
+    summary: "A lightweight bonnet with large vents to let hot air out of the engine bay.",
+    specs: [["Vents", "Louvred outlets"]],
+  },
+  {
+    id: "lid",
+    name: "Rear wing",
+    group: "Exterior",
+    summary: "A big swan-neck rear wing on tall pillars, with the deck lid beneath it.",
+    specs: [["Mount", "Swan-neck"]],
+  },
+  {
+    id: "door_left",
+    name: "Left door",
+    group: "Exterior",
+    summary: "A light composite door with the side mirror on a race mount.",
+    specs: [["Side", "Left"]],
+  },
+  {
+    id: "door_right",
+    name: "Right door",
+    group: "Exterior",
+    summary: "The driver's door, on the right of this right-hand-drive car.",
+    specs: [["Side", "Right (driver)"]],
+  },
+  {
+    id: "headlights",
+    name: "Headlamps",
+    group: "Exterior",
+    summary: "The road Supra's headlamp shape, kept so the race car still looks like the one in showrooms, set into the aero nose.",
+    specs: [["Position", "Front corners"]],
+  },
+  {
+    id: "taillights",
+    name: "Tail lamps",
+    group: "Exterior",
+    summary: "Tail lamps and the rain light at the back, under the wing.",
+    specs: [["Position", "Rear"]],
+  },
+  {
+    id: "engine",
+    name: "Engine bay",
+    group: "Powertrain",
+    summary: "GT300 lets teams run a range of engines. A balance-of-performance table sets power and weight so different cars can race each other.",
+    specs: [
+      ["Rules", "Balance of performance"],
+      ["Drive", "Rear-wheel drive"],
+    ],
+  },
+  {
+    id: "chassis",
+    name: "Splitter, floor and suspension",
+    group: "Chassis",
+    summary: "The front splitter, flat floor and rear diffuser, with the racing suspension mounted underneath.",
+    specs: [["Aero", "Splitter, flat floor, diffuser"]],
+  },
+  ...corners.map(([c, f, l]) => wheel(`wheel_${c}`, f, l, "A forged racing wheel on a slick tyre, with a single centre-lock nut for pit stops.", [["Fixing", "Centre-lock"]])),
+  ...corners.map(([c, f, l]): CarPart => ({
+    id: `brake_${c}`,
+    name: `${f ? "Front" : "Rear"} ${l ? "left" : "right"} brake`,
+    group: "Chassis",
+    summary: "A ventilated racing disc and caliper, with its upright and suspension arms.",
+    specs: [["Position", `${f ? "Front" : "Rear"} axle, ${l ? "left" : "right"}`]],
+  })),
+  {
+    id: "seats",
+    name: "Cockpit",
+    group: "Cabin",
+    summary: "A single race seat with harness inside a welded roll cage.",
+    specs: [["Seats", "1"]],
+  },
+  {
+    id: "dashboard",
+    name: "Dashboard",
+    group: "Cabin",
+    summary: "The original dash shape kept, with a racing switch panel and data display.",
+    specs: [["Display", "Data logger"]],
+  },
+  {
+    id: "steering",
+    name: "Steering wheel",
+    group: "Cabin",
+    summary: "A racing wheel with a built-in display and buttons, on the right.",
+    specs: [["Side", "Right-hand drive"]],
+  },
+];
+
 // ---------------------------------------------------------------------- the line-up
 export const cars: Car[] = [
   {
@@ -363,6 +707,138 @@ export const cars: Car[] = [
       title: "Toyota Landcruiser V8 2022",
       author: "Jean-llace cars",
       url: "https://sketchfab.com/3d-models/toyota-landcruiser-v8-2022-1cf2904171374f63ab977e93b56506d3",
+      license: "CC BY 4.0",
+      licenseUrl: "http://creativecommons.org/licenses/by/4.0/",
+    },
+  },
+  {
+    slug: "ferrari-f40",
+    name: "Ferrari F40",
+    short: "F40",
+    maker: "Ferrari",
+    year: "1987",
+    model: "/models/cars/ferrari-f40.glb",
+    tagline: "Built for Ferrari's 40th birthday: a turbo V8, a composite body and no assists at all.",
+    facts: [
+      ["Engine", "2.9 L twin-turbo V8"],
+      ["Power", "478 PS"],
+      ["Top speed", "324 km/h"],
+      ["Built", "1987–1992"],
+    ],
+    parts: f40Parts(false),
+    view: { target: [0, 0.42, 0], camera: [5.2, 1.9, 5.4], cameraNarrow: [8.0, 3.2, 8.4] },
+    paint: {
+      material: "material",
+      colors: [
+        { name: "Rosso Corsa", hex: "#a8100c" },
+        { name: "Giallo Modena", hex: "#f0b800", metalness: 0.2, roughness: 0.25 },
+        { name: "Nero", hex: "#0c0d10", metalness: 0.4, roughness: 0.2 },
+        { name: "Bianco", hex: "#e9e7e2", metalness: 0.2, roughness: 0.25 },
+        { name: "Argento", hex: "#a4a8ad", metalness: 0.9, roughness: 0.2 },
+      ],
+    },
+    lamps: { head: ["super_headlight"], tail: ["super_brakelight"] },
+    credit: {
+      title: "Ferrari f40",
+      author: "Black Snow",
+      url: "https://sketchfab.com/3d-models/ferrari-f40-52a66c41cfcd4f999fb1b1c49bf24d70",
+      license: "CC BY 4.0",
+      licenseUrl: "http://creativecommons.org/licenses/by/4.0/",
+    },
+  },
+  {
+    slug: "ferrari-f40-liberty-walk",
+    name: "Ferrari F40 Liberty Walk",
+    short: "F40 LB",
+    maker: "Ferrari · Liberty Walk",
+    year: "1987",
+    model: "/models/cars/ferrari-f40-lb.glb",
+    tagline: "The F40 with riveted-on widebody arches, in the Liberty Walk style.",
+    facts: [
+      ["Engine", "2.9 L twin-turbo V8"],
+      ["Power", "478 PS (stock)"],
+      ["Body", "Widebody kit"],
+      ["Base car", "1987 F40"],
+    ],
+    parts: f40Parts(true),
+    view: { target: [0, 0.42, 0], camera: [5.2, 1.9, 5.4], cameraNarrow: [8.0, 3.2, 8.4] },
+    paint: {
+      material: "Material.040_16",
+      colors: [
+        { name: "Gloss Black", hex: "#111114" },
+        { name: "Rosso Corsa", hex: "#a8100c", metalness: 0.3, roughness: 0.22 },
+        { name: "Bianco", hex: "#e9e7e2", metalness: 0.2, roughness: 0.25 },
+        { name: "Giallo Modena", hex: "#f0b800", metalness: 0.2, roughness: 0.25 },
+        { name: "Grigio", hex: "#5d6166", metalness: 0.8, roughness: 0.25 },
+      ],
+    },
+    lamps: { head: ["Material.040_45"], tail: ["lg2_tailight_f40.001", "lg2_tailight_f40.001_2", "lg2_tailight_f40.001_3"] },
+    credit: {
+      title: "Ferrari F40 Liberty Walk",
+      author: "VTX",
+      url: "https://sketchfab.com/3d-models/ferrari-f40-liberty-walk-cd6d8c85cfd44662af030247b19eb27c",
+      license: "CC BY-NC-SA 4.0",
+      licenseUrl: "http://creativecommons.org/licenses/by-nc-sa/4.0/",
+    },
+  },
+  {
+    slug: "aston-martin-vulcan",
+    name: "Aston Martin Vulcan",
+    short: "Vulcan",
+    maker: "Aston Martin",
+    year: "2015",
+    model: "/models/cars/aston-martin-vulcan.glb",
+    tagline: "A track-only V12 hypercar. 24 were built, and none is road legal.",
+    facts: [
+      ["Engine", "7.0 L V12"],
+      ["Power", "820 PS"],
+      ["Gearbox", "6-speed sequential"],
+      ["Built", "24 cars"],
+    ],
+    parts: vulcanParts,
+    view: { target: [0, 0.45, 0], camera: [5.8, 2.0, 6.0], cameraNarrow: [8.8, 3.4, 9.2] },
+    paint: {
+      material: "CAR_PAINT",
+      colors: [
+        { name: "Deep Blue", hex: "#0a3a5c" },
+        { name: "Racing Green", hex: "#1f4a3a", metalness: 0.6, roughness: 0.25 },
+        { name: "Silver", hex: "#a8acb0", metalness: 0.9, roughness: 0.2 },
+        { name: "Black", hex: "#0c0d10", metalness: 0.5, roughness: 0.22 },
+        { name: "Orange", hex: "#d4570f", metalness: 0.4, roughness: 0.25 },
+      ],
+    },
+    lamps: { head: ["HEADLIGHT", "REFLECTOR"], tail: ["TAILLIGHTS_INNER"] },
+    credit: {
+      title: "Aston Martin Vulcan",
+      author: "Outlaw Games",
+      url: "https://sketchfab.com/3d-models/aston-martin-vulcan-707342c93db7411bb29c077d3ef2b147",
+      license: "CC BY-NC 4.0",
+      licenseUrl: "http://creativecommons.org/licenses/by-nc/4.0/",
+    },
+  },
+  {
+    slug: "toyota-supra-gt300",
+    name: "Toyota GR Supra GT300",
+    short: "Supra GT300",
+    maker: "Toyota",
+    year: "2020",
+    model: "/models/cars/toyota-supra-gt300.glb",
+    tagline: "The GR Supra built for the GT300 class of Japan's Super GT.",
+    facts: [
+      ["Series", "Super GT"],
+      ["Class", "GT300"],
+      ["Base car", "GR Supra (A90)"],
+      ["Drive", "Right-hand"],
+    ],
+    parts: supraParts,
+    view: { target: [0, 0.5, 0], camera: [5.6, 2.0, 5.8], cameraNarrow: [8.6, 3.4, 9.0] },
+    // the livery is printed into the body texture, so it is the only finish offered
+    paint: { material: "01_-_Default", colors: [{ name: "Team livery", hex: "#e6e6e6" }] },
+    lamps: { head: ["06_-_Default"], tail: ["06_-_Default"] },
+    credit: {
+      title: "ToyotaGR Supra GT300",
+      author: "vecarz",
+      url: "https://sketchfab.com/3d-models/toyotagr-supra-gt300-wwwvecarzcom-1666c35171b649a8a927da53bdadf228",
       license: "CC BY 4.0",
       licenseUrl: "http://creativecommons.org/licenses/by/4.0/",
     },

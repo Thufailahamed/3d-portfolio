@@ -179,7 +179,7 @@ export default function Showroom({
         <p key={`g${car.slug}`} className="sr-rise mt-4 max-w-xs text-[15px] leading-snug text-fg/65" style={{ animationDelay: "120ms" }}>
           {car.tagline}
         </p>
-        {switcher && <div className="pointer-events-auto mt-5 md:hidden">{switcher}</div>}
+        {switcher && <div className="pointer-events-auto mt-5 max-w-full lg:hidden">{switcher}</div>}
 
         <nav
           aria-label="Parts"
@@ -283,9 +283,14 @@ export default function Showroom({
           </button>
         </div>
 
-        {switcher && <div className="absolute bottom-0 left-1/2 hidden -translate-x-1/2 md:block">{switcher}</div>}
+        {/* centred between the left-hand buttons and (on the widest screens) the credit */}
+        {switcher && (
+          <div className="absolute bottom-0 left-1/2 hidden max-w-[calc(100vw-22rem)] -translate-x-1/2 lg:block 2xl:max-w-[calc(100vw-40rem)]">
+            {switcher}
+          </div>
+        )}
 
-        <div className="hidden max-w-[16rem] flex-col items-end gap-2 text-right xl:flex">
+        <div className="hidden max-w-[16rem] flex-col items-end gap-2 text-right 2xl:flex">
           <p className={`label !text-[10px] transition-opacity duration-700 ${touched ? "opacity-0" : "opacity-100"}`}>
             Drag to orbit · click a part
           </p>
@@ -311,7 +316,7 @@ export default function Showroom({
       </div>
       {/* the credit stays visible where the bottom bar is too narrow for it */}
       {car.credit && (
-        <p className="sr-hud label absolute right-gutter top-[4.5rem] z-10 hidden max-w-[14rem] text-right !text-[9px] !text-fg/40 md:block xl:hidden">
+        <p className="sr-hud label absolute right-gutter top-[4.5rem] z-10 hidden max-w-[14rem] text-right !text-[9px] !text-fg/40 md:block 2xl:hidden">
           Model: {car.credit.title} by {car.credit.author}
           {car.credit.license && ` · ${car.credit.license}`}
         </p>
