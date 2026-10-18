@@ -362,8 +362,10 @@ export class SpaceScene {
         vertexShader: /* glsl */ `
 attribute float a_a; attribute float a_e; attribute float a_I; attribute float a_node; attribute float a_w; attribute float a_M0; attribute float a_s;
 uniform float uDays; uniform float uDistK; uniform float uUPA; uniform float uDpr; uniform int uK;
-varying float vS;
+varying float vS; varying vec3 vTint;
 void main() {
+  // stony S-types dominate the inner belt, dark carbonaceous C-types the outer; each rock its own albedo
+  vTint = mix(vec3(1.08, 0.93, 0.78), vec3(0.72, 0.75, 0.82), smoothstep(2.3, 3.1, a_a)) * (0.55 + 0.9 * fract(a_M0 * 0.1373 + a_node * 0.071));
   float n = 0.9856076686 / pow(a_a, 1.5);
   float M = radians(mod(a_M0 + n * uDays, 360.0));
   float E = M;
@@ -381,10 +383,10 @@ void main() {
   vS = a_s;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = (1.0 + a_s * 1.2) * uDpr;
+  gl_PointSize = (0.7 + a_s * 1.9) * uDpr;
 }`,
-        fragmentShader: /* glsl */ `uniform vec3 uColor; varying float vS;
-          void main() { float d = length(gl_PointCoord - 0.5) * 2.0; float a = (1.0 - smoothstep(0.3, 1.0, d)) * (0.18 + vS * 0.5); if (a < 0.02) discard; gl_FragColor = vec4(uColor * a, 1.0); }`,
+        fragmentShader: /* glsl */ `uniform vec3 uColor; varying float vS; varying vec3 vTint;
+          void main() { float d = length(gl_PointCoord - 0.5) * 2.0; float a = (1.0 - smoothstep(0.2, 1.0, d)) * (0.09 + vS * 0.62); if (a < 0.015) discard; gl_FragColor = vec4(uColor * vTint * a, 1.0); }`,
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,

@@ -310,15 +310,17 @@ void main() {
   float spot = smoothstep(0.66, 0.74, sn) * band;
   float umbra = smoothstep(0.71, 0.76, sn) * band;
   // limb darkening (Eddington-ish) and the colour shift toward the limb
-  float limb = 0.4 + 0.6 * mu;
-  vec3 core = vec3(1.0, 0.93, 0.8);
-  vec3 edge = vec3(1.0, 0.56, 0.24);
-  vec3 c = mix(edge, core, pow(mu, 0.5)) * limb;
-  c *= 0.86 + 0.28 * gran + 0.1 * coarse;
+  float limb = 0.3 + 0.7 * pow(mu, 0.6);
+  vec3 core = vec3(1.0, 0.7, 0.32);
+  vec3 edge = vec3(0.9, 0.26, 0.03);
+  vec3 c = mix(edge, core, pow(mu, 0.45)) * limb;
+  // granulation: bright cell tops, dark intergranular lanes
+  c *= 0.72 + 0.56 * gran + 0.12 * coarse;
   c *= 1.0 - spot * 0.45 - umbra * 0.4;
   // faculae: bright patches near the limb
   c += vec3(1.0, 0.85, 0.6) * smoothstep(0.62, 0.7, coarse) * (1.0 - mu) * 0.4;
-  gl_FragColor = vec4(c * 5.0, 1.0);
+  // pre-saturated for AgX, and kept below full white so granulation, spots and the orange limb survive the bloom
+  gl_FragColor = vec4(c * 2.1, 1.0);
 }`,
   });
 }

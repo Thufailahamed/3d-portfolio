@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SPEEDS } from "./physics";
 import { CAMS, SCALES, WARPS, control, useRover, type FeedItem } from "./store";
-import { MOONS, PLANET_IDS, fmtDate, launchWindow, planetPos } from "./ephemeris";
-import { EARTH_G, WORLDS, commDelay, hohmannDv, worldById, type World } from "./worlds";
+import { MOONS, PLANET_IDS, dateOf, fmtDate, launchWindow, planetPos } from "./ephemeris";
+import { EARTH_G, WORLDS, commDelay, hohmannDv, worldById, type PlanetLook, type World } from "./worlds";
 
 const Scene = dynamic(() => import("./Scene"), { ssr: false });
 
@@ -37,7 +37,10 @@ function fmtDays(d: number) {
 
 function Panel({ children, className = "", style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
-    <div className={`pointer-events-auto rounded-xl border border-white/10 bg-[#0b0d12]/72 shadow-[0_20px_60px_-20px_rgba(0,0,0,.8)] backdrop-blur-md ${className}`} style={style}>
+    <div
+      className={`rover-panel pointer-events-auto rounded-2xl border border-white/[0.08] bg-[linear-gradient(180deg,rgba(24,28,37,.78),rgba(9,11,16,.74))] shadow-[inset_0_1px_0_rgba(255,255,255,.07),0_30px_80px_-30px_rgba(0,0,0,.95)] backdrop-blur-xl backdrop-saturate-150 ${className}`}
+      style={style}
+    >
       {children}
     </div>
   );
@@ -45,9 +48,9 @@ function Panel({ children, className = "", style }: { children: React.ReactNode;
 
 function Stat({ k, v, sub }: { k: string; v: string; sub?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-white/[0.06] py-[5px] last:border-0">
+    <div className="flex items-baseline justify-between gap-3 border-b border-white/[0.06] py-[6px] last:border-0">
       <span className="text-[10px] uppercase tracking-[0.14em] text-white/45">{k}</span>
-      <span className="text-right text-[12px] text-white/90" style={mono}>
+      <span className="text-right text-[12px] text-white/90 tabular-nums" style={mono}>
         {v}
         {sub && <span className="ml-1 text-white/40">{sub}</span>}
       </span>
@@ -65,7 +68,7 @@ function Btn({ onClick, children, active, title, className = "" }: { onClick: ()
         control.unlock();
         onClick();
       }}
-      className={`pointer-events-auto flex h-9 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors ${active ? "bg-[#c8ff3d] text-[#0b0d12]" : "bg-[#0b0d12]/70 text-white/80 ring-1 ring-white/12 backdrop-blur hover:bg-white/10 hover:text-white"} ${className}`}
+      className={`pointer-events-auto flex h-9 items-center justify-center gap-1.5 rounded-xl px-3 text-[11px] font-semibold uppercase tracking-[0.12em] transition-[background,color,box-shadow,transform] active:scale-[0.97] ${active ? "bg-[#c8ff3d] text-[#0b0d12] shadow-[0_0_24px_-8px_rgba(200,255,61,.8)]" : "bg-[#0b0d12]/60 text-white/80 ring-1 ring-inset ring-white/10 backdrop-blur hover:bg-white/[0.08] hover:text-white hover:ring-white/20"} ${className}`}
       style={mono}
     >
       {children}
@@ -73,26 +76,172 @@ function Btn({ onClick, children, active, title, className = "" }: { onClick: ()
   );
 }
 
+const ICONS: Record<string, React.ReactNode> = {
+  rew: <path d="M11.5 6.5 5 12l6.5 5.5zM19 6.5 12.5 12l6.5 5.5z" fill="currentColor" />,
+  ff: <path d="M5 6.5 11.5 12 5 17.5zM12.5 6.5 19 12l-6.5 5.5z" fill="currentColor" />,
+  play: <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />,
+  pause: <path d="M7 5.5h3.5v13H7zM13.5 5.5H17v13h-3.5z" fill="currentColor" />,
+  now: (
+    <g fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="2" fill="currentColor" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </g>
+  ),
+  orbit: (
+    <g fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="12" cy="12" r="2.6" fill="currentColor" />
+      <ellipse cx="12" cy="12" rx="9.5" ry="4.5" transform="rotate(-20 12 12)" />
+    </g>
+  ),
+  left: <path d="m14.5 6-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+  right: <path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+  arrow: <path d="M4 12h15m-5-6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+  pin: (
+    <g fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 21s-6.5-5.7-6.5-11a6.5 6.5 0 1 1 13 0c0 5.3-6.5 11-6.5 11z" />
+      <circle cx="12" cy="10" r="2.2" />
+    </g>
+  ),
+  signal: (
+    <g fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M5 19a10 10 0 0 1 0-14M19 5a10 10 0 0 1 0 14M8.5 15.5a5 5 0 0 1 0-7M15.5 8.5a5 5 0 0 1 0 7" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+    </g>
+  ),
+};
+
+function Icon({ name, size = 14 }: { name: keyof typeof ICONS; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="shrink-0">
+      {ICONS[name]}
+    </svg>
+  );
+}
+
+function rgba(hex: string, a: number) {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = [...h].map((c) => c + c).join("");
+  const n = parseInt(h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+/** a painted miniature of each world's surface: maria, bands, caps and clouds, as the 3D shader does it */
+function surfaceOf(l: PlanetLook) {
+  const blob = (w: number, h: number, x: number, y: number, c: string, soft = 62) => `radial-gradient(ellipse ${w}% ${h}% at ${x}% ${y}%, ${c} 0 40%, transparent ${soft}%)`;
+  switch (l.kind) {
+    case "banded":
+      return [
+        l.spot ? blob(16, 8, 60, 63, l.spot, 75) : "",
+        `linear-gradient(176deg, ${l.c2} 0%, ${l.c1} 8%, ${l.c3} 15%, ${l.c3} 19%, ${l.c2} 25%, ${l.c1} 31%, ${l.c3} 38%, ${l.c3} 44%, ${l.c1} 50%, ${l.c2} 56%, ${l.c3} 62%, ${l.c1} 69%, ${l.c3} 76%, ${l.c2} 83%, ${l.c1} 91%, ${l.c2} 100%)`,
+      ];
+    case "earth":
+      return [
+        blob(70, 16, 50, 0, "#f4f8ff", 70),
+        blob(38, 9, 38, 30, rgba(l.c3, 0.8), 75),
+        blob(46, 8, 66, 68, rgba(l.c3, 0.7), 75),
+        blob(26, 10, 26, 84, rgba(l.c3, 0.55), 75),
+        blob(20, 32, 32, 52, l.c2),
+        blob(20, 22, 68, 40, "#9a8550"),
+        blob(14, 14, 60, 82, l.c2),
+        `radial-gradient(circle at 45% 45%, ${l.c1}, #0b2a58)`,
+      ];
+    case "rocky":
+      return [
+        blob(44, 12, 50, 1, l.c3, 70),
+        blob(30, 12, 50, 99, rgba(l.c3, 0.8), 70),
+        blob(30, 14, 36, 48, rgba(l.c2, 0.85), 70),
+        blob(18, 22, 66, 58, rgba(l.c2, 0.7), 70),
+        blob(40, 10, 54, 30, rgba(l.c2, 0.4), 80),
+        `radial-gradient(circle at 45% 45%, ${l.c1}, ${l.c2})`,
+      ];
+    case "cratered":
+      return [
+        blob(9, 9, 64, 30, rgba(l.c3, 0.9), 55),
+        blob(6, 6, 30, 66, rgba(l.c3, 0.8), 55),
+        blob(7, 7, 74, 72, rgba(l.c2, 0.9), 55),
+        blob(26, 20, 40, 34, rgba(l.c2, 0.75), 70),
+        blob(20, 16, 58, 58, rgba(l.c2, 0.6), 70),
+        `radial-gradient(circle at 40% 40%, ${l.c3}, ${l.c1} 55%, ${l.c2})`,
+      ];
+    case "icy":
+      return [
+        blob(22, 24, 64, 60, l.c3, 66),
+        blob(26, 16, 28, 62, rgba(l.c2, 0.85), 70),
+        `radial-gradient(circle at 45% 40%, ${l.c3}, ${l.c1} 50%, ${l.c2})`,
+      ];
+    default:
+      // cloudy and haze: soft, low-contrast cloud decks
+      return [blob(60, 14, 40, 36, rgba(l.c3, 0.7), 80), blob(70, 12, 58, 70, rgba(l.c2, 0.5), 85), `linear-gradient(168deg, ${l.c3}, ${l.c1} 35%, ${l.c2} 65%, ${l.c1} 85%, ${l.c2})`];
+  }
+}
+
 function PlanetDot({ w, size = 16 }: { w: World; size?: number }) {
   const l = w.look;
-  const bg =
-    l.kind === "banded"
-      ? `repeating-linear-gradient(0deg, ${l.c1} 0 3px, ${l.c2} 3px 5px, ${l.c3} 5px 6px)`
-      : l.kind === "earth"
-        ? `radial-gradient(circle at 35% 35%, ${l.c2} 0 22%, ${l.c1} 40%)`
-        : `radial-gradient(circle at 35% 35%, ${l.c3}, ${l.c1} 45%, ${l.c2})`;
-  return <span aria-hidden className="inline-block shrink-0 rounded-full shadow-[inset_-3px_-3px_6px_rgba(0,0,0,.55)]" style={{ width: size, height: size, background: bg }} />;
+  const ring = l.rings;
+  const ringStyle = (front: boolean): React.CSSProperties => ({
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: size * (size < 30 ? 1.75 : 2),
+    height: size * (size < 30 ? 0.52 : 0.6),
+    borderRadius: "50%",
+    transform: "translate(-50%, -50%) rotate(-16deg)",
+    clipPath: front ? "inset(50% 0 0 0)" : "inset(0 0 50% 0)",
+    background: `radial-gradient(closest-side, transparent 54%, ${rgba(l.c3, 0.55)} 58%, ${rgba(l.c2, 0.8)} 70%, ${rgba(l.c2, 0.15)} 73%, ${rgba(l.c1, 0.75)} 77%, ${rgba(l.c3, 0.5)} 92%, transparent 100%)`,
+  });
+  return (
+    <span aria-hidden className="relative inline-block shrink-0" style={{ width: size, height: size }}>
+      {ring && <span style={ringStyle(false)} />}
+      <span
+        className="absolute inset-0 rounded-full"
+        style={{
+          backgroundImage: [
+            `radial-gradient(circle at 34% 30%, rgba(255,255,255,.3), rgba(255,255,255,0) 34%)`,
+            `radial-gradient(circle at 30% 28%, rgba(0,0,0,0) 40%, rgba(0,0,0,.5) 66%, rgba(0,0,0,.93) 98%)`,
+            ...surfaceOf(l).filter(Boolean),
+          ].join(","),
+          boxShadow: l.rimK > 0 ? `0 0 ${Math.max(3, size * 0.22)}px ${rgba(l.rim, 0.3 * l.rimK)}, inset ${size * 0.05}px ${size * 0.05}px ${size * 0.12}px ${rgba(l.rim, 0.55 * l.rimK)}` : "0 0 0 0.5px rgba(255,255,255,.06)",
+        }}
+      />
+      {ring && <span style={ringStyle(true)} />}
+    </span>
+  );
 }
 
 // ———————————————————————————— mission select ————————————————————————————
 
 const LIGHT_MIN_PER_AU = 8.3167;
+const MAX_G = Math.max(...WORLDS.map((w) => w.g));
+
+function Tile({ k, v, sub, bar, children }: { k: string; v: string; sub?: string; bar?: number; children?: React.ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-white/[0.035] p-3 ring-1 ring-inset ring-white/[0.05]">
+      <p className="text-[9.5px] uppercase tracking-[0.16em] text-white/45" style={mono}>
+        {k}
+      </p>
+      <p className="mt-1 truncate text-[17px] font-semibold leading-tight tracking-tight text-white tabular-nums">{v}</p>
+      {sub && (
+        <p className="mt-0.5 truncate text-[10.5px] text-white/45" title={sub}>
+          {sub}
+        </p>
+      )}
+      {bar !== undefined && (
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/[0.08]">
+          <div className="h-full rounded-full" style={{ width: `${Math.max(3, Math.min(1, bar) * 100)}%`, background: `linear-gradient(90deg, ${rgba(ACCENT, 0.5)}, ${ACCENT})` }} />
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
 
 function WorldPicker() {
   const selected = useRover((s) => s.selected);
   const hover = useRover((s) => s.hover);
   const current = useRover((s) => s.world);
   const jd = useRover((s) => s.jd);
+  const [tab, setTab] = useState<"mission" | "world">("mission");
   const w = worldById[hover ?? selected];
   const from = current ? worldById[current] : worldById.earth;
   const local = helioOf(from).id === helioOf(w).id;
@@ -110,82 +259,234 @@ function WorldPicker() {
   const dv = local ? 3.1 : hohmannDv(win!.a1, win!.a2);
   const [dmin, dmax] = commDelay(w);
   const delayNow = live.earth * LIGHT_MIN_PER_AU;
+  const idx = WORLDS.findIndex((x) => x.id === w.id);
+  const step = (d: number) => control.select(WORLDS[(idx + d + WORLDS.length) % WORLDS.length].id);
+  const here = w.id === from.id;
+  const gEarth = w.g / EARTH_G;
   return (
     <>
-      <Panel className="absolute left-4 top-20 w-[260px] p-2 max-md:hidden">
-        <p className="px-2 pb-2 pt-1 text-[10px] uppercase tracking-[0.18em] text-white/45" style={mono}>
-          Destinations
-        </p>
-        <ul>
-          {WORLDS.map((x) => (
-            <li key={x.id}>
-              <button
-                type="button"
-                onMouseEnter={() => useRover.getState().set({ hover: x.id })}
-                onMouseLeave={() => useRover.getState().set({ hover: null })}
-                onClick={() => control.select(x.id)}
-                className={`flex w-full items-center gap-3 rounded-lg px-2 py-[7px] text-left transition-colors ${selected === x.id ? "bg-white/10" : "hover:bg-white/5"}`}
-              >
-                <PlanetDot w={x} />
-                <span className={`flex-1 text-[13px] ${selected === x.id ? "text-white" : "text-white/75"}`}>
-                  {x.name}
-                  {x.parent && <span className="ml-1.5 text-[10px] text-white/35">· {x.parent}</span>}
-                </span>
-                <span className="text-[10px] text-white/45" style={mono}>
-                  {(x.g / EARTH_G).toFixed(2)} g
-                </span>
-              </button>
-            </li>
-          ))}
+      <Panel className="absolute left-4 top-[76px] w-[256px] overflow-hidden max-md:hidden">
+        <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/45" style={mono}>
+            Destinations
+          </p>
+          <p className="text-[10px] text-white/30" style={mono}>
+            {WORLDS.length} worlds
+          </p>
+        </div>
+        <ul className="max-h-[calc(100vh-260px)] overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
+          {WORLDS.map((x) => {
+            const on = selected === x.id;
+            return (
+              <li key={x.id} className="relative">
+                {x.parent && <span aria-hidden className="absolute bottom-1/2 left-[19px] top-[-6px] w-2.5 rounded-bl-md border-b border-l border-white/15" />}
+                <button
+                  type="button"
+                  onMouseEnter={() => useRover.getState().set({ hover: x.id })}
+                  onMouseLeave={() => useRover.getState().set({ hover: null })}
+                  onClick={() => control.select(x.id)}
+                  className={`group relative flex w-full items-center gap-3 rounded-xl py-[7px] pr-2.5 text-left transition-colors ${x.parent ? "pl-8" : "pl-2.5"} ${on ? "bg-white/[0.09] ring-1 ring-inset ring-white/10" : "hover:bg-white/[0.045]"}`}
+                >
+                  {on && <span aria-hidden className="absolute -left-2 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full" style={{ background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` }} />}
+                  <PlanetDot w={x} size={x.parent ? 15 : 20} />
+                  <span className="min-w-0 flex-1">
+                    <span className={`block truncate text-[13px] leading-tight ${on ? "font-medium text-white" : "text-white/75 group-hover:text-white"}`}>{x.name}</span>
+                    <span className="block text-[9.5px] leading-tight text-white/35" style={mono}>
+                      {x.parent ? `moon of ${x.parent}` : `${x.au.toFixed(2)} AU`}
+                      {current === x.id && <span style={{ color: ACCENT }}> · rover here</span>}
+                    </span>
+                  </span>
+                  <span className="flex w-11 flex-col items-end gap-1">
+                    <span className={`text-[10px] tabular-nums ${on ? "text-white/80" : "text-white/45"}`} style={mono}>
+                      {(x.g / EARTH_G).toFixed(2)}g
+                    </span>
+                    <span className="h-[2px] w-full overflow-hidden rounded-full bg-white/[0.08]">
+                      <span className="block h-full rounded-full" style={{ width: `${Math.max(4, (x.g / MAX_G) * 100)}%`, background: on ? ACCENT : "rgba(255,255,255,.35)" }} />
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </Panel>
 
-      <Panel className="absolute bottom-4 right-4 w-[min(380px,calc(100vw-32px))] p-5 max-md:left-4 max-md:max-h-[52vh] max-md:overflow-y-auto">
-        <div className="flex items-center gap-3">
-          <PlanetDot w={w} size={34} />
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.18em] text-white/45" style={mono}>
-              {w.kind}
-              {w.parent ? ` of ${w.parent}` : ""}
-            </p>
-            <h2 className="text-2xl font-semibold tracking-tight text-white">{w.name}</h2>
+      <Panel className="absolute bottom-4 right-4 flex max-h-[calc(100vh-92px)] w-[min(384px,calc(100vw-32px))] flex-col overflow-hidden max-md:left-4 max-md:max-h-[56vh]">
+        {/* header: the world, with a lit globe */}
+        <div className="relative shrink-0 overflow-hidden px-5 pb-4 pt-5">
+          <div aria-hidden className="pointer-events-none absolute -right-10 -top-12 h-48 w-48 rounded-full opacity-40 blur-3xl" style={{ background: w.look.c1 }} />
+          <div className="relative flex items-start gap-4">
+            <span className={`mt-0.5 ${w.look.rings ? "mx-[24px]" : ""}`}>
+              <PlanetDot w={w} size={58} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-white/50" style={mono}>
+                {w.kind}
+                {w.parent ? ` · ${w.parent}` : ""}
+                {current === w.id && (
+                  <span className="rounded-full px-1.5 py-px text-[8.5px] font-bold tracking-[0.12em] text-[#0b0d12]" style={{ background: ACCENT }}>
+                    You are here
+                  </span>
+                )}
+              </p>
+              <h2 className="mt-0.5 text-[28px] font-semibold leading-none tracking-tight text-white">{w.name}</h2>
+              <p className="mt-2 flex items-start gap-1 text-[11.5px] leading-snug text-white/55">
+                <span className="mt-px text-white/40">
+                  <Icon name="pin" size={12} />
+                </span>
+                {w.site}
+              </p>
+            </div>
+            <div className="flex gap-1">
+              {(["left", "right"] as const).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  aria-label={d === "left" ? "Previous world" : "Next world"}
+                  onClick={() => step(d === "left" ? -1 : 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-white/50 ring-1 ring-inset ring-white/10 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <Icon name={d} size={14} />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <p className="mt-2 text-[12px] text-white/60">Landing site: {w.site}</p>
-        <div className="mt-3">
-          <Stat k="Gravity" v={`${(w.g / EARTH_G).toFixed(2)} g`} sub={`${w.g} m/s²`} />
-          <Stat k="Rover weighs" v={`${fmt((899 * w.g) / EARTH_G)} kgf`} sub="(899 kg)" />
-          <Stat k="Pressure" v={fmtPressure(w.atm.pressureBar)} sub={w.surface === "deck" ? "no surface" : undefined} />
-          <Stat k="Temperature" v={fmtTemp(w.atm.tempC)} />
-          <Stat k="Sun distance today" v={`${live.sun.toFixed(3)} AU`} sub={`${fmt(1361 / (live.sun * live.sun))} W/m²`} />
-          {w.id !== "earth" && <Stat k="From Earth today" v={live.earth < 0.01 ? `${fmt(live.earth * 149597870.7)} km` : `${live.earth.toFixed(3)} AU`} sub={`signal ${fmtDelay(delayNow)}`} />}
-          {w.id !== "earth" && dmin !== dmax && <Stat k="Signal delay range" v={`${fmtDelay(dmin)}–${fmtDelay(dmax)}`} />}
-          {win && <Stat k="Next launch window" v={fmtDate(win.launch)} sub={win.launch - day < 1 ? "open now" : `in ${fmtDays(win.launch - day)}`} />}
-          {w.id !== from.id && <Stat k={`Flight from ${from.name}`} v={local ? `${days} days` : fmtDays(days)} sub={`Δv ${dv.toFixed(1)} km/s`} />}
-          {win && <Stat k="Arrival" v={fmtDate(win.arrive)} />}
-        </div>
-        <p className="mt-3 text-[12px] leading-relaxed text-white/55">{w.edl.note}</p>
-        <button
-          type="button"
-          onClick={() => {
-            control.unlock();
-            control.go(w.id);
-          }}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#c8ff3d] py-3 text-[13px] font-bold uppercase tracking-[0.16em] text-[#0b0d12] transition-transform active:scale-[0.98]"
-          style={mono}
-        >
-          {current === w.id ? "Land again" : `Launch to ${w.name}`} →
-        </button>
-        <ul className="mt-3 flex flex-wrap gap-1.5 md:hidden">
-          {WORLDS.map((x) => (
-            <li key={x.id}>
-              <button type="button" onClick={() => control.select(x.id)} className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] ${selected === x.id ? "bg-white/15 text-white" : "bg-white/5 text-white/60"}`}>
-                <PlanetDot w={x} size={10} />
-                {x.name}
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-1 [scrollbar-width:thin]">
+          {/* key numbers */}
+          <div className="grid grid-cols-2 gap-2">
+            <Tile k="Gravity" v={`${gEarth.toFixed(2)} g`} sub={`${w.g} m/s² · rover ${fmt(899 * gEarth)} kgf`} bar={w.g / MAX_G} />
+            <Tile k="Surface" v={fmtTemp(w.atm.tempC)} sub={w.atm.tempRange} />
+            <Tile k="Pressure" v={fmtPressure(w.atm.pressureBar)} sub={w.surface === "deck" ? "no solid surface" : w.atm.pressureBar > 0 ? `${fmt((w.atm.pressureBar / 1.013) * 100, w.atm.pressureBar < 0.1 ? 2 : 0)}% of Earth` : "airless"} />
+            <Tile k="Day" v={w.dayLength.replace(/\s*\(.*\)/, "")} sub={`${fmt(w.radiusKm)} km radius`} />
+          </div>
+
+          {/* tabs */}
+          <div className="relative mt-4 grid grid-cols-2 rounded-xl bg-white/[0.04] p-1 ring-1 ring-inset ring-white/[0.05]">
+            <span aria-hidden className="absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-lg bg-white/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,.08)] transition-transform duration-300" style={{ left: 4, transform: tab === "world" ? "translateX(100%)" : "none" }} />
+            {(["mission", "world"] as const).map((t) => (
+              <button key={t} type="button" onClick={() => setTab(t)} className={`relative py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition-colors ${tab === t ? "text-white" : "text-white/45 hover:text-white/75"}`} style={mono}>
+                {t === "mission" ? "Mission" : "Environment"}
               </button>
-            </li>
-          ))}
-        </ul>
+            ))}
+          </div>
+
+          {tab === "mission" ? (
+            <div className="mt-3">
+              {here ? (
+                <p className="rounded-xl bg-white/[0.035] p-3 text-[12px] leading-relaxed text-white/60 ring-1 ring-inset ring-white/[0.05]">
+                  {current === w.id ? `The rover is already on ${w.name}. Land again to start a fresh traverse at ${w.site.split(",")[0]}.` : `Home turf: no launch window needed. The rover is trucked straight to ${w.site.split(",")[0]} for a test drive.`}
+                </p>
+              ) : (
+                <div className="rounded-xl bg-white/[0.035] p-3 ring-1 ring-inset ring-white/[0.05]">
+                  <div className="flex items-center gap-2">
+                    <PlanetDot w={from} size={20} />
+                    <div className="relative h-8 flex-1">
+                      <svg className="absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden>
+                        <path d="M2 28 Q50 -6 98 28" fill="none" stroke={rgba(ACCENT, 0.7)} strokeWidth="1.4" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" className="rover-dash" />
+                      </svg>
+                      <span className="absolute left-1/2 top-[5px] -translate-x-1/2 whitespace-nowrap rounded-full bg-[#0b0d12] px-2 py-px text-[10px] text-white/80 ring-1 ring-white/10" style={mono}>
+                        {local ? `${days} days` : fmtDays(days)}
+                      </span>
+                    </div>
+                    <PlanetDot w={w} size={20} />
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-[10.5px]" style={mono}>
+                    <div>
+                      <p className="uppercase tracking-[0.12em] text-white/40">Launch</p>
+                      <p className="mt-0.5 text-white/90">{win ? fmtDate(win.launch) : "Any day"}</p>
+                      <p className="text-white/40">{win ? (win.launch - day < 1 ? <span style={{ color: ACCENT }}>open now</span> : `in ${fmtDays(win.launch - day)}`) : `from ${from.name}`}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="uppercase tracking-[0.12em] text-white/40">Δv</p>
+                      <p className="mt-0.5 text-white/90">{dv.toFixed(1)} km/s</p>
+                      <p className="text-white/40">{local ? "local hop" : "Hohmann"}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="uppercase tracking-[0.12em] text-white/40">Arrive</p>
+                      <p className="mt-0.5 text-white/90">{win ? fmtDate(win.arrive) : `+${days} days`}</p>
+                      <p className="text-white/40">{w.edl.chute ? "chute + crane" : "powered"}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {w.id !== "earth" && (
+                <div className="mt-2 rounded-xl bg-white/[0.035] p-3 ring-1 ring-inset ring-white/[0.05]">
+                  <div className="flex items-center justify-between">
+                    <p className="flex items-center gap-1.5 text-[9.5px] uppercase tracking-[0.16em] text-white/45" style={mono}>
+                      <Icon name="signal" size={12} /> Signal to Earth
+                    </p>
+                    <p className="text-[12px] text-white tabular-nums" style={mono}>
+                      {fmtDelay(delayNow)} <span className="text-white/40">one way</span>
+                    </p>
+                  </div>
+                  {dmin !== dmax && (
+                    <>
+                      <div className="relative mt-2.5 h-1 rounded-full bg-white/[0.08]">
+                        <span className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#0b0d12]" style={{ left: `${Math.min(100, Math.max(0, ((delayNow - dmin) / (dmax - dmin)) * 100))}%`, background: ACCENT, boxShadow: `0 0 10px ${ACCENT}` }} />
+                      </div>
+                      <div className="mt-1.5 flex justify-between text-[9.5px] text-white/35" style={mono}>
+                        <span>closest {fmtDelay(dmin)}</span>
+                        <span>{live.earth < 0.01 ? `${fmt(live.earth * 149597870.7)} km` : `${live.earth.toFixed(3)} AU`} today</span>
+                        <span>farthest {fmtDelay(dmax)}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <p className="mt-3 border-l-2 pl-3 text-[11.5px] leading-relaxed text-white/55" style={{ borderColor: rgba(ACCENT, 0.5) }}>
+                {w.edl.note}
+              </p>
+            </div>
+          ) : (
+            <div className="mt-3">
+              <Stat k="Atmosphere" v={w.atm.composition.split(",")[0]} />
+              <Stat k="Temperature" v={w.atm.tempRange} />
+              <Stat k="Sun distance today" v={`${live.sun.toFixed(3)} AU`} sub={`${fmt(1361 / (live.sun * live.sun))} W/m²`} />
+              <Stat k="Sunlight" v={`${fmt((1 / (live.sun * live.sun)) * 100, live.sun > 3 ? 1 : 0)}% of Earth's`} />
+              <Stat k="Speed of sound" v={w.atm.sound ? `${w.atm.sound} m/s` : "no air"} />
+              <Stat k="Typical wind" v={w.atm.rho > 0 ? `${w.atm.wind} m/s` : "none"} sub={w.atm.rho > 0 ? `gusts ${w.atm.gust}` : undefined} />
+              <Stat k="Ground" v={w.soil.name} />
+              <ul className="mt-3 space-y-1.5">
+                {w.facts.map((f) => (
+                  <li key={f} className="flex gap-2 text-[11.5px] leading-snug text-white/55">
+                    <span className="mt-[5px] h-1 w-1 shrink-0 rounded-full" style={{ background: ACCENT }} />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-white/[0.06] p-4">
+          <button
+            type="button"
+            onClick={() => {
+              control.unlock();
+              control.go(w.id);
+            }}
+            className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl bg-[#c8ff3d] py-3.5 text-[12.5px] font-bold uppercase tracking-[0.18em] text-[#0b0d12] shadow-[0_10px_40px_-12px_rgba(200,255,61,.7),inset_0_1px_0_rgba(255,255,255,.5)] transition-transform hover:brightness-105 active:scale-[0.985]"
+            style={mono}
+          >
+            <span aria-hidden className="rover-sheen pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+            {current === w.id ? "Land again" : `Launch to ${w.name}`}
+            <span className="transition-transform group-hover:translate-x-1">
+              <Icon name="arrow" size={16} />
+            </span>
+          </button>
+          <ul className="mt-3 flex flex-wrap gap-1.5 md:hidden">
+            {WORLDS.map((x) => (
+              <li key={x.id}>
+                <button type="button" onClick={() => control.select(x.id)} className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] ${selected === x.id ? "bg-white/15 text-white" : "bg-white/5 text-white/60"}`}>
+                  <PlanetDot w={x} size={10} />
+                  {x.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </Panel>
     </>
   );
@@ -199,38 +500,54 @@ function TimeBar() {
   const focus = useRover((s) => s.mapFocus);
   const set = useRover.getState().set;
   const step = (d: number) => set({ warp: Math.max(0, Math.min(WARPS.length - 1, warp + d)) });
+  const date = dateOf(jd);
+  const iconBtn = "flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-white/10 hover:text-white";
   return (
     <Panel className="absolute bottom-4 left-4 flex flex-wrap items-center gap-2 p-2 max-md:bottom-auto max-md:left-3 max-md:right-3 max-md:top-16 max-md:justify-center md:max-w-[calc(100vw-440px)]">
-      <div className="px-2">
-        <p className="text-[15px] font-semibold leading-tight text-white" style={mono}>
-          {fmtDate(jd)}
-        </p>
-        <p className="text-[9.5px] uppercase tracking-[0.16em] text-white/45" style={mono}>
-          {WARPS[warp].label}
-        </p>
+      <div className="flex items-center gap-3 rounded-xl bg-white/[0.035] py-1.5 pl-3 pr-4 ring-1 ring-inset ring-white/[0.05]">
+        <span className="relative flex h-2 w-2">
+          {warp > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ background: ACCENT }} />}
+          <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: warp > 0 ? ACCENT : "rgba(255,255,255,.35)" }} />
+        </span>
+        <div>
+          <p className="text-[14px] font-semibold leading-tight text-white tabular-nums" style={mono}>
+            {fmtDate(jd)}
+          </p>
+          <p className="text-[9.5px] uppercase tracking-[0.16em] text-white/45" style={mono}>
+            {date.toLocaleDateString("en-GB", { weekday: "short", timeZone: "UTC" })} · {WARPS[warp].label}
+          </p>
+        </div>
       </div>
-      <div className="flex items-center gap-1">
-        <Btn onClick={() => step(-1)} title="Slower">
-          ‹‹
-        </Btn>
-        <Btn onClick={() => set({ warp: warp === 0 ? 3 : 0 })} active={warp === 0} title={warp === 0 ? "Play" : "Pause"}>
-          {warp === 0 ? "▶" : "❚❚"}
-        </Btn>
-        <Btn onClick={() => step(1)} title="Faster">
-          ››
-        </Btn>
-        <Btn onClick={control.now} title="Jump to today's real positions">
-          Now
-        </Btn>
+      <div className="flex items-center gap-0.5 rounded-xl bg-white/[0.035] p-0.5 ring-1 ring-inset ring-white/[0.05]">
+        <button type="button" title="Slower" aria-label="Slower" onClick={() => step(-1)} className={iconBtn}>
+          <Icon name="rew" />
+        </button>
+        <button
+          type="button"
+          title={warp === 0 ? "Play" : "Pause"}
+          aria-label={warp === 0 ? "Play" : "Pause"}
+          onClick={() => set({ warp: warp === 0 ? 3 : 0 })}
+          className={`${iconBtn} ${warp === 0 ? "!bg-[#c8ff3d] !text-[#0b0d12]" : ""}`}
+        >
+          <Icon name={warp === 0 ? "play" : "pause"} />
+        </button>
+        <button type="button" title="Faster" aria-label="Faster" onClick={() => step(1)} className={iconBtn}>
+          <Icon name="ff" />
+        </button>
+        <span className="mx-0.5 h-5 w-px bg-white/10" />
+        <button type="button" title="Jump to today's real positions" onClick={control.now} className={`${iconBtn} w-auto gap-1.5 px-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em]`} style={mono}>
+          <Icon name="now" size={13} /> Now
+        </button>
       </div>
-      <div className="flex items-center gap-1 rounded-lg bg-white/[0.04] p-1">
+      <div className="relative grid grid-cols-3 rounded-xl bg-white/[0.035] p-0.5 ring-1 ring-inset ring-white/[0.05]">
+        <span aria-hidden className="absolute bottom-0.5 top-0.5 w-[calc((100%-4px)/3)] rounded-lg bg-white shadow-[0_2px_10px_-2px_rgba(0,0,0,.5)] transition-transform duration-300" style={{ left: 2, transform: `translateX(${scale * 100}%)` }} />
         {SCALES.map((s, i) => (
           <button
             key={s.label}
             type="button"
             title={s.sub}
             onClick={() => set({ scale: i })}
-            className={`rounded-md px-2.5 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.1em] transition-colors ${scale === i ? "bg-white text-[#0b0d12]" : "text-white/70 hover:text-white"}`}
+            className={`relative whitespace-nowrap rounded-lg px-2.5 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${scale === i ? "text-[#0b0d12]" : "text-white/60 hover:text-white"}`}
             style={mono}
           >
             {s.label}
@@ -238,7 +555,7 @@ function TimeBar() {
         ))}
       </div>
       <Btn onClick={control.overview} active={focus === null} title="See the whole Solar System">
-        Overview
+        <Icon name="orbit" size={14} /> Overview
       </Btn>
     </Panel>
   );
@@ -798,6 +1115,13 @@ export default function View() {
         .space-label[data-kind="comet"] .space-label-in { color: rgba(140,210,255,.6); font-size: 9.5px; }
         .space-label:hover .space-label-in, .space-label[data-active="true"] .space-label-in { color: #0b0d12; background: #c8ff3d; text-shadow: none; }
         @keyframes rover-flash { from { opacity: .75 } to { opacity: 0 } }
+        .rover-dash { animation: rover-dash 1.2s linear infinite; }
+        @keyframes rover-dash { to { stroke-dashoffset: -12 } }
+        .rover-sheen { animation: rover-sheen 3.6s ease-in-out infinite; }
+        @keyframes rover-sheen { 0%, 60% { transform: translateX(0) skewX(-20deg) } 100% { transform: translateX(450%) skewX(-20deg) } }
+        .rover-panel { animation: rover-panel .5s cubic-bezier(.2,.8,.2,1) both; }
+        @keyframes rover-panel { from { opacity: 0; transform: translateY(8px) } }
+        @media (prefers-reduced-motion: reduce) { .rover-dash, .rover-sheen, .rover-panel { animation: none } }
       `}</style>
       <div className="absolute inset-0">
         <Scene />
@@ -873,9 +1197,12 @@ export default function View() {
           {phase === "menu" && <WorldPicker />}
           {phase === "menu" && <TimeBar />}
           {phase === "menu" && (
-            <div className="absolute left-1/2 top-20 -translate-x-1/2 text-center max-md:hidden">
-              <p className="text-[10px] uppercase tracking-[0.3em] text-white/45" style={mono}>
-                Choose a world · click a planet or name · drag to orbit · scroll to zoom
+            <div className="absolute left-1/2 top-[22px] -translate-x-1/2 max-lg:hidden">
+              <p className="flex items-center gap-2.5 whitespace-nowrap rounded-full bg-[#0b0d12]/55 px-3.5 py-1.5 text-[9.5px] uppercase tracking-[0.2em] text-white/50 ring-1 ring-inset ring-white/[0.07] backdrop-blur-md" style={mono}>
+                <span className="text-white/80">Choose a world</span>
+                <span className="text-white/20">/</span> Click to select
+                <span className="text-white/20">/</span> Drag to orbit
+                <span className="text-white/20">/</span> Scroll to zoom
               </p>
             </div>
           )}
