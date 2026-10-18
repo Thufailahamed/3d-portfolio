@@ -42,12 +42,11 @@ export default function CarsView() {
 function CarRail({ slug, onChoose }: { slug: string; onChoose: (slug: string) => void }) {
   const rail = useRef<HTMLDivElement>(null);
 
-  // keep the picked car in view
+  // keep the picked car in view (the showroom remounts per car, so this runs on every switch)
   useEffect(() => {
     const el = rail.current;
     const tab = el?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!el || !tab || el.scrollWidth <= el.clientWidth) return;
-    el.scrollTo({ left: tab.offsetLeft - (el.clientWidth - tab.offsetWidth) / 2, behavior: "smooth" });
+    if (el && tab) el.scrollLeft = tab.offsetLeft - (el.clientWidth - tab.offsetWidth) / 2;
   }, [slug]);
 
   // a mouse wheel scrolls it sideways
