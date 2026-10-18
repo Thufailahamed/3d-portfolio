@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { groups, type Car, type CarPart } from "@/content/cars";
+import type { CameraInfo } from "./ShowroomScene";
 import { cineShots, moodById, moods, shots, type MoodId, type ShotId } from "./studio";
 
 const ShowroomScene = dynamic(() => import("./ShowroomScene"), { ssr: false });
@@ -19,10 +20,13 @@ const NONE: string[] = [];
 export default function Showroom({
   car,
   switcher,
+  onCycle,
   initialPart: given,
 }: {
   car: Car;
   switcher?: ReactNode;
+  /** step to the previous (-1) or next (1) car in the line-up */
+  onCycle?: (d: number) => void;
   /** overrides ?part= (null after switching cars, so the new car starts assembled) */
   initialPart?: string | null;
 }) {
@@ -54,6 +58,14 @@ export default function Showroom({
   const [cinematic, setCinematic] = useState(false);
   const [blackout, setBlackout] = useState(false);
   const [scene, setScene] = useState(0);
+  // tools: dimension lines, the see-through body, photos, and the keys for all of it
+  const [measure, setMeasure] = useState(false);
+  const [xray, setXray] = useState(false);
+  const [snap, setSnap] = useState(0);
+  const flash = useRef<HTMLDivElement>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [camera, setCamera] = useState<CameraInfo | null>(null);
+  const [keysOpen, setKeysOpen] = useState(false);
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -114,22 +126,55 @@ export default function Showroom({
     window.history.replaceState(null, "", url);
   }, [selected]);
 
+  const exterior = useMemo(() => car.parts.filter((p) => p.group === "Exterior").flatMap((p) => p.members ?? [p.id]), [car]);
+
+  const photo = useCallback(() => {
+    setSnap((n) => n + 1);
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
+      flash.current?.animate([{ opacity: 0.55 }, { opacity: 0 }], { duration: 500, easing: "ease-out" });
+  }, []);
+  const onSnap = useCallback(
+    (png: string) => {
+      const name = `${car.slug}-${activeShot ?? "studio"}.png`;
+      const a = document.createElement("a");
+      a.href = png;
+      a.download = name;
+      a.click();
+      setSaved(name);
+      timers.current.push(window.setTimeout(() => setSaved(null), 2600));
+    },
+    [car.slug, activeShot],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable]")) return;
       const k = e.key.toLowerCase();
       if (e.key === "Escape") {
         if (cinematic) film(false);
+        else if (keysOpen) setKeysOpen(false);
         else setSelected(null);
       } else if (k === "c") film(!cinematic);
       else if (cinematic) return;
       else if (k === "l") setLights((v) => !v);
+      else if (k === "e") {
+        setExploded((v) => !v);
+        setSelected(null);
+      } else if (k === "m") setMeasure((v) => !v);
+      else if (k === "x") setXray((v) => !v);
+      else if (k === "p") photo();
+      else if (k === "s") setTurntable((v) => !v);
+      else if (k === "?" || (k === "/" && e.shiftKey)) setKeysOpen((v) => !v);
+      else if (/^[1-6]$/.test(k)) view(shots[+k - 1].id);
       else if (selected && e.key === "ArrowRight") step(1);
       else if (selected && e.key === "ArrowLeft") step(-1);
+      else if (!selected && onCycle && e.key === "ArrowRight") onCycle(1);
+      else if (!selected && onCycle && e.key === "ArrowLeft") onCycle(-1);
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [selected, step, cinematic, film]);
+  }, [selected, step, cinematic, film, photo, view, onCycle, keysOpen]);
 
   const onHover = useCallback((id: string | null, x = 0, y = 0) => setHover(id && ownerOf[id] ? { id: ownerOf[id], x, y } : null), [ownerOf]);
   // the scene works with the model's groups: a set selects (and lights up) every member
@@ -160,6 +205,11 @@ export default function Showroom({
           turntable={turntable}
           shot={shot}
           cinematic={cinematic}
+          measure={measure}
+          xray={xray ? exterior : NONE}
+          snap={snap}
+          onSnap={onSnap}
+          onCamera={setCamera}
           onCinematicShot={onCinematicShot}
           onHover={onHover}
           onPick={pick}
@@ -254,6 +304,42 @@ export default function Showroom({
           </div>
         ))}
       </dl>
+
+      {/* the camera, read out like a viewfinder */}
+      {camera && !cinematic && (
+        <div aria-hidden className="sr-hud pointer-events-none absolute bottom-[5.25rem] left-gutter z-20 hidden items-center gap-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg/45 lg:flex">
+          <span className="relative h-2 w-2 rounded-full border border-fg/40">
+            <span className="absolute inset-[2px] rounded-full bg-accent" />
+          </span>
+          <span className="tabular-nums text-fg/75">{camera.mm} mm</span>
+          <span className="text-fg/20">/</span>
+          <span className="tabular-nums">{camera.azimuth.toString().padStart(3, "0")}°</span>
+          <span className="text-fg/20">/</span>
+          <span className="tabular-nums">h {camera.elevation.toFixed(2)} m</span>
+          <span className="text-fg/20">/</span>
+          <span className="tabular-nums">{camera.distance.toFixed(1)} m out</span>
+          {(measure || xray) && (
+            <>
+              <span className="text-fg/20">/</span>
+              <span className="text-accent">{[measure && "Measuring", xray && "X-ray"].filter(Boolean).join(" · ")}</span>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* the shutter: a white flash, then where the photo went */}
+      <div ref={flash} aria-hidden className="pointer-events-none absolute inset-0 z-[55] bg-white opacity-0" />
+      <div
+        role="status"
+        className={`sr-hud pointer-events-none absolute left-1/2 top-24 z-50 -translate-x-1/2 rounded-full border border-fg/15 bg-[#121214]/85 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-fg backdrop-blur-md transition-all duration-500 ${
+          saved ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"
+        }`}
+      >
+        <span className="mr-2 inline-block h-1.5 w-1.5 rounded-full bg-accent" />
+        {saved ? `Saved ${saved}` : "\u00a0"}
+      </div>
+
+      {keysOpen && <Keys onClose={() => setKeysOpen(false)} cycle={!!onCycle} />}
 
       {/* bottom bar: controls, car picker, credit */}
       <div className="sr-hud absolute inset-x-gutter bottom-5 z-30 flex items-end justify-between gap-4">
@@ -352,6 +438,12 @@ export default function Showroom({
         activeShot={activeShot}
         onShot={view}
         onFilm={() => film(true)}
+        measure={measure}
+        onMeasure={() => setMeasure((v) => !v)}
+        xray={xray}
+        onXray={() => setXray((v) => !v)}
+        onPhoto={photo}
+        onKeys={() => setKeysOpen((v) => !v)}
       />
 
       <Film car={car} on={cinematic} scene={scene} onExit={() => film(false)} />
@@ -510,6 +602,12 @@ function StudioDock({
   activeShot,
   onShot,
   onFilm,
+  measure,
+  onMeasure,
+  xray,
+  onXray,
+  onPhoto,
+  onKeys,
 }: {
   car: Car;
   hidden: boolean;
@@ -525,6 +623,12 @@ function StudioDock({
   activeShot: ShotId | null;
   onShot: (id: ShotId) => void;
   onFilm: () => void;
+  measure: boolean;
+  onMeasure: () => void;
+  xray: boolean;
+  onXray: () => void;
+  onPhoto: () => void;
+  onKeys: () => void;
 }) {
   const paint = car.paint.colors[paintIdx] ?? car.paint.colors[0];
   const ring = "scale-110 border-fg ring-2 ring-fg/20 ring-offset-2 ring-offset-[#121214]";
@@ -575,10 +679,11 @@ function StudioDock({
 
       <Row label="View">
         <div className="grid grid-cols-6 gap-1">
-          {shots.map((s) => (
+          {shots.map((s, i) => (
             <button
               key={s.id}
               type="button"
+              title={`${s.name} (${i + 1})`}
               onClick={() => onShot(s.id)}
               aria-pressed={activeShot === s.id}
               className={`rounded-md border py-1.5 font-mono text-[9px] uppercase tracking-[0.06em] transition-colors ${
@@ -591,6 +696,42 @@ function StudioDock({
         </div>
       </Row>
 
+      <Row label="Tools">
+        <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1.5">
+          <Tool on={measure} onClick={onMeasure} label="Measure" hint="M">
+            <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+              <path d="M1.5 9.5h11M1.5 7.5v4M12.5 7.5v4" />
+              <path d="M4 9.5v-1.2M6.5 9.5v-2M9 9.5v-1.2" />
+              <path d="M3.5 3.5h7M3.5 2.5v2M10.5 2.5v2" opacity=".5" />
+            </svg>
+          </Tool>
+          <Tool on={xray} onClick={onXray} label="X-ray" hint="X">
+            <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+              <path d="M1.5 9c1-2.6 2.6-4 5.5-4s4.5 1.4 5.5 4" strokeDasharray="1.6 1.4" />
+              <path d="M1.5 9h11" />
+              <circle cx="4" cy="10" r="1.2" />
+              <circle cx="10" cy="10" r="1.2" />
+              <rect x="5.6" y="6.6" width="2.8" height="1.8" />
+            </svg>
+          </Tool>
+          <Tool on={false} onClick={onPhoto} label="Photo" hint="P">
+            <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2">
+              <path d="M1.5 4.5h2.6l1-1.6h3.8l1 1.6h2.6v7h-11z" />
+              <circle cx="7" cy="7.8" r="2.1" />
+            </svg>
+          </Tool>
+          <button
+            type="button"
+            onClick={onKeys}
+            title="Keyboard shortcuts (?)"
+            aria-label="Keyboard shortcuts"
+            className="grid w-8 place-items-center rounded-md border border-fg/12 font-mono text-[11px] text-fg/60 transition-colors hover:border-fg/40 hover:text-fg"
+          >
+            ?
+          </button>
+        </div>
+      </Row>
+
       <div className="mt-4 flex gap-2">
         <Toggle on={lights} onClick={onLights} label="Lamps" hint="L">
           <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
@@ -598,7 +739,7 @@ function StudioDock({
             <path d="M4.5 4.5H1.5M4.5 7H1.5M4.5 9.5H1.5" />
           </svg>
         </Toggle>
-        <Toggle on={turntable} onClick={onTurntable} label="Spin">
+        <Toggle on={turntable} onClick={onTurntable} label="Spin" hint="S">
           <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
             <ellipse cx="7" cy="8.5" rx="5.5" ry="2.2" />
             <path d="M10.5 3.2l1.4 1.1-1.6.8" />
@@ -647,6 +788,68 @@ function Toggle({ on, onClick, label, hint, children }: { on: boolean; onClick: 
       {children}
       {label}
     </button>
+  );
+}
+
+/** A studio tool: an icon over its name, lit while it is on. */
+function Tool({ on, onClick, label, hint, children }: { on: boolean; onClick: () => void; label: string; hint: string; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      title={`${label} (${hint})`}
+      className={`flex flex-col items-center gap-1 rounded-md border py-2 font-mono text-[9px] uppercase tracking-[0.06em] transition-colors ${
+        on ? "border-fg bg-fg text-bg" : "border-fg/12 text-fg/60 hover:border-fg/40 hover:text-fg"
+      }`}
+    >
+      {children}
+      {label}
+    </button>
+  );
+}
+
+const KEYS: [string, string][] = [
+  ["E", "Explode or reassemble"],
+  ["1–6", "Hero, front, side, rear, top, low"],
+  ["M", "Measure"],
+  ["X", "X-ray the bodywork"],
+  ["P", "Take a photo"],
+  ["L", "Lamps"],
+  ["S", "Spin the turntable"],
+  ["C", "Play the film"],
+  ["← →", "Previous or next part (or car)"],
+  ["Esc", "Close"],
+];
+
+/** The keyboard shortcuts, on a card in the middle of the screen. */
+function Keys({ onClose, cycle }: { onClose: () => void; cycle: boolean }) {
+  return (
+    <div className="sr-hud absolute inset-0 z-[45] grid place-items-center bg-black/40 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="Keyboard shortcuts"
+        className="sr-panel w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-fg/10 bg-[#121214]/90 p-5 shadow-2xl backdrop-blur-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="label mb-3 flex items-center justify-between !text-[10px]">
+          Keyboard
+          <button type="button" onClick={onClose} className="text-fg/50 hover:text-fg">
+            Esc
+          </button>
+        </p>
+        <dl className="divide-y divide-fg/8">
+          {KEYS.map(([k, v]) => (
+            <div key={k} className="flex items-center justify-between gap-4 py-2 text-sm">
+              <dt className="text-fg/70">{k === "← →" && !cycle ? "Previous or next part" : v}</dt>
+              <dd>
+                <kbd className="rounded border border-fg/20 bg-fg/5 px-1.5 py-0.5 font-mono text-[10px] text-fg/80">{k}</kbd>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
   );
 }
 

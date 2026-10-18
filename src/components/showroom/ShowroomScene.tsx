@@ -1,6 +1,6 @@
 "use client";
 
-import { ContactShadows, Environment, Lightformer, MeshReflectorMaterial, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
+import { ContactShadows, Environment, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
 import { Bloom, DepthOfField, EffectComposer, N8AO, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -57,11 +57,22 @@ export type SceneProps = {
   /** a preset view; `n` changes to ask for the same view again */
   shot: { id: ShotId; n: number } | null;
   cinematic: boolean;
+  /** dimension lines round the car, measured off the model */
+  measure: boolean;
+  /** parts made see-through so the mechanicals show (the bodywork, for the X-ray view) */
+  xray: string[];
+  /** changes to ask for a photo of the current frame */
+  snap: number;
+  onSnap: (png: string) => void;
+  /** the camera as a photographer would read it: lens, height, angle round the car */
+  onCamera: (c: CameraInfo) => void;
   onCinematicShot: (i: number) => void;
   onHover: (id: string | null, x?: number, y?: number) => void;
   onPick: (id: string) => void;
   onReady: (ids: string[]) => void;
 };
+
+export type CameraInfo = { mm: number; elevation: number; azimuth: number; distance: number };
 
 /** What the car, the studio and the camera share from frame to frame. */
 type Rig = {
@@ -178,7 +189,7 @@ type Lamp = { s: MatState; head: boolean; lit: boolean; base: Base };
 const HEAD = new THREE.Color(1, 0.93, 0.82);
 const TAIL = new THREE.Color(1, 0.04, 0.02);
 
-function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lamps, lights, turntable, cinematic, onHover, onPick, onReady, rig }: SceneProps & { rig: Rig }) {
+function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lamps, lights, turntable, cinematic, measure, xray, onHover, onPick, onReady, rig }: SceneProps & { rig: Rig }) {
   const { scene } = useGLTF(url, "/draco/");
   const home = useMemo(() => new THREE.Vector3(...view.target), [view]);
   const parts = useParts(scene);
@@ -239,7 +250,7 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     for (const p of parts.values()) {
       const picked = selected.includes(p.id);
       const out = exploded || picked ? 1 : 0;
-      const ghost = selected.length && !exploded && !picked ? 1 : 0;
+      const ghost = (selected.length && !exploded) || xray.includes(p.id) ? (picked ? 0 : 1) : 0;
       const hover = hovered.includes(p.id) && !picked ? 1 : 0;
       p.t += (out - p.t) * k;
       p.obj.position.copy(p.home).addScaledVector(p.out, ease(p.t));
@@ -296,6 +307,7 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
     // the turntable: a slow spin while nobody is busy; squared up for the camera presets
     const g = table.current;
     if (g) {
+      if (measure && !cinematic) rig.square = true;
       const idle = turntable && !selected.length && !cinematic && !rig.square && performance.now() - rig.lastDrag > 4000;
       rig.speed += ((idle && !reducedMotion() ? 0.12 : 0) - rig.speed) * k * 0.4;
       if (rig.square) {
@@ -333,8 +345,121 @@ function Car({ url, view, selected, exploded, hovered, paint, paintMaterial, lam
           if (id) onPick(id);
         }}
       />
+      <Dimensions parts={parts} on={measure && !cinematic} />
       {headRec && createPortal(<HeadBeams rec={headRec} rig={rig} />, headRec.obj)}
       {tailRec && createPortal(<TailGlow rec={tailRec} rig={rig} />, tailRec.obj)}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------- dimensions
+
+const mm = (m: number) => `${(Math.round(m * 100) * 10).toLocaleString("en-GB")} mm`;
+type V3 = [number, number, number];
+type Dim = { label: string; value: string; segs: V3[]; at: V3 };
+
+/**
+ * A technical drawing laid round the car: overall length and wheelbase down the near side, width
+ * across the nose and height at the tail, each with extension lines and end ticks. Measured off the
+ * model at rest, so they turn with the turntable and ignore any exploded parts.
+ */
+function Dimensions({ parts, on }: { parts: Map<string, PartRec>; on: boolean }) {
+  const dims = useMemo(() => {
+    const b = new THREE.Box3();
+    for (const p of parts.values()) b.union(p.box);
+    if (b.isEmpty()) return [];
+    const y = 0.012;
+    const t = 0.06; // half a tick
+    const zL = b.max.z + 0.95; // length line, out on the floor beside the car
+    const xW = b.max.x + 0.55; // width line, ahead of the nose
+    const xH = b.min.x - 0.4; // height line, behind the tail
+    const out: Dim[] = [
+      {
+        label: "Length",
+        value: mm(b.max.x - b.min.x),
+        segs: [
+          [b.min.x, y, zL], [b.max.x, y, zL],
+          [b.min.x, y, b.max.z + 0.08], [b.min.x, y, zL + 0.1],
+          [b.max.x, y, b.max.z + 0.08], [b.max.x, y, zL + 0.1],
+          [b.min.x - t, y, zL + t], [b.min.x + t, y, zL - t],
+          [b.max.x - t, y, zL + t], [b.max.x + t, y, zL - t],
+        ],
+        // label toward the tail, clear of the wheelbase's
+        at: [b.min.x + (b.max.x - b.min.x) * 0.2, y, zL],
+      },
+      {
+        label: "Width",
+        value: mm(b.max.z - b.min.z),
+        segs: [
+          [xW, y, b.min.z], [xW, y, b.max.z],
+          [b.max.x + 0.08, y, b.min.z], [xW + 0.1, y, b.min.z],
+          [b.max.x + 0.08, y, b.max.z], [xW + 0.1, y, b.max.z],
+          [xW - t, y, b.min.z - t], [xW + t, y, b.min.z + t],
+          [xW - t, y, b.max.z - t], [xW + t, y, b.max.z + t],
+        ],
+        at: [xW, y, (b.min.z + b.max.z) / 2],
+      },
+      {
+        label: "Height",
+        value: mm(b.max.y - Math.max(0, b.min.y)),
+        segs: [
+          [xH, Math.max(0, b.min.y), b.max.z], [xH, b.max.y, b.max.z],
+          [xH - 0.1, b.max.y, b.max.z], [b.min.x + 0.35, b.max.y, b.max.z],
+          [xH - t, b.max.y - t, b.max.z], [xH + t, b.max.y + t, b.max.z],
+          [xH - t, Math.max(0, b.min.y) - t, b.max.z], [xH + t, Math.max(0, b.min.y) + t, b.max.z],
+        ],
+        at: [xH, b.max.y / 2, b.max.z],
+      },
+    ];
+    // wheelbase: between the front and rear hub centres
+    const hubs = (front: boolean) => {
+      const xs = [...parts.values()].filter((p) => p.id.startsWith(front ? "wheel_f" : "wheel_r")).map((p) => p.center.x);
+      return xs.length ? xs.reduce((a, c) => a + c, 0) / xs.length : null;
+    };
+    const f = hubs(true), r = hubs(false);
+    if (f !== null && r !== null && Math.abs(f - r) > 0.5) {
+      const z = b.max.z + 0.3;
+      out.push({
+        label: "Wheelbase",
+        value: mm(Math.abs(f - r)),
+        segs: [
+          [r, y, z], [f, y, z],
+          [r, y, z - 0.08], [r, y, z + 0.08],
+          [f, y, z - 0.08], [f, y, z + 0.08],
+        ],
+        at: [(f + r) / 2, y, z],
+      });
+    }
+    return out;
+  }, [parts]);
+
+  const group = useRef<THREE.Group>(null);
+  const fade = useRef(0);
+  useFrame((_, dt) => {
+    fade.current += ((on ? 1 : 0) - fade.current) * (1 - Math.exp(-dt * 6));
+    const g = group.current;
+    if (!g) return;
+    g.visible = fade.current > 0.01;
+    g.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material & { opacity: number } | undefined;
+      if (m && "opacity" in m) m.opacity = fade.current * 0.9;
+    });
+  });
+
+  return (
+    <group ref={group} visible={false}>
+      {dims.map((d) => (
+        <group key={d.label}>
+          <Line points={d.segs} segments color="#f2efe8" lineWidth={1.2} transparent depthTest={false} renderOrder={20} raycast={() => null} />
+          {on && (
+            <Html position={d.at} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
+              <div className="sr-rise whitespace-nowrap rounded-full border border-fg/20 bg-[#0c0c0e]/85 px-2.5 py-1 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-fg backdrop-blur-md">
+                <span className="text-fg/45">{d.label}</span> {d.value}
+              </div>
+            </Html>
+          )}
+        </group>
+      ))}
     </group>
   );
 }
@@ -797,15 +922,17 @@ const tmp = new THREE.Vector3();
  * the picked part sits in the free space: above the bottom sheet on phones, left of the side panel
  * on wider screens.
  */
-function Director({ view, panel, shot, cinematic, rig, onCinematicShot, dof }: {
+function Director({ view, panel, shot, cinematic, rig, onCinematicShot, onCamera, dof }: {
   view: CarView;
   panel: boolean;
   shot: SceneProps["shot"];
   cinematic: boolean;
   rig: Rig;
   onCinematicShot: (i: number) => void;
+  onCamera: (c: CameraInfo) => void;
   dof: RefObject<DepthOfFieldEffect | null>;
 }) {
+  const reading = useRef({ at: 0, key: "" });
   const narrow = useThree((s) => s.size.width < 768);
   const controls = useRef<{ target: THREE.Vector3; update: () => void; enabled: boolean } | null>(null);
   const shift = useRef({ x: 0, y: 0 });
@@ -861,6 +988,27 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, dof }: {
   useFrame((state, dt) => {
     const cam = state.camera as THREE.PerspectiveCamera;
     const { width: w, height: h } = state.size;
+
+    // the readout: 35 mm-equivalent focal length (24 mm frame height), camera height, and the angle
+    // round the car in its own frame (0° is dead ahead), a few times a second when it changes
+    const now = state.clock.elapsedTime;
+    if (now - reading.current.at > 0.15) {
+      reading.current.at = now;
+      tmp.copy(cam.position).sub(rig.focus);
+      const turn = rig.table?.rotation.y ?? 0;
+      const az = ((THREE.MathUtils.radToDeg(Math.atan2(tmp.z, tmp.x) + turn) % 360) + 360) % 360;
+      const c: CameraInfo = {
+        mm: Math.round(12 / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))),
+        elevation: Math.round(cam.position.y * 100) / 100,
+        azimuth: Math.round(az),
+        distance: Math.round(tmp.length() * 10) / 10,
+      };
+      const key = `${c.mm}|${c.elevation}|${c.azimuth}|${c.distance}`;
+      if (key !== reading.current.key) {
+        reading.current.key = key;
+        onCamera(c);
+      }
+    }
     const k = 1 - Math.exp(-dt * 5);
     const c = controls.current;
 
@@ -947,6 +1095,18 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, dof }: {
   );
 }
 
+/** A photo of the frame just drawn: runs after the composer, while the drawing buffer still holds it. */
+function Snapper({ snap, onSnap }: { snap: number; onSnap: (png: string) => void }) {
+  const gl = useThree((s) => s.gl);
+  const taken = useRef(snap);
+  useFrame(() => {
+    if (snap === taken.current) return;
+    taken.current = snap;
+    onSnap(gl.domElement.toDataURL("image/png"));
+  }, 2);
+  return null;
+}
+
 function Post({ narrow, cinematic, bloom, dof }: {
   narrow: boolean;
   cinematic: boolean;
@@ -1009,7 +1169,8 @@ export default function ShowroomScene(props: SceneProps) {
       <Stage mood={props.mood} rig={rig} narrow={narrow} bloom={bloom} />
       <Car {...props} rig={rig} />
       <Director view={props.view} panel={props.selected.length > 0} shot={props.shot} cinematic={props.cinematic} rig={rig}
-        onCinematicShot={props.onCinematicShot} dof={dof} />
+        onCinematicShot={props.onCinematicShot} onCamera={props.onCamera} dof={dof} />
+      <Snapper snap={props.snap} onSnap={props.onSnap} />
       <Post narrow={narrow} cinematic={props.cinematic} bloom={bloom} dof={dof} />
     </Canvas>
   );

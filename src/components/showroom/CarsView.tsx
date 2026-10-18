@@ -34,8 +34,13 @@ export default function CarsView() {
   // rendered in two places (top on small screens, bottom on large), each with its own scroll state
   const switcher = <CarRail slug={slug} onChoose={choose} />;
 
+  const cycle = (d: number) => {
+    const i = cars.findIndex((c) => c.slug === slug);
+    choose(cars[(i + d + cars.length) % cars.length].slug);
+  };
+
   // a fresh showroom per car: selection, exploded state and camera all start over
-  return <Showroom key={slug} car={car} switcher={switcher} initialPart={switched ? null : undefined} />;
+  return <Showroom key={slug} car={car} switcher={switcher} onCycle={cycle} initialPart={switched ? null : undefined} />;
 }
 
 /** The car picker: a pill of tabs that scrolls sideways when the line-up is wider than the screen. */
