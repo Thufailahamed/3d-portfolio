@@ -17,6 +17,13 @@ const NAV: { id: ChapterId; label: string; href: string; lite: string }[] = [
   { id: "about", label: "About", href: "/about", lite: "/lite#about" },
   { id: "contact", label: "Contact", href: "/contact", lite: "/lite#contact" },
 ];
+// standalone WebGL pieces, listed apart from the journey
+const PLAYGROUND = [
+  { label: "Cars", href: "/cars", blurb: "Exploded showroom" },
+  { label: "Bricks", href: "/lego", blurb: "The portfolio in bricks" },
+  { label: "Ramps", href: "/hotwheels", blurb: "Die-cast stunt park" },
+  { label: "Rover", href: "/rover", blurb: "Land on any planet" },
+];
 const JOURNEY = new Set(["/", "/projects", "/about", "/contact"]);
 
 /** Persistent chrome: logo, sound, availability, and the full-screen menu. */
@@ -143,68 +150,78 @@ export default function Header() {
         role="dialog"
         aria-modal="true"
         aria-label="Menu"
-        className={`fixed inset-0 z-[29] flex flex-col justify-between bg-bg/92 px-gutter pb-8 pt-24 backdrop-blur-md transition-[opacity,visibility] duration-500 ${
+        className={`fixed inset-0 z-[29] flex flex-col justify-between gap-10 overflow-y-auto overscroll-contain bg-bg/92 px-gutter pb-8 pt-24 backdrop-blur-md transition-[opacity,visibility] duration-500 ${
           open ? "opacity-100" : "pointer-events-none invisible opacity-0"
         }`}
       >
-        <nav aria-label="Main">
+        <nav
+          aria-label="Main"
+          className="grid min-h-0 flex-1 content-start gap-x-16 gap-y-10 md:grid-cols-[minmax(0,1fr)_minmax(16rem,26rem)] md:content-center"
+        >
           <ol>
-            {NAV.map((item, i) => (
-              <li key={item.id} className="overflow-hidden">
-                <Link
-                  href={lite ? item.lite : item.href}
-                  onClick={(e) => go(e, item)}
-                  className="menu-item group flex items-baseline gap-4 py-1"
-                >
-                  <span className="label">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
-                    {item.label}
-                  </span>
-                </Link>
-              </li>
-            ))}
-            {/* a page of its own, not a journey chapter; it needs WebGL so the lite site skips it */}
-            {!lite && (
-              <li className="overflow-hidden">
-                <Link href="/cars" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
-                  <span className="label">{String(NAV.length + 1).padStart(2, "0")}</span>
-                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
-                    Cars
-                  </span>
-                </Link>
-              </li>
-            )}
-            {!lite && (
-              <li className="overflow-hidden">
-                <Link href="/lego" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
-                  <span className="label">{String(NAV.length + 2).padStart(2, "0")}</span>
-                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
-                    Bricks
-                  </span>
-                </Link>
-              </li>
-            )}
-            {!lite && (
-              <li className="overflow-hidden">
-                <Link href="/hotwheels" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
-                  <span className="label">{String(NAV.length + 3).padStart(2, "0")}</span>
-                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
-                    Ramps
-                  </span>
-                </Link>
-              </li>
-            )}
-            {!lite && (
-              <li className="overflow-hidden">
-                <Link href="/rover" onClick={close} className="menu-item group flex items-baseline gap-4 py-1">
-                  <span className="label">{String(NAV.length + 4).padStart(2, "0")}</span>
-                  <span className="display text-[15vw] transition-colors group-hover:text-accent md:text-[7.5vw]">
-                    Rover
-                  </span>
-                </Link>
-              </li>
-            )}
+            {NAV.map((item, i) => {
+              const current = pathname === item.href;
+              return (
+                <li key={item.id} className="overflow-hidden">
+                  <Link
+                    href={lite ? item.lite : item.href}
+                    onClick={(e) => go(e, item)}
+                    aria-current={current ? "page" : undefined}
+                    className="menu-item group flex items-baseline gap-4"
+                  >
+                    <span className="label w-6 shrink-0">{String(i + 1).padStart(2, "0")}</span>
+                    <span
+                      className={`display text-[min(14vw,11vh)] leading-[0.95] transition-colors group-hover:text-accent group-focus-visible:text-accent md:text-[min(8vw,13vh)] ${
+                        current ? "text-accent" : ""
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ol>
+
+          {/* pages of their own, not journey chapters; they need WebGL so the lite site skips them */}
+          {!lite && (
+            <div className="md:border-l md:border-fg/10 md:pl-10">
+              <p className="menu-meta label mb-4 md:mb-6">Playground</p>
+              <ol className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-1 md:gap-y-0">
+                {PLAYGROUND.map((item, i) => {
+                  const current = pathname.startsWith(item.href);
+                  return (
+                    <li key={item.href} className="overflow-hidden md:border-b md:border-fg/10 md:last:border-0">
+                      <Link
+                        href={item.href}
+                        onClick={close}
+                        aria-current={current ? "page" : undefined}
+                        className="menu-item group flex items-baseline gap-3 md:py-[min(1.4rem,2.2vh)]"
+                      >
+                        <span className="label w-6 shrink-0">{String(NAV.length + i + 1).padStart(2, "0")}</span>
+                        <span className="min-w-0 flex-1">
+                          <span
+                            className={`display block text-[min(8vw,5vh)] leading-none transition-colors group-hover:text-accent group-focus-visible:text-accent md:text-[min(2.6vw,5vh)] ${
+                              current ? "text-accent" : ""
+                            }`}
+                          >
+                            {item.label}
+                          </span>
+                          <span className="label mt-1.5 hidden !normal-case !tracking-normal !text-fg/45 md:block">{item.blurb}</span>
+                        </span>
+                        <span
+                          aria-hidden
+                          className="label hidden -translate-x-2 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 md:block"
+                        >
+                          ↗
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
         </nav>
         <div className="menu-meta flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           {lite ? (
