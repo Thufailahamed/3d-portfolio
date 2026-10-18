@@ -1,10 +1,10 @@
 "use client";
 
 import { ContactShadows, Environment, Lightformer, MeshReflectorMaterial, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
-import { Bloom, DepthOfField, EffectComposer, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { Bloom, DepthOfField, EffectComposer, N8AO, Noise, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { Canvas, createPortal, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { ToneMappingMode, type BloomEffect, type DepthOfFieldEffect } from "postprocessing";
+import { BlendFunction, ToneMappingMode, type BloomEffect, type DepthOfFieldEffect } from "postprocessing";
 import * as THREE from "three";
 
 import type { CarView, PaintColor } from "@/content/cars";
@@ -447,8 +447,8 @@ function TailGlow({ rec, rig }: { rec: PartRec; rig: Rig }) {
 
 // ---------------------------------------------------------------------- the studio
 
-const FLOOR_R = 7; // polished floor; the cove takes over from here
-const COVE_R = 3.2; // radius of the floor-to-wall curve
+const FLOOR_R = 9.5; // polished floor; the cove takes over from here
+const COVE_R = 3.5; // radius of the floor-to-wall curve
 const WALL_R = FLOOR_R + COVE_R;
 const STRIPS = 8; // light bars standing around the cove
 const TABLE_R = 3.43; // turntable seam
@@ -465,6 +465,8 @@ type Live = {
   key: THREE.Color;
   rim: THREE.Color;
   ring: THREE.Color;
+  horizon: THREE.Color;
+  ringLevel: number;
   stripLevel: number;
   ceilingLevel: number;
   keyI: number;
@@ -484,6 +486,8 @@ const liveOf = (m: Mood): Live => ({
   key: new THREE.Color(m.key.color),
   rim: new THREE.Color(m.rim.color),
   ring: new THREE.Color(m.ring),
+  horizon: new THREE.Color(m.horizon),
+  ringLevel: m.ringLevel,
   stripLevel: m.stripLevel,
   ceilingLevel: m.ceilingLevel,
   keyI: m.key.intensity,
@@ -510,6 +514,48 @@ function power(rig: Rig, now: number, delay: number, len = 0.35) {
 }
 const stripDelay = (i: number) => 0.35 + ((i * 3) % STRIPS) * 0.11;
 
+/** Height profile of the cove, so the wall can be shaded by how high up it is. */
+function coveHeights(geo: THREE.BufferGeometry) {
+  const pos = geo.attributes.position;
+  return Array.from({ length: pos.count }, (_, i) => pos.getY(i));
+}
+
+/**
+ * Smooth value noise on a canvas: the faint trowel marks and wear of a polished concrete floor,
+ * used to vary its roughness and to waver its reflections.
+ */
+function floorNoise(size = 256) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d")!;
+  const img = g.createImageData(size, size);
+  const grid = (n: number) => Array.from({ length: n * n }, () => Math.random());
+  const octaves = [6, 12, 24, 48, 96].map((n) => ({ n, v: grid(n) }));
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      let v = 0, amp = 0.5, tot = 0;
+      for (const { n, v: cells } of octaves) {
+        const fx = (x / size) * n, fy = (y / size) * n;
+        const x0 = Math.floor(fx), y0 = Math.floor(fy);
+        const tx = ease(fx - x0), ty = ease(fy - y0);
+        const at = (i: number, j: number) => cells[((j + n) % n) * n + ((i + n) % n)];
+        const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * tx;
+        const b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * tx;
+        v += (a + (b - a) * ty) * amp;
+        tot += amp;
+        amp *= 0.55;
+      }
+      const k = (y * size + x) * 4;
+      img.data[k] = img.data[k + 1] = img.data[k + 2] = Math.round((0.5 + (v / tot - 0.5) * 0.45) * 255);
+      img.data[k + 3] = 255;
+    }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(5, 5);
+  return tex;
+}
+
 function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }) {
   const scene = useThree((s) => s.scene);
   const cove = useRef<THREE.MeshStandardMaterial>(null);
@@ -517,25 +563,43 @@ function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }
   const key = useRef<THREE.SpotLight>(null);
   const rim = useRef<THREE.SpotLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
-  const ticks = useRef<THREE.Group>(null);
 
-  const coveGeo = useMemo(() => {
+  // infinity cove: floor curving up into the wall, painted lighter low down where the lamps reach
+  // and falling away into shadow toward the grid, the way a real cyclorama reads on camera
+  const { coveGeo, glowGeo } = useMemo(() => {
     const pts: THREE.Vector2[] = [];
-    for (let i = 0; i <= 24; i++) {
-      const a = (i / 24) * (Math.PI / 2);
+    for (let i = 0; i <= 32; i++) {
+      const a = (i / 32) * (Math.PI / 2);
       pts.push(new THREE.Vector2(FLOOR_R + Math.sin(a) * COVE_R, COVE_R - Math.cos(a) * COVE_R));
     }
-    pts.push(new THREE.Vector2(WALL_R, 16));
-    return new THREE.LatheGeometry(pts, 128);
+    for (const y of [4.5, 6, 8, 11, 16]) pts.push(new THREE.Vector2(WALL_R, y));
+    const coveGeo = new THREE.LatheGeometry(pts, 160);
+    const ys = coveHeights(coveGeo);
+    coveGeo.setAttribute("color", new THREE.Float32BufferAttribute(ys.flatMap((y) => {
+      const v = 0.18 + 0.82 * Math.exp(-Math.max(0, y - 0.2) / 2.6);
+      return [v, v, v];
+    }), 3));
+    // the horizon: a soft band of light where the floor turns into the wall, seen all the way round
+    const glowGeo = coveGeo.clone();
+    glowGeo.setAttribute("color", new THREE.Float32BufferAttribute(ys.flatMap((y) => {
+      const v = Math.exp(-(((y - 1.25) / 1.15) ** 2)) * (0.35 + 0.65 * Math.min(1, y / 0.5));
+      return [v, v, v];
+    }), 3));
+    return { coveGeo, glowGeo };
   }, []);
+  const noise = useMemo(() => floorNoise(), []);
   const strips = useMemo(
     () => Array.from({ length: STRIPS }, () => new THREE.MeshBasicMaterial({ color: 0, toneMapped: false, fog: false })),
     [],
   );
   const ceiling = useMemo(() => new THREE.MeshBasicMaterial({ color: 0, toneMapped: false, fog: false }), []);
+  const glow = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: 0, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.BackSide, fog: false }),
+    [],
+  );
   const ring = useMemo(() => new THREE.MeshBasicMaterial({ color: 0, toneMapped: false }), []);
-  const tick = useMemo(() => new THREE.MeshBasicMaterial({ color: 0, toneMapped: false }), []);
-  const seam = useMemo(() => new THREE.MeshBasicMaterial({ color: new THREE.Color(0.1, 0.1, 0.1), toneMapped: false }), []);
+  const seam = useMemo(() => new THREE.MeshBasicMaterial({ color: new THREE.Color(0.012, 0.012, 0.014) }), []);
+  useEffect(() => () => { coveGeo.dispose(); glowGeo.dispose(); noise.dispose(); }, [coveGeo, glowGeo, noise]);
 
   useFrame((state) => {
     const now = state.clock.elapsedTime;
@@ -545,11 +609,10 @@ function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }
     floor.current?.color.copy(live.floor);
     strips.forEach((m, i) => m.color.copy(i % 2 ? live.stripB : live.stripA).multiplyScalar(live.stripLevel * power(rig, now, stripDelay(i))));
     ceiling.color.copy(live.ceiling).multiplyScalar(live.ceilingLevel * power(rig, now, 1.35, 0.5));
-    // the LED ring breathes gently
-    const breathe = 0.75 + Math.sin(now * 1.4) * 0.25;
-    const ringOn = power(rig, now, 2.1, 0.6);
-    ring.color.copy(live.ring).multiplyScalar(1.6 * breathe * ringOn);
-    tick.color.copy(live.ring).multiplyScalar(0.35 * ringOn);
+    glow.color.copy(live.horizon).multiplyScalar(0.42 * power(rig, now, 1.0, 1.2));
+    // the LED line breathes gently
+    const breathe = 0.85 + Math.sin(now * 1.2) * 0.15;
+    ring.color.copy(live.ring).multiplyScalar(live.ringLevel * breathe * power(rig, now, 2.1, 0.6));
     if (key.current) {
       key.current.color.copy(live.key);
       key.current.intensity = live.keyI * power(rig, now, 1.7, 0.7);
@@ -559,100 +622,99 @@ function Studio({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }
       rim.current.intensity = live.rimI * power(rig, now, 2.0, 0.6);
     }
     if (hemi.current) hemi.current.intensity = live.hemi * (0.25 + 0.75 * power(rig, now, 1.6, 0.8));
-    // turntable markings turn with the car
-    if (ticks.current && rig.table) ticks.current.rotation.y = rig.table.rotation.y;
   });
 
   return (
     <group>
-      {/* infinity cove: the floor curves up into the wall all the way round */}
       <mesh geometry={coveGeo} receiveShadow>
-        <meshStandardMaterial ref={cove} color="#3a3c41" roughness={0.95} metalness={0} side={THREE.BackSide} />
+        <meshStandardMaterial ref={cove} color="#34363b" vertexColors roughness={0.92} metalness={0} side={THREE.BackSide} />
       </mesh>
+      <mesh geometry={glowGeo} material={glow} scale={[0.995, 1, 0.995]} raycast={() => null} />
 
-      {/* dark polished concrete with soft, blurred reflections of the car */}
+      {/* dark polished concrete: blurred, slightly wavering reflections, with a satin sheen that varies across the slab */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
-        <circleGeometry args={[FLOOR_R + 0.02, 128]} />
+        <circleGeometry args={[FLOOR_R + 0.02, 160]} />
         <MeshReflectorMaterial
           ref={floor as never}
           resolution={narrow ? 512 : 1024}
-          blur={[400, 120]}
-          mixBlur={1}
-          mixStrength={6}
-          mixContrast={1.1}
-          depthScale={1.1}
-          minDepthThreshold={0.35}
-          maxDepthThreshold={1.3}
-          roughness={0.85}
-          metalness={0.25}
-          color="#1a1b1e"
+          blur={[260, 90]}
+          mixBlur={0.9}
+          mixStrength={7}
+          mixContrast={1.15}
+          depthScale={1.2}
+          minDepthThreshold={0.3}
+          maxDepthThreshold={1.4}
+          roughnessMap={noise}
+          roughness={0.72}
+          metalness={0.15}
+          color="#141518"
         />
       </mesh>
 
-      {/* light bars round the cove */}
+      {/* softboxes standing round the cove: a diffuser in a black frame */}
       {strips.map((m, i) => {
         const a = stripAngle(i);
         return (
-          <mesh key={i} position={[Math.sin(a) * (WALL_R - 0.25), COVE_R + 2.6, Math.cos(a) * (WALL_R - 0.25)]} rotation-y={a + Math.PI} material={m}>
-            <planeGeometry args={[0.55, 4.6]} />
-          </mesh>
+          <group key={i} position={[Math.sin(a) * (WALL_R - 0.6), COVE_R + 2.3, Math.cos(a) * (WALL_R - 0.6)]} rotation-y={a + Math.PI}>
+            <mesh position-z={-0.02}>
+              <planeGeometry args={[0.78, 4.9]} />
+              <meshBasicMaterial color="#030304" />
+            </mesh>
+            <mesh material={m}>
+              <planeGeometry args={[0.6, 4.6]} />
+            </mesh>
+          </group>
         );
       })}
 
-      {/* overhead soft box: a 3x2 grid of diffusers in a black frame; mostly out of shot, but the floor and paint catch it */}
-      <group position-y={6.2} rotation-x={Math.PI / 2}>
+      {/* the overhead scrim: one long diffuser down the length of the car, the line every studio car shot has on its roof */}
+      <group position-y={6.4} rotation-x={Math.PI / 2}>
         <mesh position-z={-0.01}>
-          <planeGeometry args={[6.1, 2.9]} />
-          <meshBasicMaterial color="#050506" side={THREE.DoubleSide} />
+          <planeGeometry args={[9.6, 3.8]} />
+          <meshBasicMaterial color="#040405" side={THREE.DoubleSide} />
         </mesh>
-        {[-1, 0, 1].flatMap((cx) =>
-          [-0.5, 0.5].map((cy) => (
-            <mesh key={`${cx}${cy}`} position={[cx * 1.95, cy * 1.3, 0]} material={ceiling}>
-              <planeGeometry args={[1.85, 1.2]} />
-            </mesh>
-          )),
-        )}
+        <mesh material={ceiling}>
+          <planeGeometry args={[9.2, 3.4]} />
+        </mesh>
       </group>
 
-      {/* turntable: a seam in the floor, an LED ring that breathes and markings that turn with the car */}
+      {/* turntable: a flush disc set into the floor, edged in brushed steel with a thin LED line */}
       <mesh rotation-x={-Math.PI / 2} position-y={0.003} material={seam}>
-        <ringGeometry args={[TABLE_R - 0.03, TABLE_R + 0.03, 160]} />
+        <ringGeometry args={[TABLE_R - 0.025, TABLE_R + 0.012, 200]} />
+      </mesh>
+      <mesh rotation-x={-Math.PI / 2} position-y={0.0035} receiveShadow>
+        <ringGeometry args={[TABLE_R + 0.012, TABLE_R + 0.07, 200]} />
+        <meshStandardMaterial color="#9a9ca2" metalness={1} roughness={0.32} />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position-y={0.004} material={ring}>
-        <ringGeometry args={[TABLE_R + 0.035, TABLE_R + 0.055, 160]} />
+        <ringGeometry args={[TABLE_R - 0.018, TABLE_R - 0.006, 200]} />
       </mesh>
-      <group ref={ticks} position-y={0.004}>
-        {Array.from({ length: 72 }, (_, i) => {
-          const a = (i / 72) * TAU;
-          const long = i % 6 === 0;
-          const r = TABLE_R - 0.12 - (long ? 0.04 : 0);
-          return (
-            <mesh key={i} position={[Math.sin(a) * r, 0, Math.cos(a) * r]} rotation={[-Math.PI / 2, 0, -a]} material={tick}>
-              <planeGeometry args={[0.012, long ? 0.16 : 0.07]} />
-            </mesh>
-          );
-        })}
-      </group>
 
       {/* key light: a pool on the floor round the car that falls off into the cove */}
-      <spotLight ref={key} position={[0, 9, 1.5]} angle={0.52} penumbra={1} intensity={0} decay={2} />
+      <spotLight ref={key} position={[0, 9, 1.5]} angle={0.55} penumbra={1} intensity={0} decay={2} />
       {/* rim light from behind and above, for the silhouette */}
       <spotLight ref={rim} position={[-6, 5.5, -6]} angle={0.45} penumbra={1} intensity={0} decay={2} />
-      <directionalLight position={[4, 7, 3]} intensity={1.3} castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004}
+      <directionalLight position={[2.5, 8, 2]} intensity={1.1} castShadow shadow-mapSize={narrow ? [1024, 1024] : [2048, 2048]}
+        shadow-bias={-0.0003} shadow-normalBias={0.02} shadow-radius={6}
         shadow-camera-left={-4} shadow-camera-right={4} shadow-camera-top={4} shadow-camera-bottom={-4} />
       <hemisphereLight ref={hemi} args={["#cfd6e6", "#0a0a0b", 0]} />
-      <ContactShadows position={[0, 0.005, 0]} scale={12} resolution={1024} blur={2.2} opacity={0.88} far={2.5} />
+      {/* a broad soft shadow under the car, and a tight dark one where the tyres meet the floor */}
+      <ContactShadows position={[0, 0.005, 0]} scale={12} resolution={1024} blur={2.6} opacity={0.9} far={2.2} />
+      {!narrow && <ContactShadows position={[0, 0.006, 0]} scale={12} resolution={1024} blur={0.9} opacity={0.65} far={0.35} />}
     </group>
   );
 }
 
 /**
  * Reflections on the paint: the same rig as the visible one, re-rendered live (it is only a dozen
- * quads) so mood changes cross-fade on the bodywork and a light bar can sweep across it.
+ * quads) so mood changes cross-fade on the bodywork and a light bar can sweep across it. Big, soft,
+ * clean shapes, as in a real studio: the overhead scrim for the roof line, a long low strip either
+ * side for the horizon line down the doors, and a grey floor for the sills to pick up.
  */
 function Reflections({ live, rig, narrow }: { live: Live; rig: Rig; narrow: boolean }) {
   const ceiling = useRef<THREE.Mesh>(null);
   const strips = useRef<(THREE.Mesh | null)[]>([]);
+  const sides = useRef<(THREE.Mesh | null)[]>([]);
   const sweep = useRef<THREE.Mesh>(null);
   const bg = useRef<THREE.Color>(null);
   const tint = useMemo(() => new THREE.Color(), []);
@@ -662,6 +724,7 @@ function Reflections({ live, rig, narrow }: { live: Live; rig: Rig; narrow: bool
     const set = (m: THREE.Mesh | null, c: THREE.Color, i: number) => (m?.material as THREE.MeshBasicMaterial | undefined)?.color.copy(c).multiplyScalar(i);
     set(ceiling.current, live.ceiling, live.envCeiling * power(rig, now, 1.35, 0.5));
     strips.current.forEach((m, i) => set(m, i % 2 ? live.stripB : live.stripA, live.envStrip * power(rig, now, stripDelay(i))));
+    sides.current.forEach((m) => set(m, tint.copy(live.stripA).lerp(live.horizon, 0.35), live.envStrip * 0.55 * power(rig, now, 1.0, 1.2)));
     bg.current?.copy(live.bg).multiplyScalar(0.8);
     // every so often a tall light bar glides past the car and its highlight rolls along the paint
     const u = (now - rig.sweep) / 2.6;
@@ -678,18 +741,24 @@ function Reflections({ live, rig, narrow }: { live: Live; rig: Rig; narrow: bool
   return (
     <Environment resolution={narrow ? 256 : 512} frames={Infinity}>
       <color ref={bg} attach="background" args={["#08080a"]} />
-      <Lightformer ref={ceiling} form="rect" position={[0, 6.2, 0]} rotation-x={Math.PI / 2} scale={[6, 2.8, 1]} />
+      <Lightformer ref={ceiling} form="rect" position={[0, 6.4, 0]} rotation-x={Math.PI / 2} scale={[9.2, 3.4, 1]} />
       {Array.from({ length: STRIPS }, (_, i) => {
         const a = stripAngle(i);
         return (
           <Lightformer key={i} ref={(m: THREE.Mesh | null) => void (strips.current[i] = m)} form="rect"
-            position={[Math.sin(a) * 9.8, 5.8, Math.cos(a) * 9.8]} rotation-y={a + Math.PI} scale={[0.25, 4.2, 1]} />
+            position={[Math.sin(a) * 9.6, 5.5, Math.cos(a) * 9.6]} rotation-y={a + Math.PI} scale={[0.6, 4.6, 1]} />
         );
       })}
+      {[-1, 1].map((sd, i) => (
+        <Lightformer key={sd} ref={(m: THREE.Mesh | null) => void (sides.current[i] = m)} form="rect"
+          position={[0, 1.5, sd * 9]} rotation-y={sd > 0 ? Math.PI : 0} scale={[20, 0.45, 1]} />
+      ))}
       <Lightformer ref={sweep} form="rect" rotation-y={Math.PI} scale={[0.9, 9, 1]} visible={false} />
-      <Lightformer form="rect" intensity={0.6} color="#d9dde6" position={[0, 2, 10]} scale={[16, 2.5, 1]} />
-      <Lightformer form="rect" intensity={0.4} color="#ffe4c8" position={[0, 2, -10]} rotation-y={Math.PI} scale={[16, 2.5, 1]} />
-      <Lightformer form="ring" intensity={1.5} color="#ffffff" position={[-5, 3.5, 4]} scale={1.6} target={[0, 0, 0]} />
+      <Lightformer form="rect" intensity={0.5} color="#d9dde6" position={[10, 2.5, 0]} rotation-y={-Math.PI / 2} scale={[8, 3, 1]} />
+      <Lightformer form="rect" intensity={0.35} color="#ffe4c8" position={[-10, 2.5, 0]} rotation-y={Math.PI / 2} scale={[8, 3, 1]} />
+      <Lightformer form="rect" intensity={0.6} color="#ffffff" position={[-5, 4, 5]} scale={[3, 3, 1]} target={[0, 0, 0]} />
+      {/* the floor, for the sills and lower doors */}
+      <Lightformer form="rect" intensity={0.12} color="#9a9ca4" position={[0, -0.6, 0]} rotation-x={-Math.PI / 2} scale={[14, 14, 1]} />
     </Environment>
   );
 }
@@ -709,7 +778,7 @@ function Stage({ mood, rig, narrow, bloom }: { mood: MoodId; rig: Rig; narrow: b
     <>
       {/* colours come from the eased mood each frame */}
       <color attach="background" args={["#0a0a0b"]} />
-      <fog attach="fog" args={["#0a0a0b", 10, 24]} />
+      <fog attach="fog" args={["#0a0a0b", 14, 34]} />
       <Reflections live={live} rig={rig} narrow={narrow} />
       <Studio live={live} rig={rig} narrow={narrow} />
     </>
@@ -743,10 +812,19 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, dof }: {
   const goal = useRef<THREE.Vector3 | null>(null);
   const cine = useRef({ start: -1, index: -1 });
   const look = useMemo(() => new THREE.Vector3(), []);
-  const scale = narrow ? 1.12 : 1.3;
-  const fov = narrow ? 46 : 32;
-  const hero = useMemo(() => new THREE.Vector3(...(narrow ? view.cameraNarrow : view.camera)).multiplyScalar(scale), [narrow, view, scale]);
+  const baseFov = narrow ? 46 : 27;
+  const fov = useRef(baseFov);
   const pivot = useMemo(() => new THREE.Vector3(...view.target), [view]);
+  // hero: a three-quarter front view from about head height on a longish lens, the way a car is
+  // photographed (phones stand further back and higher so the whole car fits a portrait screen)
+  const hero = useMemo(() => {
+    if (narrow) return new THREE.Vector3(...view.cameraNarrow).multiplyScalar(1.1);
+    const d = new THREE.Vector3(...view.camera).sub(pivot);
+    const flat = Math.hypot(d.x, d.z);
+    const dist = d.length() * 1.34;
+    const el = THREE.MathUtils.degToRad(8);
+    return new THREE.Vector3((d.x / flat) * Math.cos(el) * dist, Math.sin(el) * dist, (d.z / flat) * Math.cos(el) * dist).add(pivot);
+  }, [narrow, view, pivot]);
 
   // the studio powers up while the camera glides in from low at the front
   const intro = useMemo(() => {
@@ -765,16 +843,20 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, dof }: {
     const d = hero.clone().sub(pivot);
     const dir = def.dir ? new THREE.Vector3(...def.dir).normalize() : d.clone().normalize();
     goal.current = pivot.clone().addScaledVector(dir, d.length() * def.dist);
-    rig.square = shot.id !== "hero";
-  }, [shot, hero, pivot, rig]);
+    // never below the floor: the low shot sits a hand's width above it
+    goal.current.y = Math.max(goal.current.y, 0.22);
+    fov.current = narrow ? baseFov : (def.fov ?? baseFov);
+    rig.square = true;
+  }, [shot, hero, pivot, rig, narrow, baseFov]);
 
   useEffect(() => {
     cine.current = { start: -1, index: -1 };
     if (!cinematic) {
       goal.current = hero.clone();
+      fov.current = baseFov;
       rig.cineLamps = false;
     }
-  }, [cinematic, hero, rig]);
+  }, [cinematic, hero, rig, baseFov]);
 
   useFrame((state, dt) => {
     const cam = state.camera as THREE.PerspectiveCamera;
@@ -813,8 +895,8 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, dof }: {
     }
 
     if (c) c.enabled = true;
-    if (Math.abs(cam.fov - fov) > 0.01) {
-      cam.fov += (fov - cam.fov) * k;
+    if (Math.abs(cam.fov - fov.current) > 0.01) {
+      cam.fov += (fov.current - cam.fov) * k * 0.6;
       cam.updateProjectionMatrix();
     }
 
@@ -852,9 +934,9 @@ function Director({ view, panel, shot, cinematic, rig, onCinematicShot, dof }: {
   const start = useMemo(() => (reducedMotion() ? hero : intro).toArray() as [number, number, number], [hero, intro]);
   return (
     <>
-      <PerspectiveCamera makeDefault position={start} fov={fov} near={0.05} far={60} />
-      <OrbitControls ref={controls as never} makeDefault enableDamping dampingFactor={0.08} minDistance={1.2} maxDistance={11}
-        maxPolarAngle={Math.PI * 0.48} enablePan={false}
+      <PerspectiveCamera makeDefault position={start} fov={baseFov} near={0.05} far={60} />
+      <OrbitControls ref={controls as never} makeDefault enableDamping dampingFactor={0.08} minDistance={1.2} maxDistance={12}
+        maxPolarAngle={Math.PI * 0.505} enablePan={false}
         onStart={() => {
           rig.lastDrag = Infinity;
           goal.current = null;
@@ -871,19 +953,26 @@ function Post({ narrow, cinematic, bloom, dof }: {
   bloom: RefObject<BloomEffect | null>;
   dof: RefObject<DepthOfFieldEffect | null>;
 }) {
-  // the reel gets a shallow depth of field; a fresh composer for it keeps the everyday view cheap
+  // ambient occlusion seats the car on the floor and darkens its panel gaps and wheel arches; a
+  // touch of film grain keeps the dark gradients from banding. The reel adds a shallow depth of
+  // field, in a fresh composer so the everyday view stays cheap.
+  const ao = !narrow && <N8AO halfRes quality="medium" aoRadius={0.9} distanceFalloff={0.6} intensity={2.2} color="#000000" />;
   return cinematic ? (
     <EffectComposer key="cine" multisampling={narrow ? 0 : 4}>
+      {ao || <></>}
       <DepthOfField ref={dof} worldFocusRange={2.2} bokehScale={narrow ? 2.5 : 4.5} />
       <Bloom ref={bloom} mipmapBlur intensity={0.55} luminanceThreshold={1} luminanceSmoothing={0.15} radius={0.75} />
-      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      <ToneMapping mode={ToneMappingMode.AGX} />
+      <Noise premultiply blendFunction={BlendFunction.SOFT_LIGHT} opacity={0.22} />
       <Vignette offset={0.25} darkness={0.75} />
     </EffectComposer>
   ) : (
     <EffectComposer key="view" multisampling={narrow ? 0 : 4}>
+      {ao || <></>}
       <Bloom ref={bloom} mipmapBlur intensity={0.55} luminanceThreshold={1} luminanceSmoothing={0.15} radius={0.7} />
-      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-      <Vignette offset={0.3} darkness={0.55} />
+      <ToneMapping mode={ToneMappingMode.AGX} />
+      <Noise premultiply blendFunction={BlendFunction.SOFT_LIGHT} opacity={0.12} />
+      <Vignette offset={0.3} darkness={0.6} />
     </EffectComposer>
   );
 }

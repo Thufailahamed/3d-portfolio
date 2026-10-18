@@ -26,8 +26,11 @@ export type Mood = {
   /** how hard the paint reflects the bars and the overhead soft box */
   envStrip: number;
   envCeiling: number;
-  /** LED ring round the turntable */
+  /** LED line round the turntable, and how bright it burns */
   ring: string;
+  ringLevel: number;
+  /** the soft glow where the floor meets the wall */
+  horizon: string;
   bloom: number;
 };
 
@@ -36,9 +39,9 @@ export const moods: Mood[] = [
     id: "studio",
     name: "Studio",
     swatch: "linear-gradient(135deg,#f4f1ea,#8d9096)",
-    bg: "#0a0a0b",
-    cove: "#3a3c41",
-    floor: "#1a1b1e",
+    bg: "#08080a",
+    cove: "#34363b",
+    floor: "#141518",
     strips: ["#fff7ec", "#fff7ec"],
     stripLevel: 2.4,
     ceiling: "#ffffff",
@@ -48,7 +51,9 @@ export const moods: Mood[] = [
     hemi: 0.6,
     envStrip: 3,
     envCeiling: 4,
-    ring: "#c8ff3d",
+    ring: "#f2ede4",
+    ringLevel: 0.5,
+    horizon: "#8a8d94",
     bloom: 0.55,
   },
   {
@@ -68,6 +73,8 @@ export const moods: Mood[] = [
     envStrip: 1.1,
     envCeiling: 6.5,
     ring: "#ffffff",
+    ringLevel: 0.35,
+    horizon: "#2a2b30",
     bloom: 0.45,
   },
   {
@@ -86,7 +93,9 @@ export const moods: Mood[] = [
     hemi: 0.45,
     envStrip: 3.2,
     envCeiling: 2.8,
-    ring: "#ffad5c",
+    ring: "#ffb46a",
+    ringLevel: 0.7,
+    horizon: "#a8693a",
     bloom: 0.75,
   },
   {
@@ -106,6 +115,8 @@ export const moods: Mood[] = [
     envStrip: 4.2,
     envCeiling: 1.4,
     ring: "#22e5ff",
+    ringLevel: 1.2,
+    horizon: "#5a2a8a",
     bloom: 1.05,
   },
 ];
@@ -118,15 +129,16 @@ export type ShotId = "hero" | "front" | "side" | "rear" | "top" | "low";
 
 /**
  * Preset views, in the car's frame (the nose points down +x). `dir` is where the camera sits seen
- * from the orbit pivot; `dist` scales the car's hero distance. Hero uses the car's own camera.
+ * from the orbit pivot; `dist` scales the car's hero distance; `fov` is the lens (long, as a car
+ * photographer shoots, and wide for the low shot down at the floor). Hero uses the car's own camera.
  */
-export const shots: { id: ShotId; name: string; dir?: [number, number, number]; dist: number }[] = [
+export const shots: { id: ShotId; name: string; dir?: [number, number, number]; dist: number; fov?: number }[] = [
   { id: "hero", name: "Hero", dist: 1 },
-  { id: "front", name: "Front", dir: [1, 0.14, 0.001], dist: 0.72 },
-  { id: "side", name: "Side", dir: [0.001, 0.1, 1], dist: 0.92 },
-  { id: "rear", name: "Rear", dir: [-0.8, 0.3, -0.55], dist: 0.85 },
-  { id: "top", name: "Top", dir: [0.02, 1, 0.001], dist: 0.95 },
-  { id: "low", name: "Low", dir: [0.75, 0.035, 0.62], dist: 0.72 },
+  { id: "front", name: "Front", dir: [1, 0.09, 0.001], dist: 0.82, fov: 28 },
+  { id: "side", name: "Side", dir: [0.001, 0.045, 1], dist: 1, fov: 26 },
+  { id: "rear", name: "Rear", dir: [-0.78, 0.13, -0.6], dist: 0.88, fov: 28 },
+  { id: "top", name: "Top", dir: [0.02, 1, 0.001], dist: 0.95, fov: 30 },
+  { id: "low", name: "Low", dir: [0.8, 0.012, 0.55], dist: 0.6, fov: 40 },
 ];
 
 // ---------------------------------------------------------------------- cinematic
