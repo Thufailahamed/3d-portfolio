@@ -1,7 +1,9 @@
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { NOISE_GLSL, fbm, hash, lerp, noise, ridged, rng, smoothstep } from "./noise";
-import type { Crater, TerrainRecipe, World } from "./worlds";
+import { dirFromAzEl } from "./sky";
+import { makeDetailTexture, makeNoiseTexture, type DetailKind } from "./textures";
+import type { Crater, TerrainRecipe, World, WorldId } from "./worlds";
 
 /** What the physics and the scenery ask of a surface. */
 export interface Ground {
@@ -294,6 +296,32 @@ float terrainHeight(vec2 p, float sp, out float dune, out float bright, out floa
 export type TerrainTextures = { noise: THREE.Texture; grain: THREE.Texture };
 
 /**
+ * How each surface reads up close: the detail texture and its tile (m), normal strength, how much
+ * of the ground is loose sand, wind ripples [wavelength m, heading rad, strength] and bedrock slabs
+ * [fracture spacing m, unused, coverage, colour].
+ */
+type SurfaceLook = {
+  detail: DetailKind;
+  tile: number;
+  bump: number;
+  sand: number;
+  ripple?: [number, number, number];
+  plates?: [number, number, number, string];
+};
+const LOOKS: Partial<Record<WorldId, SurfaceLook>> = {
+  mercury: { detail: "regolith", tile: 4.6, bump: 0.7, sand: 0 },
+  moon: { detail: "regolith", tile: 4.4, bump: 0.65, sand: 0 },
+  mars: { detail: "gravel", tile: 2.4, bump: 0.95, sand: 1, ripple: [0.8, 2.2, 1], plates: [2.6, 0, 0.45, "#9e7b60"] },
+  earth: { detail: "gravel", tile: 2.2, bump: 0.9, sand: 0.5, ripple: [0.35, 1.2, 0.5], plates: [1.4, 0, 0.3, "#d6c6ad"] },
+  venus: { detail: "basalt", tile: 2.6, bump: 0.75, sand: 0.3, plates: [1.8, 0, 0.75, "#433328"] },
+  titan: { detail: "sand", tile: 2.0, bump: 0.55, sand: 1, ripple: [1.4, 1.4, 0.8] },
+  pluto: { detail: "ice", tile: 7, bump: 0.45, sand: 0.2 },
+};
+function surfaceLook(w: World): SurfaceLook {
+  return LOOKS[w.id] ?? { detail: "gravel", tile: 2.4, bump: 0.8, sand: 0.3 };
+}
+
+/**
  * One grid that follows the rover: 0.5 m spacing for the first ~30 m, then growing geometrically
  * out to ~22 km. Heights are computed in the vertex shader from the same recipe as the physics.
  */
@@ -302,6 +330,7 @@ export class TerrainMesh {
   readonly uniforms: Record<string, THREE.IUniform>;
   private mat: THREE.MeshStandardMaterial;
   private depth: THREE.MeshDepthMaterial;
+  private detail: THREE.Texture;
 
   constructor(world: World, quality: number, tex: TerrainTextures) {
     const half = quality >= 2 ? 176 : quality === 1 ? 150 : 112;
@@ -363,6 +392,13 @@ export class TerrainMesh {
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e7);
 
     const pal = world.palette;
+    const look = surfaceLook(world);
+    this.detail = makeDetailTexture(look.detail, quality === 0 ? 256 : 512);
+    // the ground is mostly seen at grazing angles: without anisotropic filtering it smears into streaks
+    if (tex.noise.anisotropy < 8) {
+      tex.noise.anisotropy = 8;
+      tex.noise.needsUpdate = true;
+    }
     this.uniforms = {
       uK: { value: 1 },
       uCenter: { value: new THREE.Vector2() },
@@ -373,12 +409,21 @@ export class TerrainMesh {
       uSlope: { value: new THREE.Color(pal.slope) },
       uDune: { value: new THREE.Color(pal.dune) },
       uBright: { value: new THREE.Color(pal.bright) },
+      uDust: { value: new THREE.Color(world.soil.dustColor) },
       tNoise: { value: tex.noise },
-      tGrain: { value: tex.grain },
-      uDetailK: { value: world.id === "pluto" ? 0.25 : world.id === "titan" ? 0.45 : 0.6 },
+      tDetail: { value: this.detail },
+      uTile: { value: look.tile },
+      uBump: { value: look.bump },
+      uSandK: { value: look.sand },
+      uRip: { value: new THREE.Vector3(look.ripple?.[0] ?? 1, look.ripple?.[1] ?? 0, look.ripple?.[2] ?? 0) },
+      uPlate: { value: new THREE.Vector3(look.plates?.[0] ?? 1, look.plates?.[1] ?? 0, look.plates?.[2] ?? 0) },
+      uPlateCol: { value: new THREE.Color(look.plates?.[3] ?? pal.bright) },
+      uSunDir: { value: dirFromAzEl(world.sky.sunAz, world.sky.sunElev) },
+      uFogSun: { value: world.atm.rho > 0.001 ? 0.55 : 0 },
     };
     const glsl = terrainGLSL(world.terrain);
     const U = this.uniforms;
+    const defines = [look.ripple && quality > 0 ? "#define RIPPLE" : "", look.plates && quality > 0 ? "#define PLATES" : ""].join("\n");
     const head = /* glsl */ `
 uniform vec2 uCenter; uniform vec3 uEye; uniform float uInvR2;
 attribute float aSp;
@@ -410,28 +455,118 @@ vWPos = tPos;
       Object.assign(sh.uniforms, U);
       sh.vertexShader = head + sh.vertexShader.replace("#include <beginnormal_vertex>", vertexBody).replace("#include <begin_vertex>", "vec3 transformed = tPos;");
       sh.fragmentShader = /* glsl */ `
-uniform vec3 uLow; uniform vec3 uHigh; uniform vec3 uSlope; uniform vec3 uDune; uniform vec3 uBright;
-uniform sampler2D tNoise; uniform sampler2D tGrain; uniform float uDetailK;
+${defines}
+uniform vec3 uLow; uniform vec3 uHigh; uniform vec3 uSlope; uniform vec3 uDune; uniform vec3 uBright; uniform vec3 uDust;
+uniform sampler2D tNoise; uniform sampler2D tDetail; uniform float uTile; uniform float uBump; uniform float uSandK;
+uniform vec3 uRip; uniform vec3 uPlate; uniform vec3 uPlateCol; uniform vec3 uSunDir; uniform float uFogSun;
 varying vec3 vWPos; varying vec3 vWN; varying float vDune; varying float vBright; varying float vEdge; varying float vSp;
+float hshF(vec2 c, float s) { return fract(sin(dot(c, vec2(127.1, 311.7)) + s * 74.7) * 43758.5453); }
 ` + sh.fragmentShader
         .replace(
           "#include <color_fragment>",
           /* glsl */ `
 vec3 gN = normalize(vWN);
 float camD = length(vWPos - cameraPosition);
+vec2 P = vWPos.xz;
+// detail fades with distance so nothing tiles or shimmers on the far ground
+float nearK = 1.0 - smoothstep(14.0, 70.0, camD);
+float midK = 1.0 - smoothstep(40.0, 320.0, camD);
 // samples at unrelated scales and rotations so the tiling never lines up
-vec4 nz1 = texture2D(tNoise, mat2(0.8, 0.6, -0.6, 0.8) * vWPos.xz / 157.0);
-vec4 nz2 = texture2D(tNoise, vWPos.xz / 23.0);
-vec4 nz3 = texture2D(tNoise, vWPos.xz / 3.7);
-vec4 nz4 = texture2D(tNoise, mat2(0.28, -0.96, 0.96, 0.28) * vWPos.xz / 1310.0);
+vec4 nz1 = texture2D(tNoise, mat2(0.8, 0.6, -0.6, 0.8) * P / 157.0);
+vec4 nz2 = texture2D(tNoise, P / 23.0);
+vec4 nz3 = texture2D(tNoise, P / 3.7);
+vec4 nz4 = texture2D(tNoise, mat2(0.28, -0.96, 0.96, 0.28) * P / 1310.0);
+vec4 nz5 = texture2D(tNoise, mat2(0.96, 0.28, -0.28, 0.96) * P / 61.0);
 float tone = smoothstep(0.28, 0.72, nz1.r * 0.35 + nz2.g * 0.25 + nz4.a * 0.55 + nz4.r * 0.25 - 0.2);
 vec3 col = mix(uLow, uHigh, tone);
-col *= mix(0.86, 1.12, mix(nz3.b, 0.5, smoothstep(20.0, 90.0, camD)));
+// broad albedo provinces: dust-mantled bright ground and darker scoured streaks
+col *= mix(0.74, 1.18, smoothstep(0.2, 0.8, nz4.g * 0.6 + nz5.a * 0.55 - 0.08));
+col = mix(col, uDust, smoothstep(0.55, 0.8, nz5.r * 0.7 + nz1.a * 0.5) * 0.35);
+col *= mix(0.9, 1.08, mix(nz3.b, 0.5, smoothstep(20.0, 90.0, camD)));
 float slope = 1.0 - gN.y;
 col = mix(col, uSlope, smoothstep(0.16, 0.42, slope + (nz2.r - 0.5) * 0.12));
 col = mix(col, uDune, clamp(vDune, 0.0, 1.0) * 0.85);
 col = mix(col, uBright, clamp(vBright, 0.0, 0.9));
 col = mix(col, uSlope * 0.75, (1.0 - smoothstep(0.0, 0.12, vEdge)) * 0.6);
+
+// fine sand patches: smooth, darker, rippled; everything else is gravel or bedrock
+float sandM = clamp(vDune * 1.3 + smoothstep(0.56, 0.7, nz2.g * 0.7 + nz5.b * 0.55 - 0.05) * (1.0 - smoothstep(0.08, 0.25, slope)), 0.0, 1.0) * uSandK;
+col = mix(col, uDune * 1.08, sandM * 0.55);
+vec2 nOff = vec2(0.0);
+float hB = 0.0;
+float plateM = 0.0;
+
+#ifdef PLATES
+// bedrock: flat, fractured slabs poking through the soil (mudstone in Gale, basalt on Venus, salt crust)
+plateM = smoothstep(0.5, 0.62, nz2.a * 0.55 + nz5.g * 0.45 + nz1.b * 0.3 + slope * 1.1 - vDune * 0.9 - sandM * 0.6 + (uPlate.z - 0.5) * 0.5);
+if (plateM > 0.002 && camD < 220.0) {
+  vec2 q = P / uPlate.x;
+  vec2 i0 = floor(q);
+  float f1 = 9.0; float f2 = 9.0; vec2 id = vec2(0.0); vec2 o1 = vec2(0.0);
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 c = i0 + vec2(float(i), float(j));
+    vec2 o = c + 0.12 + 0.76 * vec2(hshF(c, 1.0), hshF(c, 2.0));
+    float d = length(q - o);
+    if (d < f1) { f2 = f1; f1 = d; id = c; o1 = o; } else if (d < f2) f2 = d;
+  }
+  float e = (f2 - f1) * uPlate.x;
+  float fw = fwidth(e);
+  float crack = 1.0 - smoothstep(0.015, 0.05 + fw, e + (nz3.r - 0.5) * 0.03);
+  // once a crack is thinner than a pixel it would only flicker: let it fade into the slab tone
+  crack *= clamp(1.4 - fw * 18.0, 0.0, 1.0);
+  float rnd = hshF(id, 3.0);
+  float pf = 1.0 - smoothstep(90.0, 220.0, camD);
+  // erosion leaves some slabs half-buried in drift
+  float buried = smoothstep(0.35, 0.75, hshF(id, 4.0) * 0.6 + sandM * 0.8 + nz3.g * 0.4);
+  float pm = plateM * (1.0 - buried * 0.85);
+  vec3 pc = uPlateCol * (0.8 + 0.34 * rnd) * mix(0.92, 1.08, nz3.a);
+  col = mix(col, pc, pm * (1.0 - crack));
+  col = mix(col, mix(uDune, uLow, 0.4) * 0.8, pm * crack);
+  // each slab tilts its own way; edges round off into the cracks
+  vec2 tilt = (vec2(hshF(id, 5.0), hshF(id, 6.0)) - 0.5) * 0.22;
+  nOff += tilt * pm * pf;
+  hB += smoothstep(0.0, 0.12, e) * 0.045 * pm * pf;
+  // fine laminae across the slab faces
+  float lam = sin(dot(P, vec2(0.6, 0.8)) * 26.0 + rnd * 40.0 + nz3.b * 6.0);
+  col *= 1.0 + lam * 0.035 * pm * nearK;
+}
+#endif
+
+#ifdef RIPPLE
+// wind ripples in the sand: steep lee face, gentle stoss slope; antialiased by fading below ~4 px
+{
+  vec2 rd = vec2(cos(uRip.y), sin(uRip.y));
+  float ph = dot(P, rd) / uRip.x + (nz2.r - 0.5) * 7.0 + (nz5.g - 0.5) * 9.0 + (nz3.g - 0.5) * 1.2;
+  float aa = 1.0 - smoothstep(0.12, 0.35, fwidth(ph));
+  float fr = fract(ph);
+  float prof = fr < 0.72 ? smoothstep(0.0, 0.72, fr) : 1.0 - smoothstep(0.72, 1.0, fr);
+  float rm = sandM * (1.0 - plateM) * aa * uRip.z;
+  hB += prof * uRip.x * 0.09 * rm;
+  // coarse grains collect on the crests
+  col *= 1.0 + (prof - 0.55) * 0.16 * rm;
+}
+#endif
+
+// close-up surface: pebbles, pits, micro-craters, at two scales
+vec2 u1 = P / uTile;
+vec2 u2 = mat2(0.8, 0.6, -0.6, 0.8) * P / (uTile * 4.3);
+vec4 d1 = texture2D(tDetail, u1);
+vec4 d2 = texture2D(tDetail, u2);
+float gravel = (1.0 - sandM * 0.75) * (1.0 - plateM * 0.7);
+nOff += ((d1.xy * 2.0 - 1.0) * nearK * gravel + (d2.xy * 2.0 - 1.0) * midK * 0.7) * uBump;
+col *= mix(1.0, 0.68 + 0.64 * d1.a, nearK * gravel);
+col *= mix(1.0, 0.78 + 0.44 * d2.a, midK * 0.7);
+// seen from the air: the same ground texture at landscape scale, so altitude never looks smeared
+vec4 d3 = texture2D(tDetail, mat2(0.6, -0.8, 0.8, 0.6) * P / (uTile * 37.0));
+vec4 d4 = texture2D(tDetail, mat2(-0.28, 0.96, -0.96, -0.28) * P / (uTile * 211.0));
+float farK = smoothstep(30.0, 220.0, camD);
+// from the air: dark sand sheets, bright dust, scoured lanes, in patches hundreds of metres across
+float prov = smoothstep(0.3, 0.7, nz5.b * 0.45 + nz1.g * 0.45 + nz4.b * 0.3 - 0.1);
+col = mix(col, col * mix(0.72, 1.12, prov), smoothstep(150.0, 900.0, camD));
+col *= mix(1.0, (0.62 + 0.76 * d3.a) * (0.8 + 0.4 * d3.b), farK * 0.8);
+col *= mix(1.0, (0.7 + 0.6 * d4.a) * (0.85 + 0.3 * d4.b), smoothstep(200.0, 1500.0, camD) * 0.75);
+// cavities hold shadow
+col *= mix(1.0, 0.72 + 0.56 * d1.b, nearK * gravel * 0.7) * mix(1.0, 0.82 + 0.36 * d2.b, midK * 0.5);
 diffuseColor.rgb = col;
 `,
         )
@@ -439,19 +574,35 @@ diffuseColor.rgb = col;
           "#include <normal_fragment_maps>",
           /* glsl */ `
 {
-  float fade = 1.0 - smoothstep(25.0, 160.0, camD);
-  vec2 u1 = vWPos.xz * 0.55;
-  vec2 u2 = mat2(0.8, 0.6, -0.6, 0.8) * vWPos.xz * 0.14;
-  vec2 g1 = texture2D(tGrain, u1).xy * 2.0 - 1.0;
-  vec2 g2 = texture2D(tGrain, u2).xy * 2.0 - 1.0;
-  vec2 dn2 = (g1 * 0.7 * fade + g2 * 0.6) * uDetailK;
-  vec3 nW = normalize(gN + vec3(dn2.x, 0.0, dn2.y));
+  vec3 nW = normalize(gN + vec3(nOff.x, 0.0, nOff.y));
   normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+  // analytic relief (ripples, slab edges) as a screen-space derivative bump
+  vec3 sp = -vViewPosition;
+  vec3 dpx = dFdx(sp); vec3 dpy = dFdy(sp);
+  float dhx = dFdx(hB); float dhy = dFdy(hB);
+  vec3 r1 = cross(dpy, normal); vec3 r2 = cross(normal, dpx);
+  float det = dot(dpx, r1);
+  vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
+  normal = normalize(abs(det) * normal - grad);
 }
+`,
+        )
+        .replace(
+          "#include <fog_fragment>",
+          /* glsl */ `
+#if defined(USE_FOG) && defined(FOG_EXP2)
+{
+  // aerial perspective: the haze glows toward the Sun
+  float fogF = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+  vec3 vd = normalize(vWPos - cameraPosition);
+  float sunA = pow(max(dot(vd, uSunDir), 0.0), 5.0);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor * (1.0 + uFogSun * sunA), fogF);
+}
+#endif
 `,
         );
     };
-    this.mat.customProgramCacheKey = () => `rover-terrain-${world.id}`;
+    this.mat.customProgramCacheKey = () => `rover-terrain-${world.id}-${quality > 0 ? 1 : 0}`;
 
     this.depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     this.depth.onBeforeCompile = (sh) => {
@@ -494,93 +645,242 @@ vec3 transformed = vec3(wp.x, h0 - dot(ed, ed) * uInvR2, wp.y);
     this.mesh.geometry.dispose();
     this.mat.dispose();
     this.depth.dispose();
+    this.detail.dispose();
   }
 }
 
-/** Rock geometry variants: angular fractured blocks, or rounded cobbles (Titan's water-ice pebbles). */
-function rockGeometry(seed: number, rounded: boolean) {
-  let geo: THREE.BufferGeometry = new THREE.IcosahedronGeometry(1, rounded ? 3 : 2);
+type RockType = "block" | "slab" | "cobble" | "ventifact" | "breccia" | "boulder";
+
+/** Rock shapes for each world: what an orbiter-to-Mastcam geologist would expect to find there. */
+const ROCK_SETS: Partial<Record<WorldId, RockType[]>> = {
+  mars: ["block", "ventifact", "slab", "boulder"],
+  earth: ["block", "cobble", "slab", "boulder"],
+  moon: ["breccia", "boulder", "block", "breccia"],
+  mercury: ["breccia", "block", "boulder", "breccia"],
+  venus: ["slab", "block", "slab", "boulder"],
+  titan: ["cobble", "cobble", "boulder", "cobble"],
+  pluto: ["block", "slab", "boulder", "block"],
+};
+
+/**
+ * One rock, smooth-shaded: an icosphere warped by fbm, cut by fracture planes (angular blocks),
+ * stepped into strata (slabs), fluted by wind (ventifacts) or knobbly with clasts (breccia).
+ * The base is flattened well below y = 0 so the rock reads as bedded into the ground.
+ */
+function rockGeometry(seed: number, type: RockType, detail: number) {
+  let geo: THREE.BufferGeometry = new THREE.IcosahedronGeometry(1, detail);
   geo.deleteAttribute("normal");
   geo.deleteAttribute("uv");
   geo = mergeVertices(geo);
   const p = geo.attributes.position as THREE.BufferAttribute;
   const v = new THREE.Vector3();
   const r = rng(seed);
-  // a few planar cuts make angular rocks look fractured
-  const cuts = rounded ? [] : Array.from({ length: 5 }, () => ({ n: new THREE.Vector3(r() - 0.5, r() - 0.3, r() - 0.5).normalize(), d: 0.55 + r() * 0.3 }));
+  // fracture planes: a few across the top (so it is not a dome) and a ring around the sides
+  const [nTop, nSide] = { block: [3, 6], slab: [1, 7], cobble: [0, 0], ventifact: [1, 5], breccia: [4, 7], boulder: [2, 3] }[type];
+  const cuts: { n: THREE.Vector3; d: number }[] = [];
+  for (let k = 0; k < nTop; k++) {
+    const t = type === "slab" ? 0.12 : 0.35 + r() * 0.5;
+    const a = r() * Math.PI * 2;
+    cuts.push({ n: new THREE.Vector3(Math.cos(a) * t, 1, Math.sin(a) * t).normalize(), d: type === "slab" ? 0.3 + r() * 0.1 : 0.42 + r() * 0.28 });
+  }
+  for (let k = 0; k < nSide; k++) {
+    const a = ((k + r() * 0.7) / nSide) * Math.PI * 2;
+    cuts.push({ n: new THREE.Vector3(Math.cos(a), (r() - 0.35) * 0.6, Math.sin(a)).normalize(), d: (type === "boulder" ? 0.6 : 0.45) + r() * 0.3 });
+  }
+  const stretch = new THREE.Vector3(0.78 + r() * 0.5, type === "slab" ? 0.42 + r() * 0.15 : type === "cobble" ? 0.7 + r() * 0.2 : 0.85 + r() * 0.3, 0.78 + r() * 0.5);
+  const wa = r() * Math.PI * 2;
+  const wind = new THREE.Vector3(Math.cos(wa), 0, Math.sin(wa));
+  const across = new THREE.Vector3(-wind.z, 0, wind.x);
+  if (type === "ventifact") cuts.push({ n: new THREE.Vector3(wind.x, 0.7, wind.z).normalize(), d: 0.45 });
+  const amp = { block: [0.16, 0.04], slab: [0.12, 0.03], cobble: [0.07, 0.015], ventifact: [0.14, 0.03], breccia: [0.18, 0.1], boulder: [0.24, 0.05] }[type];
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    const n = fbm(v.x * 1.6 + seed, v.z * 1.6 + v.y * 1.3, 4, seed);
-    v.multiplyScalar(1 + n * (rounded ? 0.18 : 0.42));
+    const n1 = fbm(v.x * 1.7 + seed * 0.37, v.z * 1.7 + v.y * 1.3, 4, seed);
+    const n2 = fbm(v.x * 4.3 - v.y * 2.1 + 3.1, v.z * 4.3 + v.y * 1.7, 3, seed + 5);
+    v.multiplyScalar(1 + n1 * amp[0] + n2 * amp[1]);
+    v.multiply(stretch);
     for (const c of cuts) {
       const d = v.dot(c.n);
-      if (d > c.d) v.addScaledVector(c.n, c.d - d);
+      if (d > c.d) v.addScaledVector(c.n, (c.d - d) * (type === "boulder" ? 0.7 : 0.96));
     }
-    if (v.y < -0.1) v.y *= 0.45;
+    if (type === "slab") {
+      // bedding: ledges that step in toward the top
+      const q = (v.y + 0.5) * 6;
+      const step = (Math.floor(q) + smoothstep(0.15, 0.85, q - Math.floor(q))) / 6 - 0.5;
+      v.y = lerp(v.y, step, 0.55);
+      const k = 1 - 0.05 * (q - Math.floor(q));
+      v.x *= k;
+      v.z *= k;
+    }
+    if (type === "ventifact") {
+      // flutes scoured along the wind
+      const g = 1 - 0.045 * Math.pow(Math.abs(Math.sin(v.dot(across) * 12 + v.y * 3 + n1 * 2)), 0.6) * smoothstep(-0.1, 0.4, v.y);
+      v.x *= g;
+      v.z *= g;
+    }
+    if (v.y < -0.05) v.y = -0.05 + (v.y + 0.05) * 0.35;
     p.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
-  if (!rounded) {
-    const flat = geo.toNonIndexed();
-    flat.computeVertexNormals();
-    geo.dispose();
-    geo = flat;
-  }
   geo.computeBoundingSphere();
   return geo;
 }
 
-/** Instanced rocks and pebbles around the rover, rebuilt as it moves. */
+/**
+ * Rock material: triplanar mottling and pits, strata in the rock's own frame, the world's dust settled
+ * on upward faces, and the base blended into soil where it is buried. Relief comes from a derivative bump.
+ */
+function rockMaterial(noise: THREE.Texture, dust: THREE.Color, dustK: number, soil: THREE.Color, sinkY: number, strata: number) {
+  const mat = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.86, metalness: 0 });
+  const U = {
+    tNoise: { value: noise },
+    uDust: { value: dust },
+    uDustK: { value: dustK },
+    uSoil: { value: soil },
+    uSinkY: { value: sinkY },
+    uStrata: { value: strata },
+  };
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader =
+      "varying vec3 vRW; varying vec3 vRWN; varying vec3 vRL; varying float vSeed;\n" +
+      sh.vertexShader.replace(
+        "#include <project_vertex>",
+        /* glsl */ `#include <project_vertex>
+{
+  vec4 rw = vec4(transformed, 1.0);
+  vec3 rn = objectNormal;
+  #ifdef USE_INSTANCING
+    rw = instanceMatrix * rw;
+    mat3 im = mat3(instanceMatrix);
+    rn = im * (rn / vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2])));
+    vSeed = fract(sin(dot(instanceMatrix[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
+  #else
+    vSeed = 0.37;
+  #endif
+  vRW = (modelMatrix * rw).xyz;
+  vRWN = normalize(mat3(modelMatrix) * rn);
+  vRL = position;
+}`,
+      );
+    sh.fragmentShader =
+      /* glsl */ `
+uniform sampler2D tNoise; uniform vec3 uDust; uniform float uDustK; uniform vec3 uSoil; uniform float uSinkY; uniform float uStrata;
+varying vec3 vRW; varying vec3 vRWN; varying vec3 vRL; varying float vSeed;
+vec4 tri(vec3 p, vec3 w) { return texture2D(tNoise, p.yz) * w.x + texture2D(tNoise, p.zx) * w.y + texture2D(tNoise, p.xy) * w.z; }
+` +
+      sh.fragmentShader
+        .replace(
+          "#include <color_fragment>",
+          /* glsl */ `#include <color_fragment>
+vec3 bw = pow(abs(normalize(vRWN)), vec3(4.0)); bw /= dot(bw, vec3(1.0));
+vec3 so = vec3(vSeed * 17.0, vSeed * 31.0, vSeed * 7.0);
+vec4 tA = tri(vRW * 0.7 + so, bw);
+vec4 tB = tri(vRW * 3.1 + so, bw);
+vec4 tC = tri(vRW * 11.0 + so, bw);
+float rDist = length(vRW - cameraPosition);
+// bedding in the rock's own frame, tilted per rock
+float bed = vRL.y * 9.0 + dot(vRL.xz, vec2(vSeed - 0.5, 0.3)) * 3.0 + (tA.r - 0.5) * 2.5;
+float band = sin(bed * 3.1416 * 1.3) * uStrata;
+vec3 rc = diffuseColor.rgb;
+rc *= 0.62 + 0.62 * tA.a + (tB.g - 0.5) * 0.4;
+rc = mix(rc, rc * vec3(1.12, 1.0, 0.88), smoothstep(0.4, 0.7, tA.b));
+rc *= 1.0 + band * 0.1;
+rc *= 0.78 + 0.44 * smoothstep(0.2, 0.8, tC.b);
+// dust settled on the upward faces
+float up = normalize(vRWN).y;
+float dk = smoothstep(0.55, 0.95, up + (tB.b - 0.5) * 0.7 + (tA.g - 0.5) * 0.4) * uDustK;
+rc = mix(rc, uDust * (0.82 + 0.36 * tB.a), dk);
+// where it is buried: soil drifted against the base, and occlusion at the ground line
+float base = 1.0 - smoothstep(uSinkY - 0.02, uSinkY + 0.1 + (tA.r - 0.5) * 0.14, vRL.y);
+rc = mix(rc, uSoil * (0.82 + 0.36 * tB.a), base * 0.9);
+rc *= mix(1.0, 0.6, (1.0 - smoothstep(uSinkY + 0.02, uSinkY + 0.3, vRL.y)) * (1.0 - base));
+diffuseColor.rgb = rc;
+float rockBump = (tB.r * 0.6 + tC.g * 0.35 + band * 0.08) * 0.03 * (1.0 - dk * 0.6) * (1.0 - smoothstep(12.0, 70.0, rDist));
+`,
+        )
+        .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor = mix(0.8, 0.97, max(dk, base));")
+        .replace(
+          "#include <normal_fragment_maps>",
+          /* glsl */ `#include <normal_fragment_maps>
+{
+  vec3 sp = -vViewPosition;
+  vec3 dpx = dFdx(sp); vec3 dpy = dFdy(sp);
+  float dhx = dFdx(rockBump); float dhy = dFdy(rockBump);
+  vec3 r1 = cross(dpy, normal); vec3 r2 = cross(normal, dpx);
+  float det = dot(dpx, r1);
+  normal = normalize(abs(det) * normal - sign(det) * (dhx * r1 + dhy * r2));
+}`,
+        );
+  };
+  mat.customProgramCacheKey = () => "rover-rock";
+  return mat;
+}
+
+/** how strongly each world's dust coats its rocks */
+const ROCK_DUST: Partial<Record<WorldId, number>> = { mars: 0.38, moon: 0.4, mercury: 0.35, earth: 0.25, venus: 0.1, titan: 0.45, pluto: 0.3 };
+
+/** Instanced rocks and pebbles around the rover in three levels of detail, rebuilt as it moves. */
 export class RockField {
   readonly root = new THREE.Group();
-  private big: THREE.InstancedMesh[] = [];
-  private small: THREE.InstancedMesh;
+  /** [lod][variant] */
+  private big: THREE.InstancedMesh[][] = [];
+  private small: THREE.InstancedMesh[] = [];
   private last = new THREE.Vector2(1e9, 1e9);
   private mats: THREE.Material[] = [];
   private geos: THREE.BufferGeometry[] = [];
+  private noise: THREE.Texture;
   private seed: number;
+  private static SINK = 0.22;
 
   constructor(
     private terrain: Terrain,
     private world: World,
-    grain: THREE.Texture,
+    _grain: THREE.Texture,
+    quality = typeof matchMedia !== "undefined" && matchMedia("(max-width: 767px), (pointer: coarse)").matches ? 0 : 2,
   ) {
     this.seed = world.terrain.seed;
-    const rounded = world.id === "titan";
-    const mat = new THREE.MeshStandardMaterial({ color: world.palette.rock, roughness: 0.9, metalness: 0, normalMap: grain, normalScale: new THREE.Vector2(0.6, 0.6) });
-    this.mats.push(mat);
-    for (let k = 0; k < 3; k++) {
-      const geo = rockGeometry(this.seed * 13 + k * 7, rounded);
-      // triplanar-ish UVs for the grain map
-      const p = geo.attributes.position as THREE.BufferAttribute;
-      const uv = new Float32Array(p.count * 2);
-      for (let i = 0; i < p.count; i++) {
-        uv[i * 2] = (p.getX(i) + p.getY(i) * 0.5) * 1.3;
-        uv[i * 2 + 1] = (p.getZ(i) + p.getY(i) * 0.5) * 1.3;
+    this.noise = makeNoiseTexture(128);
+    const pal = world.palette;
+    const soil = new THREE.Color(pal.low).lerp(new THREE.Color(pal.high), 0.5).lerp(new THREE.Color(world.soil.dustColor), 0.3);
+    const dust = new THREE.Color(world.soil.dustColor).lerp(new THREE.Color(pal.bright), 0.25);
+    const strata = world.id === "mars" || world.id === "earth" || world.id === "venus" ? 1 : world.id === "pluto" ? 0.4 : 0.15;
+    const mat = rockMaterial(this.noise, dust, ROCK_DUST[world.id] ?? 0.4, soil, RockField.SINK, strata);
+    const pmat = rockMaterial(this.noise, dust, (ROCK_DUST[world.id] ?? 0.4) * 0.6, soil, 0.25, 0);
+    this.mats.push(mat, pmat);
+    const types = ROCK_SETS[world.id] ?? ["block", "boulder", "slab", "cobble"];
+    const dets = quality >= 2 ? [4, 3, 2] : quality === 1 ? [3, 2, 1] : [2, 2, 1];
+    const caps = [500, 900, 1600];
+    for (let l = 0; l < 3; l++) {
+      const row: THREE.InstancedMesh[] = [];
+      for (let k = 0; k < types.length; k++) {
+        const geo = rockGeometry(this.seed * 13 + k * 7, types[k], dets[l]);
+        this.geos.push(geo);
+        const m = new THREE.InstancedMesh(geo, mat, caps[l]);
+        m.count = 0;
+        m.castShadow = l < 2;
+        m.receiveShadow = true;
+        m.frustumCulled = false;
+        row.push(m);
+        this.root.add(m);
       }
-      geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-      this.geos.push(geo);
-      const m = new THREE.InstancedMesh(geo, mat, 1400);
+      this.big.push(row);
+    }
+    for (let k = 0; k < 3; k++) {
+      const pg = rockGeometry(this.seed + 99 + k * 31, k === 0 ? "cobble" : types[k], 1);
+      this.geos.push(pg);
+      const m = new THREE.InstancedMesh(pg, pmat, 2000);
       m.count = 0;
-      m.castShadow = true;
-      m.receiveShadow = true;
       m.frustumCulled = false;
-      this.big.push(m);
+      m.receiveShadow = true;
+      m.castShadow = quality >= 2;
+      this.small.push(m);
       this.root.add(m);
     }
-    const pg = rockGeometry(this.seed + 99, true);
-    this.geos.push(pg);
-    const pm = new THREE.MeshStandardMaterial({ color: world.palette.rock, roughness: 0.95 });
-    this.mats.push(pm);
-    this.small = new THREE.InstancedMesh(pg, pm, 3000);
-    this.small.count = 0;
-    this.small.frustumCulled = false;
-    this.small.receiveShadow = true;
-    this.root.add(this.small);
   }
 
   update(x: number, z: number, force = false) {
-    if (!force && Math.hypot(x - this.last.x, z - this.last.y) < 7) return;
+    if (!force && Math.hypot(x - this.last.x, z - this.last.y) < 6) return;
     this.last.set(x, z);
     const rk = this.world.rocks;
     if (rk.density <= 0) return;
@@ -591,9 +891,12 @@ export class RockField {
     const sc = new THREE.Vector3();
     const pos = new THREE.Vector3();
     const col = new THREE.Color();
-    const base = new THREE.Color(this.world.palette.rock);
-    const counts = [0, 0, 0];
-    const R = 82;
+    const pal = this.world.palette;
+    const base = new THREE.Color(pal.rock);
+    const alt = new THREE.Color(pal.slope).lerp(new THREE.Color(pal.bright), 0.35);
+    const nv = this.big[0].length;
+    const counts = this.big.map(() => new Array<number>(nv).fill(0));
+    const R = 90;
     const c = rk.cell;
     const i0 = Math.floor((x - R) / c);
     const i1 = Math.floor((x + R) / c);
@@ -605,57 +908,68 @@ export class RockField {
         const r = t.rockAt(i, j, rock);
         if (!r) continue;
         const d = Math.hypot(r.x - x, r.z - z);
-        if (d > R || (r.r < 0.22 && d > 40)) continue;
-        const k = Math.floor(r.v * 3) % 3;
-        const mesh = this.big[k];
-        if (counts[k] >= mesh.instanceMatrix.count) continue;
-        e.set((r.v - 0.5) * 0.25, r.rot, (hash(i, j, 3) - 0.5) * 0.25);
+        if (d > R || (r.r < 0.22 && d > 45)) continue;
+        const lod = d < 16 ? 0 : d < 45 ? 1 : 2;
+        const k = Math.floor(r.v * nv) % nv;
+        const mesh = this.big[lod][k];
+        if (counts[lod][k] >= mesh.instanceMatrix.count) continue;
+        e.set((r.v - 0.5) * 0.3, r.rot, (hash(i, j, 3) - 0.5) * 0.3);
         q.setFromEuler(e);
-        pos.set(r.x, t.height(r.x, r.z) - r.h * 0.05, r.z);
-        sc.set(r.r, r.h, r.r);
+        sc.set(r.r, r.h * 1.25, r.r);
+        pos.set(r.x, t.height(r.x, r.z) - RockField.SINK * sc.y, r.z);
         m.compose(pos, q, sc);
-        mesh.setMatrixAt(counts[k], m);
-        col.copy(base).multiplyScalar(0.8 + 0.4 * hash(i, j, 4));
-        mesh.setColorAt(counts[k], col);
-        counts[k]++;
+        mesh.setMatrixAt(counts[lod][k], m);
+        col.copy(base).lerp(alt, hash(i, j, 7) * hash(i, j, 8) * 0.5).multiplyScalar(0.72 + 0.45 * hash(i, j, 4));
+        mesh.setColorAt(counts[lod][k], col);
+        counts[lod][k]++;
       }
-    this.big.forEach((mesh, k) => {
-      mesh.count = counts[k];
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    });
-    // pebbles: visual only, too small to lift a wheel
-    let n = 0;
-    const pc = 0.75;
-    const PR = 20;
-    const dens = rk.pebbles * 0.55;
+    this.big.forEach((row, l) =>
+      row.forEach((mesh, k) => {
+        mesh.count = counts[l][k];
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      }),
+    );
+    // pebbles and cobbles: visual only, too small to lift a wheel
+    const pn = [0, 0, 0];
+    const pc = 0.6;
+    const PR = 22;
+    const dens = rk.pebbles * 0.6;
     const s = this.seed + 900;
     for (let j = Math.floor((z - PR) / pc); j <= Math.floor((z + PR) / pc); j++)
       for (let i = Math.floor((x - PR) / pc); i <= Math.floor((x + PR) / pc); i++) {
-        if (hash(i, j, s) > dens || n >= 3000) continue;
+        if (hash(i, j, s) > dens) continue;
         const px = (i + hash(i, j, s + 1)) * pc;
         const pz = (j + hash(i, j, s + 2)) * pc;
         if (Math.hypot(px - x, pz - z) > PR) continue;
-        const rr = 0.025 + 0.07 * Math.pow(hash(i, j, s + 3), 2);
-        e.set(0, hash(i, j, s + 4) * 6.28, 0);
+        // clumped: pebbles gather in lags between sand patches
+        if (noise(px / 7, pz / 7, s + 6) + hash(i, j, s + 7) * 0.6 < 0.05) continue;
+        const k = Math.floor(hash(i, j, s + 8) * 3);
+        const mesh = this.small[k];
+        if (pn[k] >= mesh.instanceMatrix.count) continue;
+        const rr = 0.02 + 0.09 * Math.pow(hash(i, j, s + 3), 2.6);
+        e.set((hash(i, j, s + 9) - 0.5) * 0.6, hash(i, j, s + 4) * 6.28, 0);
         q.setFromEuler(e);
-        pos.set(px, t.height(px, pz) - rr * 0.15, pz);
-        sc.set(rr, rr * 0.6, rr);
+        sc.set(rr * (0.8 + 0.4 * hash(i, j, s + 10)), rr * 0.75, rr);
+        pos.set(px, t.height(px, pz) - 0.25 * sc.y, pz);
         m.compose(pos, q, sc);
-        this.small.setMatrixAt(n, m);
-        col.copy(base).multiplyScalar(0.75 + 0.5 * hash(i, j, s + 5));
-        this.small.setColorAt(n, col);
-        n++;
+        mesh.setMatrixAt(pn[k], m);
+        col.copy(base).lerp(alt, hash(i, j, s + 11) * 0.6).multiplyScalar(0.7 + 0.55 * hash(i, j, s + 5));
+        mesh.setColorAt(pn[k], col);
+        pn[k]++;
       }
-    this.small.count = n;
-    this.small.instanceMatrix.needsUpdate = true;
-    if (this.small.instanceColor) this.small.instanceColor.needsUpdate = true;
+    this.small.forEach((mesh, k) => {
+      mesh.count = pn[k];
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    });
   }
 
   dispose() {
     this.geos.forEach((g) => g.dispose());
     this.mats.forEach((m) => m.dispose());
-    this.big.forEach((m) => m.dispose());
-    this.small.dispose();
+    this.big.flat().forEach((m) => m.dispose());
+    this.small.forEach((m) => m.dispose());
+    this.noise.dispose();
   }
 }

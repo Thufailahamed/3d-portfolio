@@ -162,7 +162,7 @@ export const WORLDS: World[] = [
     },
     rocks: { cell: 2.6, density: 0.32, minR: 0.1, maxR: 1.1, power: 3, flat: 0.62, pebbles: 0.7 },
     palette: { low: "#5f5850", high: "#827a70", slope: "#4a443e", dune: "#5c554d", bright: "#a59d92", rock: "#6c655d" },
-    sky: { zenith: "#000000", horizon: "#000000", ground: "#2a2622", fog: "#000000", fogDensity: 0, sun: "#fff8ee", sunIntensity: 5.4, sunElev: 14, sunAz: 120, sunDisk: true, halo: "#fff3df", haloK: 0.12, stars: 0.5, hemiSky: "#1c1c22", hemiGround: "#4a443e", hemiK: 0.12, exposure: 0.92 },
+    sky: { zenith: "#000000", horizon: "#000000", ground: "#2a2622", fog: "#000000", fogDensity: 0, sun: "#fff8ee", sunIntensity: 5.4, sunElev: 21, sunAz: 120, sunDisk: true, halo: "#fff3df", haloK: 0.12, stars: 0.5, hemiSky: "#1c1c22", hemiGround: "#5a534b", hemiK: 0.18, exposure: 1.3 },
     bodies: [],
     edl: { plasma: false, chute: false, entryKms: 4.25, note: "No atmosphere: braked from orbit entirely on rocket power, like MESSENGER's final orbits." },
     sample: {
@@ -259,7 +259,7 @@ export const WORLDS: World[] = [
     },
     rocks: { cell: 2.8, density: 0.28, minR: 0.1, maxR: 1.0, power: 3.2, flat: 0.6, pebbles: 0.6 },
     palette: { low: "#6e6d6b", high: "#8c8b88", slope: "#55544f", dune: "#6a6966", bright: "#b1b0ac", rock: "#6b6a67" },
-    sky: { zenith: "#000000", horizon: "#000000", ground: "#2b2b2a", fog: "#000000", fogDensity: 0, sun: "#fffaf2", sunIntensity: 3.9, sunElev: 20, sunAz: 110, sunDisk: true, halo: "#ffffff", haloK: 0.1, stars: 0.45, hemiSky: "#1d1f26", hemiGround: "#4a4947", hemiK: 0.12, exposure: 1 },
+    sky: { zenith: "#000000", horizon: "#000000", ground: "#2b2b2a", fog: "#000000", fogDensity: 0, sun: "#fffaf2", sunIntensity: 3.9, sunElev: 27, sunAz: 110, sunDisk: true, halo: "#ffffff", haloK: 0.1, stars: 0.35, hemiSky: "#1d1f26", hemiGround: "#5a5955", hemiK: 0.2, exposure: 1.6 },
     bodies: [{ name: "Earth", angDeg: 1.9, az: 200, el: 42, look: EARTH_LOOK, seed: 5 }],
     edl: { plasma: false, chute: false, entryKms: 1.7, note: "No air: the descent stage cancels all 1.7 km/s of orbital speed with its engines, as Apollo did." },
     sample: {
@@ -295,8 +295,8 @@ export const WORLDS: World[] = [
       ],
       landmark: [-6000, -9000, 5200, 2600],
     },
-    rocks: { cell: 2.4, density: 0.38, minR: 0.1, maxR: 1.0, power: 2.8, flat: 0.55, pebbles: 1 },
-    palette: { low: "#8a4a2c", high: "#a8633a", slope: "#6a4230", dune: "#4d3428", bright: "#c48552", rock: "#6e5242" },
+    rocks: { cell: 2.4, density: 0.38, minR: 0.1, maxR: 1.0, power: 2.8, flat: 0.68, pebbles: 1 },
+    palette: { low: "#8a4a2c", high: "#a8633a", slope: "#6a4230", dune: "#4d3428", bright: "#c48552", rock: "#5a4a41" },
     sky: { zenith: "#a77a55", horizon: "#e1b88c", ground: "#7a4a30", fog: "#d7a77a", fogDensity: 0.00006, sun: "#fff0dc", sunIntensity: 2.6, sunElev: 26, sunAz: 150, sunDisk: true, halo: "#9cc0dc", haloK: 0.55, stars: 0, hemiSky: "#d9a577", hemiGround: "#7a4a30", hemiK: 0.55, exposure: 1.05 },
     bodies: [
       { name: "Phobos", angDeg: 0.2, az: 70, el: 24, look: { kind: "cratered", c1: "#5a4c42", c2: "#3e352e", c3: "#71635a", rim: "#000", rimK: 0 }, seed: 9 },
@@ -377,9 +377,9 @@ export const WORLDS: World[] = [
     surface: "terrain",
     soil: { name: "Damp organic sand and water-ice cobbles", mu: 0.55, crr: 0.12, dust: 0.45, dustDrag: 5, dustColor: "#5a4228", track: 0.6 },
     terrain: { seed: 97, base: [7, 600], hills: [140, 2600], detail: [0.08, 3], dunes: [3.2, 120, 1.4, 0.55], landmark: [-9000, 9000, 6000, 900] },
-    rocks: { cell: 1.8, density: 0.4, minR: 0.06, maxR: 0.45, power: 2.4, flat: 0.6, pebbles: 1 },
-    palette: { low: "#55402a", high: "#6a5034", slope: "#46351f", dune: "#3e2f20", bright: "#8a7356", rock: "#bfae94" },
-    sky: { zenith: "#5c3a12", horizon: "#c4893a", ground: "#5a3c1c", fog: "#a8702e", fogDensity: 0.0007, sun: "#ffc27a", sunIntensity: 0.65, sunElev: 40, sunAz: 130, sunDisk: false, halo: "#ffb35a", haloK: 0.5, stars: 0, hemiSky: "#c4893a", hemiGround: "#4a3420", hemiK: 1.05, exposure: 1.35 },
+    rocks: { cell: 1.8, density: 0.4, minR: 0.06, maxR: 0.45, power: 2.4, flat: 0.85, pebbles: 1 },
+    palette: { low: "#55402a", high: "#6a5034", slope: "#46351f", dune: "#3e2f20", bright: "#8a7356", rock: "#ae9d84" },
+    sky: { zenith: "#5c3a12", horizon: "#c4893a", ground: "#5a3c1c", fog: "#a8702e", fogDensity: 0.0007, sun: "#ffc27a", sunIntensity: 0.95, sunElev: 40, sunAz: 130, sunDisk: false, halo: "#ffb35a", haloK: 0.5, stars: 0, hemiSky: "#c4893a", hemiGround: "#4a3420", hemiK: 0.82, exposure: 1.35 },
     bodies: [],
     edl: { plasma: true, chute: true, entryKms: 6, note: "Thick air and weak gravity: Huygens drifted down under its parachute for 2 h 27 min." },
     sample: {
@@ -457,7 +457,7 @@ export const WORLDS: World[] = [
     terrain: { seed: 113, base: [3, 700], hills: [220, 2600], detail: [0.07, 3.4], cells: [5, 380], landmark: [-10000, -6000, 5000, 2600], craters: [{ cell: 30, density: 0.08, depth: 0.28, rim: 0 }] },
     rocks: { cell: 4.5, density: 0.08, minR: 0.12, maxR: 1.1, power: 2.4, flat: 0.75, pebbles: 0.25 },
     palette: { low: "#d9cbb8", high: "#ece2d2", slope: "#a88a6e", dune: "#c8b296", bright: "#f6f1e8", rock: "#b49478" },
-    sky: { zenith: "#000000", horizon: "#0b1424", ground: "#2a2522", fog: "#0c1626", fogDensity: 0.000012, sun: "#f8f2e6", sunIntensity: 1.25, sunElev: 18, sunAz: 100, sunDisk: true, halo: "#ffffff", haloK: 0.06, stars: 0.8, hemiSky: "#1a2238", hemiGround: "#6a5a4c", hemiK: 0.28, exposure: 1.6 },
+    sky: { zenith: "#000000", horizon: "#0b1424", ground: "#2a2522", fog: "#0c1626", fogDensity: 0.000012, sun: "#f8f2e6", sunIntensity: 1.9, sunElev: 22, sunAz: 100, sunDisk: true, halo: "#ffffff", haloK: 0.06, stars: 0.8, hemiSky: "#1a2238", hemiGround: "#6a5a4c", hemiK: 0.28, exposure: 1.6 },
     bodies: [{ name: "Charon", angDeg: 3.6, az: 220, el: 34, look: { kind: "icy", c1: "#9a9690", c2: "#6a6460", c3: "#5a3a2a", rim: "#000", rimK: 0 }, seed: 17 }],
     edl: { plasma: false, chute: false, entryKms: 1.2, note: "Too thin to slow anything: a rocket descent the whole way, 4.5 light-hours from home." },
     sample: {

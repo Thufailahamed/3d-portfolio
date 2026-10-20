@@ -19,10 +19,12 @@ const NAV: { id: ChapterId; label: string; href: string; lite: string }[] = [
 ];
 // standalone WebGL pieces, listed apart from the journey
 const PLAYGROUND = [
-  { label: "Cars", href: "/cars", blurb: "Exploded showroom" },
+  { label: "Cars", href: "/cars", blurb: "Showroom, compare, crash lab" },
   { label: "Bricks", href: "/lego", blurb: "The portfolio in bricks" },
   { label: "Ramps", href: "/hotwheels", blurb: "Die-cast stunt park" },
   { label: "Rover", href: "/rover", blurb: "Land on any planet" },
+  { label: "Diffusion", href: "/diffusion", blurb: "Prompt to pixels, end to end" },
+  { label: "Voice", href: "/voice", blurb: "Your speech, heard by Whisper" },
 ];
 const JOURNEY = new Set(["/", "/projects", "/about", "/contact"]);
 
@@ -37,7 +39,7 @@ export default function Header() {
   const toggle = useRef<HTMLButtonElement>(null);
   const onJourney = JOURNEY.has(pathname) && !lite;
   // the pavilion and the brick world draw their own chrome
-  const onFlow = pathname === "/flow" || pathname.startsWith("/lego") || pathname.startsWith("/hotwheels") || pathname.startsWith("/rover");
+  const onFlow = pathname === "/flow" || pathname.startsWith("/lego") || pathname.startsWith("/hotwheels") || pathname.startsWith("/rover") || pathname.startsWith("/diffusion") || pathname.startsWith("/voice");
   // on the hero the giant name *is* the logo
   const hideLogo = onJourney && chapter === "hero";
 

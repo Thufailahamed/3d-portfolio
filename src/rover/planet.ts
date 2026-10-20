@@ -5,7 +5,17 @@ const KIND = { rocky: 0, cratered: 1, banded: 2, earth: 3, cloudy: 4, icy: 5, ha
 
 const NOISE3 = /* glsl */ `
 uniform int uK;
-float h31(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+/* lattice hash built from exact small-integer arithmetic (a mod-289 permutation polynomial): the same lattice
+   point hashes identically from every neighbouring cell even when the shader compiler reassociates the maths,
+   so value noise and crater cells stay seamless far from the origin */
+vec3 m289v(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+float prm(float x) { return mod((x * 34.0 + 1.0) * x, 289.0); }
+float h31(vec3 p) {
+  vec3 q = m289v(floor(p * 4.0 + 0.5));
+  float a = prm(prm(prm(q.x) + q.y) + q.z);
+  float b = prm(a + q.x + 7.0);
+  return (a * 289.0 + b) * (1.0 / 83521.0);
+}
 float n3(vec3 p) {
   vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(mix(h31(i), h31(i + vec3(1,0,0)), f.x), mix(h31(i + vec3(0,1,0)), h31(i + vec3(1,1,0)), f.x), f.y),
@@ -39,50 +49,11 @@ float saturnRing(float r) {
 }
 `;
 
-/**
- * A whole planet, procedurally, on a unit sphere (scale the mesh to size it): Mars-like rust,
- * cratered grey, gas-giant bands, a living Earth with city lights on its night side, Venus' cloud deck.
- * Saturn receives the shadow of its own rings.
- */
-export function planetMaterial(look: PlanetLook, seed: number) {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      uC1: { value: new THREE.Color(look.c1) },
-      uC2: { value: new THREE.Color(look.c2) },
-      uC3: { value: new THREE.Color(look.c3) },
-      uRim: { value: new THREE.Color(look.rim) },
-      uRimK: { value: look.rimK },
-      uSpot: { value: new THREE.Color(look.spot ?? "#000000") },
-      uHasSpot: { value: look.spot ? 1 : 0 },
-      uKind: { value: KIND[look.kind] },
-      uSeed: { value: seed },
-      uSun: { value: new THREE.Vector3(1, 0.3, 0.4).normalize() },
-      uTime: { value: 0 },
-      uAmb: { value: 0.02 },
-      uK: { value: 1 },
-      uRings: { value: look.rings ? 1 : 0 },
-    },
-    vertexShader: /* glsl */ `
-varying vec3 vObj; varying vec3 vWN; varying vec3 vWP; varying vec3 vCenter; varying vec3 vPole; varying float vScale;
-void main() {
-  vObj = normalize(position);
-  vWN = normalize(mat3(modelMatrix) * normal);
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWP = wp.xyz;
-  vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-  vPole = normalize(mat3(modelMatrix) * vec3(0.0, 1.0, 0.0));
-  vScale = length(modelMatrix[0].xyz);
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}`,
-    fragmentShader: /* glsl */ `
-uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3; uniform vec3 uRim; uniform float uRimK;
-uniform vec3 uSpot; uniform float uHasSpot; uniform int uKind; uniform float uSeed; uniform vec3 uSun; uniform float uTime; uniform float uAmb; uniform float uRings;
-varying vec3 vObj; varying vec3 vWN; varying vec3 vWP; varying vec3 vCenter; varying vec3 vPole; varying float vScale;
-${NOISE3}
-void main() {
-  vec3 p = vObj;
+const SURFACE = /* glsl */ `
+/* albedo of the planet at unit-sphere point p, with ocean glint, cloud cover, city lights and a relief height for bump shading */
+vec3 planetSurface(vec3 p, out float spec, out float cloud, out float lights, out float relief) {
   vec3 sp = p + uSeed;
-  vec3 col; float spec = 0.0; float cloud = 0.0; float lights = 0.0;
+  vec3 col; spec = 0.0; cloud = 0.0; lights = 0.0; relief = 0.0;
   // craters at up to three scales, in one loop so the crater code is emitted once (fast to compile)
   float crater = 0.0;
   int nc = uKind == 1 ? 3 : (uKind == 0 || uKind == 5) ? 1 : 0;
@@ -168,11 +139,61 @@ void main() {
     col = mix(uC2, uC1, smoothstep(0.35, 0.65, F[0] * 0.5 + 0.5 - abs(p.y) * 0.4));
     col = mix(col, uC3, smoothstep(0.8, 0.95, p.y) * 0.5);
   }
+  if (grainy) relief = crater * 0.5 + (F[0] - 0.5) * 0.6;
   // fine surface grain for close passes (solid worlds only), fading out where it would alias
   if (grainy) {
-    float px = length(fwidth(vObj));
+    float px = length(fwidth(p));
     col *= mix(0.84 + 0.32 * F[gi], 1.0, smoothstep(0.002, 0.01, px));
   }
+  return col;
+}
+`;
+
+/**
+ * A whole planet, procedurally, on a unit sphere (scale the mesh to size it): Mars-like rust,
+ * cratered grey, gas-giant bands, a living Earth with city lights on its night side, Venus' cloud deck.
+ * Saturn receives the shadow of its own rings.
+ */
+export function planetMaterial(look: PlanetLook, seed: number) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uC1: { value: new THREE.Color(look.c1) },
+      uC2: { value: new THREE.Color(look.c2) },
+      uC3: { value: new THREE.Color(look.c3) },
+      uRim: { value: new THREE.Color(look.rim) },
+      uRimK: { value: look.rimK },
+      uSpot: { value: new THREE.Color(look.spot ?? "#000000") },
+      uHasSpot: { value: look.spot ? 1 : 0 },
+      uKind: { value: KIND[look.kind] },
+      uSeed: { value: seed },
+      uSun: { value: new THREE.Vector3(1, 0.3, 0.4).normalize() },
+      uTime: { value: 0 },
+      uAmb: { value: 0.02 },
+      uK: { value: 1 },
+      uRings: { value: look.rings ? 1 : 0 },
+    },
+    vertexShader: /* glsl */ `
+varying vec3 vObj; varying vec3 vWN; varying vec3 vWP; varying vec3 vCenter; varying vec3 vPole; varying float vScale;
+void main() {
+  vObj = normalize(position);
+  vWN = normalize(mat3(modelMatrix) * normal);
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWP = wp.xyz;
+  vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  vPole = normalize(mat3(modelMatrix) * vec3(0.0, 1.0, 0.0));
+  vScale = length(modelMatrix[0].xyz);
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`,
+    fragmentShader: /* glsl */ `
+uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3; uniform vec3 uRim; uniform float uRimK;
+uniform vec3 uSpot; uniform float uHasSpot; uniform int uKind; uniform float uSeed; uniform vec3 uSun; uniform float uTime; uniform float uAmb; uniform float uRings;
+varying vec3 vObj; varying vec3 vWN; varying vec3 vWP; varying vec3 vCenter; varying vec3 vPole; varying float vScale;
+${NOISE3}
+${SURFACE}
+void main() {
+  vec3 p = vObj;
+  float spec; float cloud; float lights; float relief;
+  vec3 col = planetSurface(p, spec, cloud, lights, relief);
   vec3 N = normalize(vWN);
   vec3 V = normalize(cameraPosition - vWP);
   float nl = dot(N, uSun);
@@ -199,6 +220,198 @@ void main() {
   #include <colorspace_fragment>
 }`,
   });
+}
+
+export type ApproachAtmosphere = {
+  /** scale height and vertical optical depth, in the approach scene's units (planet radius 100) */
+  H: number;
+  tau: number;
+  /** colour of the sky light scattered sideways (Rayleigh-like) and forward toward the Sun (dust, haze) */
+  scatter: THREE.Color;
+  forward: THREE.Color;
+};
+
+/**
+ * The planet for the close approach, ray-traced per pixel inside a bounding shell (so the limb is a
+ * perfect curve at any distance): the same procedural surface as the map, plus finer albedo, craters
+ * and bump-shaded relief that resolve as the camera drops, and a single-scattering atmosphere that
+ * glows along the limb, softens the terminator, reddens the light through long paths and veils the
+ * ground below. Writes true depth, so rings and spacecraft sort against it.
+ */
+export function approachPlanetMaterial(look: PlanetLook, seed: number, atm: ApproachAtmosphere | null) {
+  const R = 100;
+  const top = atm ? R + atm.H * 9 : R * 1.001;
+  return {
+    top,
+    mat: new THREE.ShaderMaterial({
+      uniforms: {
+        uC1: { value: new THREE.Color(look.c1) },
+        uC2: { value: new THREE.Color(look.c2) },
+        uC3: { value: new THREE.Color(look.c3) },
+        uSpot: { value: new THREE.Color(look.spot ?? "#000000") },
+        uHasSpot: { value: look.spot ? 1 : 0 },
+        uKind: { value: KIND[look.kind] },
+        uSeed: { value: seed },
+        uSun: { value: new THREE.Vector3(1, 0.3, 0.4).normalize() },
+        uTime: { value: 0 },
+        uAmb: { value: 0.015 },
+        uK: { value: 1 },
+        uRings: { value: look.rings ? 1 : 0 },
+        uCenter: { value: new THREE.Vector3() },
+        uPole: { value: new THREE.Vector3(0, 1, 0) },
+        uW2O: { value: new THREE.Matrix3() },
+        uR: { value: R },
+        uTop: { value: top },
+        uH: { value: atm?.H ?? 1 },
+        uDens: { value: atm ? atm.tau / atm.H : 0 },
+        uScatter: { value: atm?.scatter ?? new THREE.Color(0, 0, 0) },
+        uForward: { value: atm?.forward ?? new THREE.Color(0, 0, 0) },
+        uBump: { value: 0.32 },
+      },
+      vertexShader: /* glsl */ `
+varying vec3 vWP;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWP = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`,
+      fragmentShader: /* glsl */ `
+uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3;
+uniform vec3 uSpot; uniform float uHasSpot; uniform int uKind; uniform float uSeed; uniform vec3 uSun; uniform float uTime; uniform float uAmb; uniform float uRings;
+uniform vec3 uCenter; uniform vec3 uPole; uniform mat3 uW2O; uniform float uR; uniform float uTop; uniform float uH; uniform float uDens;
+uniform vec3 uScatter; uniform vec3 uForward; uniform float uBump;
+uniform mat4 projectionMatrix;
+varying vec3 vWP;
+${NOISE3}
+${SURFACE}
+/* fbm whose octaves fade out before they get finer than a pixel (fp = pixel footprint × base frequency), so close-range relief never aliases */
+float fbmBL(vec3 p, float fp) {
+  float s = 0.0; float a = 0.5; float fr = 1.0;
+  for (int i = 0; i < 6; i++) {
+    s += a * (n3(p) - 0.5) * (1.0 - smoothstep(0.12, 0.35, fr * fp));
+    p = p * 2.03 + 17.1; fr *= 2.03; a *= 0.5;
+  }
+  return s + 0.5;
+}
+void main() {
+  vec3 rd = normalize(vWP - cameraPosition);
+  vec3 oc = cameraPosition - uCenter;
+  float b = dot(oc, rd);
+  float c0 = dot(oc, oc);
+  float hA = b * b - (c0 - uTop * uTop);
+  if (hA <= 0.0) discard;
+  float hP = b * b - (c0 - uR * uR);
+  float tP = hP > 0.0 ? -b - sqrt(hP) : -1.0;
+  bool hit = tP > 0.0;
+  float t0 = max(-b - sqrt(hA), 0.0);
+  float t1 = hit ? tP : -b + sqrt(hA);
+  if (t1 <= t0) discard;
+
+  // —— single scattering along the view ray ——
+  float tau = 0.0;
+  vec3 ins = vec3(0.0);
+  vec3 sunCol = vec3(0.0);
+  if (uDens > 0.0) {
+    const int NS = 14;
+    float ds = (t1 - t0) / float(NS);
+    for (int i = 0; i < NS; i++) {
+      vec3 q = oc + rd * (t0 + (float(i) + 0.5) * ds);
+      float r = length(q);
+      float d = exp(-(r - uR) / uH);
+      float mu = dot(q / r, uSun);
+      // optical depth toward the Sun (Chapman-ish), and the planet's own shadow
+      float tSun = uDens * uH * d / max(mu + 0.14, 0.035);
+      float lit = smoothstep(-0.16, 0.06, mu);
+      float dt = uDens * d * ds;
+      vec3 sunT = exp(-tSun * vec3(0.55, 0.8, 1.15));
+      ins += dt * exp(-tau) * lit * sunT;
+      tau += dt;
+    }
+  }
+  float cosT = dot(rd, uSun);
+  float phR = 0.75 * (1.0 + cosT * cosT);
+  float g = 0.72;
+  float phM = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5) * 0.08;
+  vec3 scat = ins * (uScatter * phR + uForward * phM) * 1.35;
+
+  if (!hit) {
+    float a = clamp(1.0 - exp(-tau), 0.0, 1.0);
+    gl_FragColor = vec4(scat, a * 0.6);
+    gl_FragDepth = 1.0;
+    #include <colorspace_fragment>
+    return;
+  }
+
+  vec3 q = oc + rd * tP;
+  vec3 N = q / uR;
+  vec3 Pw = uCenter + q;
+  vec3 p = normalize(uW2O * N);
+  float spec; float cloud; float lights; float relief;
+  vec3 col = planetSurface(p, spec, cloud, lights, relief);
+  // close-range detail on solid worlds: finer albedo, small craters, relief that resolves as we descend
+  if (uKind == 0 || uKind == 1 || uKind == 5) {
+    vec3 sp = p + uSeed;
+    float px = length(fwidth(p));
+    float near = 1.0 - smoothstep(0.0008, 0.006, px);
+    float d0 = smoothstep(0.3, 0.7, fbmBL(sp * 13.0 + 7.7, px * 13.0));
+    float d1 = fbmBL(sp * 44.0, px * 44.0);
+    float d2 = fbmBL(sp * 210.0 + 3.1, px * 210.0);
+    float cr = craters(p, 64.0, uSeed + 11.0) * (uKind == 1 ? 1.0 : 0.55);
+    // a finer generation of small craters, only once they span a few pixels
+    cr += craters(p, 190.0, uSeed + 23.0) * (uKind == 1 ? 0.7 : 0.35) * (1.0 - smoothstep(0.0006, 0.0018, px));
+    float streak = uKind == 0 ? smoothstep(0.55, 0.75, fbm3(vec3(sp.x * 30.0, sp.y * 90.0, sp.z * 30.0))) : 0.0;
+    float c1 = smoothstep(0.28, 0.72, d1);
+    float c2 = smoothstep(0.3, 0.7, d2);
+    col *= mix(1.0, (0.78 + 0.44 * d0) * (0.72 + 0.56 * c1) * (0.86 + 0.28 * c2) * (1.0 + cr * 0.22) * (1.0 - streak * 0.22), near);
+    relief += (cr * 0.8 + (d0 - 0.5) * 3.0 + (d1 - 0.5) * 2.4 + (d2 - 0.5) * 0.9) * near;
+  }
+  // bump shading from the relief, by screen-space surface gradient
+  vec3 Nb = N;
+  if (uKind == 0 || uKind == 1 || uKind == 5) {
+    float hs = relief * uBump;
+    vec3 dpdx = dFdx(Pw); vec3 dpdy = dFdy(Pw);
+    vec3 r1 = cross(dpdy, N); vec3 r2 = cross(N, dpdx);
+    float det = dot(dpdx, r1);
+    vec3 grad = sign(det) * (dFdx(hs) * r1 + dFdy(hs) * r2);
+    // surface slope, clamped so sharp crater rims cannot flip the normal from one pixel quad to the next
+    vec3 slope = grad / max(abs(det), 1e-12);
+    float sl = length(slope);
+    if (sl > 0.9) slope *= 0.9 / sl;
+    Nb = abs(det) > 1e-14 ? normalize(N - slope) : N;
+  }
+  float nl = dot(N, uSun);
+  float nlb = dot(Nb, uSun);
+  float lit = smoothstep(-0.06, 0.2, nl) * max(nlb, 0.0) * 0.85 + smoothstep(-0.1, 0.35, nl) * 0.15 * max(nlb + 0.3, 0.0);
+  // sunlight reaching the ground has crossed the atmosphere: dimmer and redder near the terminator
+  vec3 sunTint = uDens > 0.0 ? exp(-min(uDens * uH, 2.0) / max(nl + 0.12, 0.04) * vec3(0.3, 0.45, 0.7)) : vec3(1.0);
+  if (uRings > 0.5) {
+    float dn = dot(uSun, uPole);
+    if (abs(dn) > 1e-3) {
+      float t = dot(-q, uPole) / dn;
+      if (t > 0.0) lit *= 1.0 - 0.8 * saturnRing(length(q + uSun * t) / uR);
+    }
+  }
+  vec3 V = -rd;
+  vec3 c = col * (lit * sunTint + uAmb);
+  c = mix(c, vec3(1.0) * (lit + uAmb * 0.5), cloud * 0.9);
+  vec3 H = normalize(uSun + V);
+  c += spec * (1.0 - cloud) * pow(max(dot(N, H), 0.0), 80.0) * 0.7 * step(0.0, nl) * sunTint;
+  c += vec3(1.0, 0.7, 0.36) * lights * (1.0 - smoothstep(-0.15, 0.05, nl)) * (1.0 - cloud * 0.7) * 1.4;
+  // the air between us and the ground
+  c = c * exp(-tau * 0.85) + scat;
+  vec4 clip = projectionMatrix * viewMatrix * vec4(Pw, 1.0);
+  gl_FragDepth = clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+}`,
+      side: THREE.BackSide,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      depthWrite: true,
+      depthTest: true,
+    }),
+  };
 }
 
 /**
@@ -262,29 +475,6 @@ void main() {
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
-  });
-}
-
-/** A thin glowing atmosphere shell, seen as a limb glow. */
-export function atmoMaterial(color: string, k: number) {
-  return new THREE.ShaderMaterial({
-    uniforms: { uC: { value: new THREE.Color(color) }, uK: { value: k }, uSun: { value: new THREE.Vector3(1, 0.3, 0.4).normalize() } },
-    vertexShader: /* glsl */ `
-varying vec3 vWN; varying vec3 vWP;
-void main() { vWN = normalize(mat3(modelMatrix) * normal); vec4 wp = modelMatrix * vec4(position, 1.0); vWP = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
-    fragmentShader: /* glsl */ `
-uniform vec3 uC; uniform float uK; uniform vec3 uSun;
-varying vec3 vWN; varying vec3 vWP;
-void main() {
-  vec3 N = normalize(vWN); vec3 V = normalize(cameraPosition - vWP);
-  float f = pow(1.0 - abs(dot(N, V)), 5.0);
-  float lit = smoothstep(-0.3, 0.5, dot(N, uSun));
-  gl_FragColor = vec4(uC * f * lit * uK * 1.6, f * lit * uK);
-}`,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.BackSide,
   });
 }
 

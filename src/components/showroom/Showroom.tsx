@@ -43,11 +43,14 @@ const NONE: string[] = [];
 export default function Showroom({
   car,
   switcher,
+  nav,
   onCycle,
   initialPart: given,
 }: {
   car: Car;
   switcher?: ReactNode;
+  /** the section switch (/cars puts Showroom · Compare · Crash lab at the top); hidden with the HUD during the film */
+  nav?: ReactNode;
   /** step to the previous (-1) or next (1) car in the line-up */
   onCycle?: (d: number) => void;
   /** overrides ?part= (null after switching cars, so the new car starts assembled) */
@@ -702,6 +705,7 @@ export default function Showroom({
       <div aria-hidden className="grain absolute" />
 
       {!ids && <Loading name={car.short} />}
+      {nav && <div className="sr-hud">{nav}</div>}
 
       {/* left column: title, numbers, and the part index on wide screens */}
       <div

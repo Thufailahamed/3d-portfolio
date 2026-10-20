@@ -22,7 +22,7 @@ import {
   type MoonDef,
 } from "./ephemeris";
 import { rng } from "./noise";
-import { atmoMaterial, coronaMaterial, milkyWayMaterial, planetMaterial, ringMaterial, sunMaterial } from "./planet";
+import { approachPlanetMaterial, coronaMaterial, milkyWayMaterial, planetMaterial, ringMaterial, sunMaterial, type ApproachAtmosphere } from "./planet";
 import { WORLDS, hohmannDv, worldById, type PlanetLook, type World, type WorldId } from "./worlds";
 
 /**
@@ -125,7 +125,6 @@ export class SpaceScene {
   private arcAU: THREE.Vector3[] = [];
   private flare: THREE.Sprite;
   private bigMat: THREE.ShaderMaterial | null = null;
-  private atmo: THREE.Mesh | null = null;
   private bigRing: THREE.Mesh | null = null;
   private disposables: { dispose(): void }[] = [];
   private lastScaleK = -1;
@@ -226,7 +225,8 @@ export class SpaceScene {
     this.disposables.push(shell.geometry, shell.material as THREE.Material, cruise.geometry, cruise.material as THREE.Material, flareMat, flareTex);
 
     // —— the close-approach planet (unit sphere ×100) ——
-    this.bigPlanet = new THREE.Mesh(new THREE.SphereGeometry(1, 320, 160), new THREE.MeshBasicMaterial());
+    // a bounding shell; the planet and its air are ray-traced inside it (see approachPlanetMaterial)
+    this.bigPlanet = new THREE.Mesh(new THREE.SphereGeometry(1.01, 64, 32), new THREE.MeshBasicMaterial());
     this.bigPlanet.scale.setScalar(100);
     this.approach.add(this.bigPlanet);
     const lightA = new THREE.DirectionalLight("#ffffff", 3);
@@ -748,18 +748,15 @@ void main() {
 
   setApproach(world: World) {
     this.bigMat?.dispose();
-    this.atmo?.removeFromParent();
     this.bigRing?.removeFromParent();
-    this.bigMat = planetMaterial(world.look, world.terrain.seed * 0.37);
-    (this.bigMat.uniforms.uSun.value as THREE.Vector3).copy(this.bigSun);
-    this.bigPlanet.material = this.bigMat;
+    const { mat, top } = approachPlanetMaterial(world.look, world.terrain.seed * 0.37, approachAir(world));
+    this.bigMat = mat;
+    (mat.uniforms.uSun.value as THREE.Vector3).copy(this.bigSun);
+    this.bigPlanet.geometry.dispose();
+    this.bigPlanet.geometry = new THREE.SphereGeometry((top / 100) * 1.01, 64, 32);
+    this.bigPlanet.material = mat;
     this.bigPlanet.rotation.set(0.35, world.terrain.seed, 0.1);
-    if (world.atm.rho > 0.001) {
-      const am = atmoMaterial(world.look.rim, 0.25 + world.look.rimK * 0.45);
-      (am.uniforms.uSun.value as THREE.Vector3).copy(this.bigSun);
-      this.atmo = new THREE.Mesh(new THREE.SphereGeometry(100.8, 96, 48), am);
-      this.approach.add(this.atmo);
-    }
+    this.bigPlanet.renderOrder = -5;
     if (world.look.rings) {
       const rm = ringMaterial(0);
       rm.uniforms.uShadow.value = 1;
@@ -768,6 +765,18 @@ void main() {
       this.bigRing.rotation.x = -Math.PI / 2;
       this.bigPlanet.add(this.bigRing);
     }
+    this.syncApproach();
+  }
+
+  /** the ray-traced planet needs its centre, orientation and pole in world space */
+  private syncApproach() {
+    const m = this.bigMat;
+    if (!m) return;
+    this.bigPlanet.updateWorldMatrix(true, false);
+    const rot = new THREE.Matrix4().extractRotation(this.bigPlanet.matrixWorld);
+    (m.uniforms.uCenter.value as THREE.Vector3).setFromMatrixPosition(this.bigPlanet.matrixWorld);
+    (m.uniforms.uW2O.value as THREE.Matrix3).setFromMatrix4(rot).transpose();
+    (m.uniforms.uPole.value as THREE.Vector3).set(0, 1, 0).applyMatrix4(rot);
   }
 
   // ———————————————————————————— frame ————————————————————————————
@@ -778,7 +787,10 @@ void main() {
     this.sunMat.uniforms.uTime.value = t;
     this.coronaMat.uniforms.uTime.value = t;
     for (const b of this.bodies.values()) b.mat.uniforms.uTime.value = t;
-    if (this.bigMat) this.bigMat.uniforms.uTime.value = t;
+    if (this.bigMat) {
+      this.bigMat.uniforms.uTime.value = t;
+      if (this.approach.visible) this.syncApproach();
+    }
     for (const m of this.beltMats) m.uniforms.uDpr.value = dpr;
     this.sky.traverse((o) => {
       const m = (o as THREE.Points).material as THREE.ShaderMaterial | undefined;
@@ -819,3 +831,24 @@ void main() {
 }
 
 const tmpQ = new THREE.Quaternion();
+
+/** how each world's air looks from orbit: scale height and optical depth exaggerated a little so the limb reads */
+function approachAir(w: World): ApproachAtmosphere | null {
+  const c = (x: string) => new THREE.Color(x);
+  switch (w.id) {
+    case "mars":
+      return { H: 0.32, tau: 0.26, scatter: c("#d9a273").lerp(c(w.look.rim), 0.3), forward: c("#a9c8e8") };
+    case "earth":
+      return { H: 0.16, tau: 0.32, scatter: c("#3d7dff"), forward: c("#ffffff") };
+    case "venus":
+      return { H: 0.4, tau: 1.4, scatter: c("#ffe2a8"), forward: c("#fff2d6") };
+    case "titan":
+      return { H: 1.1, tau: 2.6, scatter: c("#d9953f"), forward: c("#ffcf86") };
+    case "pluto":
+      // New Horizons saw ~20 thin blue haze layers over Pluto's limb
+      return { H: 0.5, tau: 0.06, scatter: c("#7aa6ff"), forward: c("#cfe0ff") };
+    default:
+      if (w.atm.rho < 0.001) return null;
+      return { H: 0.4, tau: 0.8, scatter: c(w.look.rim), forward: c("#ffffff") };
+  }
+}

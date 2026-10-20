@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { preload } from "react-dom";
 import { carBySlug, cars } from "@/content/cars";
+import CarsNav from "./CarsNav";
 import Showroom from "./Showroom";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -41,7 +42,16 @@ export default function CarsView() {
   };
 
   // a fresh showroom per car: selection, exploded state and camera all start over
-  return <Showroom key={slug} car={car} switcher={switcher} onCycle={cycle} initialPart={switched ? null : undefined} />;
+  return (
+    <Showroom
+      key={slug}
+      car={car}
+      switcher={switcher}
+      nav={<CarsNav current="showroom" a={slug} />}
+      onCycle={cycle}
+      initialPart={switched ? null : undefined}
+    />
+  );
 }
 
 /** The car picker: a pill of tabs that scrolls sideways when the line-up is wider than the screen. */

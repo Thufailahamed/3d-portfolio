@@ -17,7 +17,16 @@ const eslintConfig = defineConfig([
   ]),
   {
     // React Three Fiber mutates three.js objects (uniforms, transforms) every frame by design.
-    files: ["src/experience/**/*.{ts,tsx}", "src/components/showroom/ShowroomScene.tsx", "src/hotwheels/**/*.{ts,tsx}", "src/rover/**/*.{ts,tsx}"],
+    files: [
+      "src/experience/**/*.{ts,tsx}",
+      "src/components/showroom/ShowroomScene.tsx",
+      "src/components/showroom/carModel.ts",
+      "src/hotwheels/**/*.{ts,tsx}",
+      "src/rover/**/*.{ts,tsx}",
+      "src/voice/scene/**/*.{ts,tsx}",
+      "src/crash/scene/**/*.{ts,tsx}",
+      "src/compare/scene/**/*.{ts,tsx}",
+    ],
     rules: { "react-hooks/immutability": "off" },
   },
 ]);

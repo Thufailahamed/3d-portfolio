@@ -80,7 +80,7 @@ export type SceneProps = {
 export type CameraInfo = { mm: number; elevation: number; azimuth: number; distance: number };
 
 /** What the car, the studio and the camera share from frame to frame. */
-type Rig = {
+export type Rig = {
   focus: THREE.Vector3;
   table: THREE.Group | null;
   dims: Dims;
@@ -103,9 +103,9 @@ type Rig = {
   headColor: THREE.Color;
 };
 
-const ease = (t: number) => t * t * (3 - 2 * t);
+export const ease = (t: number) => t * t * (3 - 2 * t);
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
-const reducedMotion = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+export const reducedMotion = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Group the model by its Part_* empties (pure: no changes to the shared, cached scene). */
 function useParts(scene: THREE.Group) {
@@ -217,7 +217,7 @@ const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), pv = new THREE.V
  *   coat that stays smooth, so metallics sparkle as the light moves across them
  * - rain: beads of water on the upward faces, each a tiny dome bumped into both coats' normals
  */
-const liveryIndex = { none: 0, stripes: 1, band: 2, twotone: 3 } as const;
+export const liveryIndex = { none: 0, stripes: 1, band: 2, twotone: 3 } as const;
 const paintFxPars = /* glsl */ `
   uniform int uLivery;
   uniform vec3 uLiveryColor;
@@ -259,7 +259,7 @@ const paintFxNormal = /* glsl */ `
     normal = normalize(normal + rnd * uFlake);
   }
 `;
-function addLivery(mat: THREE.Material, u: Record<string, THREE.IUniform>) {
+export function addLivery(mat: THREE.Material, u: Record<string, THREE.IUniform>) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
@@ -826,7 +826,7 @@ const beamFrag = /* glsl */ `
 
 const BEAM_LEN = 6;
 /** render layer for glow that should show to the camera but stay out of shadow and depth passes */
-const FX_LAYER = 1;
+export const FX_LAYER = 1;
 
 /** Headlamp beams: real spot lights for the pools on the floor, plus a soft volumetric cone each. */
 function HeadBeams({ rec, rig }: { rec: PartRec; rig: Rig }) {
@@ -1037,7 +1037,7 @@ function coveHeights(geo: THREE.BufferGeometry) {
  * Smooth value noise on a canvas: the faint trowel marks and wear of a polished concrete floor,
  * used to vary its roughness and to waver its reflections.
  */
-function floorNoise(size = 256) {
+export function floorNoise(size = 256) {
   const c = document.createElement("canvas");
   c.width = c.height = size;
   const g = c.getContext("2d")!;
@@ -1116,7 +1116,7 @@ const rippleFrag = /* glsl */ `
 `;
 
 /** A small seeded random generator (mulberry32), so the rain is the same every time it is built. */
-function seeded(seed: number) {
+export function seeded(seed: number) {
   let t = seed >>> 0;
   return () => {
     t = (t + 0x6d2b79f5) >>> 0;
@@ -1231,7 +1231,7 @@ const skyFrag = /* glsl */ `
  * A simple daylight sky: horizon haze, blue overhead and the sun behind the car. `sun` runs from a
  * low, warm sun just over the horizon (0) to high noon (1).
  */
-function SkyDome({ sun }: { sun: number }) {
+export function SkyDome({ sun }: { sun: number }) {
   const mat = useMemo(
     () => new THREE.ShaderMaterial({
       uniforms: { uSun: { value: new THREE.Vector3(-0.55, 0.18, -0.8) }, uDusk: { value: 0 } },
@@ -1484,7 +1484,7 @@ function Reflections({ live, rig, narrow, backdrop, sun }: { live: Live; rig: Ri
   );
 }
 
-function Stage({ mood, backdrop, grid, tuning, sun, weather, rig, lite, bloom }: {
+export function Stage({ mood, backdrop, grid, tuning, sun, weather, rig, lite, bloom }: {
   mood: MoodId;
   weather: WeatherId;
   sun: number;
@@ -1808,7 +1808,7 @@ function Snapper({ snap, onSnap }: { snap: SceneProps["snap"]; onSnap: (png: str
 
 const FRINGE = new THREE.Vector2(0.0007, 0.0005);
 
-function Post({ narrow, lite, cinematic, aperture, rig, bloom, dof }: {
+export function Post({ narrow, lite, cinematic, aperture, rig, bloom, dof }: {
   lite: boolean;
   narrow: boolean;
   cinematic: boolean;

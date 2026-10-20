@@ -1,0 +1,30 @@
+whisper-tiny-en.bin, manifest.json, vocab.txt
+  Converted from OpenAI Whisper "tiny.en" (https://github.com/openai/whisper), checkpoint sha256
+  d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03, and its GPT-2 vocabulary (gpt2.tiktoken),
+  by scripts/voice/build.mjs. The decoder's matrices are re-stored as int8 blocks; the encoder is unchanged.
+
+  MIT License, Copyright (c) 2022 OpenAI
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+  documentation files (the "Software"), to deal in the Software without restriction, including without
+  limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
+  Software, and to permit persons to whom the Software is furnished to do so, subject to the following
+  conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or substantial portions
+  of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+  TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+
+samples/jfk.wav
+  From whisper.cpp's samples (https://github.com/ggerganov/whisper.cpp, MIT). The recording, John F. Kennedy's
+  inaugural address of 20 January 1961, is a work of the U.S. federal government and in the public domain.
+
+fonts/archivo-*.woff
+  Archivo by Omnibus-Type (https://github.com/Omnibus-Type/Archivo), SIL Open Font License 1.1 (fonts/OFL.txt).
+fonts/newsreader-latin-400-italic.woff
+  Newsreader by Production Type, SIL Open Font License 1.1 (fonts/OFL-Newsreader.txt).

@@ -1,8 +1,7 @@
 import * as THREE from "three";
 import { clamp, lerp, smoothstep } from "./noise";
-import { plumeGeometry, plumeMaterial } from "./fx";
+import { aeroshell, descentStage, hardwareMaterials, parachute, setNozzleGlow } from "./hardware";
 import type { Ground } from "./terrain";
-import { makeChuteTexture } from "./textures";
 import type { World } from "./worlds";
 
 /**
@@ -19,124 +18,36 @@ export type Shot = { pos: THREE.Vector3; look: THREE.Vector3; fov: number; cut: 
 
 const ENTRY_MASS = 3300;
 const CHUTE_CDA = 0.62 * Math.PI * 10.75 * 10.75;
+/** the stage sits this far above the capsule's nose while stowed, and the rover hangs this far under the stage */
+const STOW = 1.6;
+const HANG = 1.05;
 
 /** terminal velocity under the 21.5 m parachute: v = √(2mg / ρ·Cd·A) */
 export function chuteSpeed(w: World) {
   return Math.sqrt((2 * ENTRY_MASS * w.g) / (Math.max(w.atm.rho, 1e-6) * CHUTE_CDA));
 }
 
-function capsuleModel() {
-  const g = new THREE.Group();
-  const shieldMat = new THREE.MeshStandardMaterial({ color: "#3a2a1f", roughness: 0.95 });
-  const backMat = new THREE.MeshStandardMaterial({ color: "#d8d4cb", roughness: 0.6, metalness: 0.1 });
-  const shield = new THREE.Mesh(new THREE.ConeGeometry(2.25, 0.7, 48), shieldMat);
-  shield.rotation.x = Math.PI;
-  shield.position.y = -0.35;
-  const back = new THREE.Group();
-  const shell = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 2.25, 2.4, 48, 1, false), backMat);
-  shell.position.y = 1.2;
-  const can = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.55, 24), backMat);
-  can.position.y = 2.65;
-  back.add(shell, can);
-  // thruster quads and the cruise-stage interface ring
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + 0.4;
-    const t = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.25, 0.2), new THREE.MeshStandardMaterial({ color: "#555", metalness: 0.7, roughness: 0.4 }));
-    t.position.set(Math.cos(a) * 1.55, 1.1, Math.sin(a) * 1.55);
-    back.add(t);
-  }
-  g.add(shield, back);
-  g.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.castShadow = true) : null));
-  return { g, shield, back };
-}
-
-function chuteModel() {
-  const g = new THREE.Group();
-  const tex = makeChuteTexture();
-  const diskTex = tex.clone();
-  diskTex.repeat.set(1, -0.61);
-  diskTex.offset.set(0, 1);
-  diskTex.needsUpdate = true;
-  const bandTex = tex.clone();
-  bandTex.repeat.set(1, -0.26);
-  bandTex.offset.set(0, 0.26);
-  bandTex.needsUpdate = true;
-  const canopy = new THREE.Group();
-  canopy.position.y = 44;
-  g.add(canopy);
-  const diskPts: THREE.Vector2[] = [];
-  for (let i = 0; i <= 14; i++) {
-    const a = (i / 14) * 1.1;
-    diskPts.push(new THREE.Vector2(Math.sin(a) * 9.4 + 0.01, Math.cos(a) * 6.5));
-  }
-  const disk = new THREE.Mesh(new THREE.LatheGeometry(diskPts, 80), new THREE.MeshStandardMaterial({ map: diskTex, side: THREE.DoubleSide, roughness: 0.85 }));
-  const bandPts = [new THREE.Vector2(9.7, 1.6), new THREE.Vector2(10.5, -0.6), new THREE.Vector2(10.75, -2.6)];
-  const band = new THREE.Mesh(new THREE.LatheGeometry(bandPts, 80), new THREE.MeshStandardMaterial({ map: bandTex, side: THREE.DoubleSide, roughness: 0.85 }));
-  canopy.add(disk, band);
-  // 40 suspension lines to the confluence, then a single riser to the backshell
-  const v: number[] = [];
-  for (let i = 0; i < 40; i++) {
-    const a = (i / 40) * Math.PI * 2;
-    v.push(Math.cos(a) * 10.75, 44 - 2.6, Math.sin(a) * 10.75, 0, 14, 0);
-  }
-  v.push(0, 14, 0, 0, 3.0, 0);
-  const lg = new THREE.BufferGeometry();
-  lg.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
-  const lines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: "#dedad2", transparent: true, opacity: 0.7 }));
-  g.add(lines);
-  disk.castShadow = band.castShadow = true;
-  return { g, canopy, lines, textures: [tex, diskTex, bandTex] };
-}
-
-function stageModel(vacuum: boolean) {
-  const g = new THREE.Group();
-  const frame = new THREE.MeshStandardMaterial({ color: "#2b2e33", metalness: 0.7, roughness: 0.45 });
-  const foil = new THREE.MeshStandardMaterial({ color: "#c9a04a", metalness: 1, roughness: 0.35 });
-  const ti = new THREE.MeshStandardMaterial({ color: "#b8b9bb", metalness: 0.85, roughness: 0.3 });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.25, 0.55, 8), foil);
-  g.add(body);
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2 + 0.5;
-    const tank = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 16), ti);
-    tank.position.set(Math.cos(a) * 0.95, 0.35, Math.sin(a) * 0.95);
-    g.add(tank);
-  }
-  const plumes: THREE.Mesh[] = [];
-  const pm = plumeMaterial(vacuum);
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 0.16), frame);
-    arm.position.set(Math.cos(a) * 1.5, -0.05, Math.sin(a) * 1.5);
-    arm.rotation.y = -a;
-    g.add(arm);
-    for (const off of [-0.22, 0.22]) {
-      const px = Math.cos(a) * 2.0 - Math.sin(a) * off;
-      const pz = Math.sin(a) * 2.0 + Math.cos(a) * off;
-      const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.16, 0.38, 14, 1, true), frame);
-      eng.position.set(px, -0.2, pz);
-      // engines are canted outward so the plume misses the rover hanging below
-      const cant = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(-Math.sin(a), 0, Math.cos(a)), -0.28);
-      eng.quaternion.copy(cant);
-      g.add(eng);
-      const pl = new THREE.Mesh(plumeGeometry(vacuum ? 7 : 4.5, 0.16), pm);
-      pl.position.set(px, -0.38, pz);
-      pl.quaternion.copy(cant);
-      pl.frustumCulled = false;
-      g.add(pl);
-      plumes.push(pl);
-    }
-  }
-  // landing radar, bridle-and-umbilical device (BUD) underneath
-  const radar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.4), frame);
-  radar.position.set(0.5, -0.35, 0.2);
-  const bud = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.25, 16), ti);
-  bud.position.y = -0.4;
-  g.add(radar, bud);
-  g.traverse((o) => ((o as THREE.Mesh).isMesh && !plumes.includes(o as THREE.Mesh) ? (o.castShadow = true) : null));
-  return { g, plumes, pm };
-}
-
 type Debris = { obj: THREE.Object3D; vel: THREE.Vector3; spin: THREE.Vector3; landed: boolean; kind: "shield" | "backshell" | "stage" };
+
+/** faint motes hanging in the air along the descent path: with the camera riding the capsule they stream past and sell the speed */
+function motes(world: World, site: THREE.Vector3) {
+  const N = 900;
+  const p = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 6 + Math.pow(Math.random(), 0.6) * 140;
+    p[i * 3] = site.x + Math.cos(a) * r;
+    p[i * 3 + 1] = site.y + 30 + Math.random() * 1900;
+    p[i * 3 + 2] = site.z + Math.sin(a) * r;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+  const c = new THREE.Color(world.soil.dustColor).lerp(new THREE.Color(world.sky.horizon), 0.5);
+  const m = new THREE.PointsMaterial({ color: c, size: 0.35, sizeAttenuation: true, transparent: true, opacity: 0.55, depthWrite: false });
+  const pts = new THREE.Points(g, m);
+  pts.frustumCulled = false;
+  return pts;
+}
 
 export class EDL {
   readonly root = new THREE.Group();
@@ -161,10 +72,12 @@ export class EDL {
   readonly vChute: number;
   readonly site: THREE.Vector3;
   readonly hasChute: boolean;
-  private cap = capsuleModel();
-  private chute = chuteModel();
-  private stage: ReturnType<typeof stageModel>;
-  private bridles: THREE.LineSegments;
+  private m = hardwareMaterials();
+  private cap = aeroshell(this.m);
+  private chute = parachute();
+  private stage: ReturnType<typeof descentStage>;
+  private lines: THREE.Mesh[] = [];
+  private motes: THREE.Points | null = null;
   private debris: Debris[] = [];
   private capsulePos = new THREE.Vector3();
   private side: THREE.Vector3;
@@ -178,6 +91,10 @@ export class EDL {
   private stageOrient = new THREE.Quaternion();
   private touchT = 0;
   private yaw: number;
+  private vacuum: boolean;
+  /** a camera set down on the ground for the touchdown and flyaway, and where it is looking */
+  private groundCam = new THREE.Vector3();
+  private groundLook = new THREE.Vector3();
   private disposables: { dispose(): void }[] = [];
 
   constructor(
@@ -190,22 +107,37 @@ export class EDL {
     this.site = new THREE.Vector3(siteXZ.x, ground.height(siteXZ.x, siteXZ.z), siteXZ.z);
     this.hasChute = world.edl.chute;
     this.vChute = chuteSpeed(world);
-    this.dChute = clamp(800 / this.vChute, 6, 12);
+    this.dChute = clamp(800 / this.vChute, 7, 12);
     this.dPowered = this.hasChute ? 9 : 13;
     this.a0 = this.hasChute ? 1000 : 2400;
-    const vacuum = world.atm.rho < 0.001;
-    this.stage = stageModel(vacuum);
+    this.vacuum = world.atm.rho < 0.001;
+    this.stage = descentStage(this.m, this.vacuum);
     this.side = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     this.back = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     this.drift = new THREE.Vector3(0.8, 0, 0.6).multiplyScalar(world.atm.wind + 2);
+    this.fly.dir.copy(this.side).multiplyScalar(-1).addScaledVector(this.back, -0.6).normalize();
 
-    const bg = new THREE.BufferGeometry();
-    bg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(8 * 3), 3));
-    this.bridles = new THREE.LineSegments(bg, new THREE.LineBasicMaterial({ color: "#1b1c1f" }));
-    this.bridles.frustumCulled = false;
-    this.bridles.visible = false;
+    // bridles: three nylon straps and the umbilical, as real geometry so they read at a distance
+    const strap = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true);
+    strap.translate(0, 0.5, 0);
+    const strapMat = new THREE.MeshStandardMaterial({ color: "#e6e0d2", roughness: 0.85 });
+    const umbMat = new THREE.MeshStandardMaterial({ color: "#2a2b2f", roughness: 0.6, metalness: 0.3 });
+    for (let i = 0; i < 4; i++) {
+      const l = new THREE.Mesh(strap, i < 3 ? strapMat : umbMat);
+      l.visible = false;
+      l.frustumCulled = false;
+      l.castShadow = true;
+      this.lines.push(l);
+      this.root.add(l);
+    }
+    this.disposables.push(strap, strapMat, umbMat);
 
-    this.root.add(this.cap.g, this.chute.g, this.stage.g, this.bridles);
+    this.root.add(this.cap.g, this.chute.g, this.stage.g);
+    if (this.world.atm.rho > 0.001 && this.hasChute) {
+      this.motes = motes(world, this.site);
+      this.root.add(this.motes);
+      this.disposables.push(this.motes.geometry, this.motes.material as THREE.Material);
+    }
     this.stage.g.visible = !this.hasChute;
     this.cap.g.visible = this.hasChute;
     this.chute.g.visible = this.hasChute;
@@ -217,13 +149,10 @@ export class EDL {
       this.log.push("Braking burn");
       this.sounds.push({ s: "engines" });
     }
-    this.disposables.push(bg, this.bridles.material as THREE.Material, ...this.chute.textures, this.stage.pm);
+    this.disposables.push(this.m, this.chute, this.stage.pm);
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.isMesh) {
-        this.disposables.push(m.geometry);
-        (Array.isArray(m.material) ? m.material : [m.material]).forEach((x) => this.disposables.push(x));
-      }
+      if (m.isMesh && m.geometry !== strap) this.disposables.push(m.geometry);
     });
   }
 
@@ -247,7 +176,7 @@ export class EDL {
     // the rover hangs under the stage (bridle 0 = tucked in against it)
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw);
     this.rover.quat.copy(q);
-    this.rover.pos.copy(this.stagePos).add(new THREE.Vector3(0, -1.05 - this.bridle, 0));
+    this.rover.pos.copy(this.stagePos).add(new THREE.Vector3(0, -HANG - this.bridle, 0));
   }
 
   private release(kind: Debris["kind"], obj: THREE.Object3D, vel: THREE.Vector3, spin: THREE.Vector3) {
@@ -274,6 +203,7 @@ export class EDL {
         if (rho > 0.001 && d.kind === "shield") d.vel.multiplyScalar(1 - Math.min(0.5, rho * 0.6 * dt));
       }
       d.obj.position.addScaledVector(d.vel, dt);
+      // a falling heat shield flutters and turns over; the stage tumbles
       d.obj.rotation.x += d.spin.x * dt;
       d.obj.rotation.z += d.spin.z * dt;
       if (d.kind === "stage") this.stagePos.copy(d.obj.position);
@@ -289,7 +219,8 @@ export class EDL {
         d.obj.position.y = gy + (d.kind === "shield" ? 0.05 : 0.6);
         d.obj.rotation.set(d.kind === "shield" ? Math.PI + 0.25 : 1.2, d.obj.rotation.y, 0.3);
         this.landed.push({ kind: d.kind, at: d.obj.position.clone() });
-        this.sounds.push({ s: d.kind === "stage" ? "crash" : "thud", at: d.obj.position.clone() });
+        // shield and stage hit at tens of metres a second: a crater and a plume of dust
+        this.sounds.push({ s: d.kind === "backshell" ? "thud" : "crash", at: d.obj.position.clone() });
         if (d.kind === "backshell") {
           // the canopy collapses and lies down beside it
           this.chute.g.visible = true;
@@ -299,9 +230,11 @@ export class EDL {
           this.chute.g.rotation.set(0, Math.random() * 6, 0);
           this.chute.canopy.scale.set(1.1, 0.06, 0.8);
           this.chute.lines.visible = false;
+          this.chute.riser.visible = false;
         }
         if (d.kind === "stage") {
           this.stage.plumes.forEach((p) => (p.visible = false));
+          setNozzleGlow(this.m, 0, this.vacuum);
           d.obj.rotation.set(0.5, 0.3, 0.9);
           d.obj.position.y = gy + 0.3;
         }
@@ -330,6 +263,30 @@ export class EDL {
     this.touchT = this.clock;
     this.log.push("Touchdown confirmed");
     this.sounds.push({ s: "touchdown" });
+    // set a camera down on the ground, off the rover's front quarter, for the touchdown and flyaway
+    // the first spot (starting behind the rover on the flyaway line) with a clear view of it over the dunes and rocks
+    const r = this.rover.pos;
+    const target = r.clone().add(new THREE.Vector3(0, 0.3, 0));
+    let best: { p: THREE.Vector3; clear: number } | null = null;
+    for (const da of [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, Math.PI]) {
+      const dir = this.fly.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), da);
+      const across = new THREE.Vector3(dir.z, 0, -dir.x);
+      const p = r.clone().addScaledVector(dir, -12.5).addScaledVector(across, 4.5);
+      const gy = this.ground.ground(p.x, p.z);
+      p.y = (gy > -1000 && gy > r.y - 30 ? gy : r.y - 1) + 1.3;
+      let clear = Infinity;
+      for (let k = 1; k < 12; k++) {
+        const q = p.clone().lerp(target, k / 12);
+        const g = this.ground.ground(q.x, q.z);
+        if (g > -1000) clear = Math.min(clear, q.y - g);
+      }
+      if (!best || clear > best.clear) best = { p, clear };
+      if (clear > 0.35) break;
+    }
+    this.groundCam.copy(best!.p);
+    // nowhere clear: stand up taller
+    if (best!.clear < 0.35) this.groundCam.y += 0.35 - best!.clear + 0.6;
+    this.groundLook.copy(this.landedLook(r));
   }
 
   update(dt: number, roverNow: { pos: THREE.Vector3; quat: THREE.Quaternion } | null) {
@@ -346,34 +303,43 @@ export class EDL {
       this.timeScale = 800 / this.dChute / this.vChute;
       this.alt = lerp(1800, 1000, u);
       this.vReal = this.vChute;
+      // the capsule swings under the canopy, and the whole system drifts with the wind
       const sway = new THREE.Vector3(Math.sin(this.clock * 0.9) * 2.2, 0, Math.cos(this.clock * 0.7) * 1.6);
       const off = this.drift.clone().multiplyScalar(-(1 - u) * 6).add(sway);
       this.capsulePos.set(S.x + off.x, S.y + this.alt, S.z + off.z);
       this.cap.g.position.copy(this.capsulePos);
-      this.cap.g.rotation.set(Math.sin(this.clock * 0.9) * 0.05, this.yaw, Math.cos(this.clock * 0.7) * 0.04);
-      this.chute.g.position.copy(this.capsulePos).add(new THREE.Vector3(0, 2.9, 0));
-      this.chute.g.rotation.set(-Math.sin(this.clock * 0.9) * 0.04, 0, 0);
-      const inflate = smoothstep(0, 0.9, this.pt);
-      const over = 1 + Math.sin(Math.min(this.pt, 1.6) * 6) * 0.08 * (1 - smoothstep(0.6, 1.6, this.pt));
+      const swing = new THREE.Euler(Math.sin(this.clock * 0.9 + 0.4) * 0.07, this.yaw, Math.cos(this.clock * 0.7) * 0.06);
+      this.cap.g.rotation.copy(swing);
+      this.chute.g.position.copy(this.capsulePos).add(new THREE.Vector3(0, 0.05, 0));
+      this.chute.g.rotation.set(-Math.sin(this.clock * 0.9) * 0.04, 0, Math.cos(this.clock * 0.7) * 0.02);
+      // the canopy snaps open, overshoots, and breathes
+      const inflate = smoothstep(0, 0.7, this.pt);
+      const over = 1 + Math.sin(Math.min(this.pt, 1.6) * 6) * 0.08 * (1 - smoothstep(0.6, 1.6, this.pt)) + Math.sin(this.clock * 3.1) * 0.012;
       this.chute.canopy.scale.set(lerp(0.08, 1, inflate) * over, lerp(1.6, 1, inflate), lerp(0.08, 1, inflate) * over);
       if (this.pt > 2.6 && this.cap.shield.parent === this.cap.g) {
         this.log.push("Heat shield separation");
         this.sounds.push({ s: "pyro" });
-        this.release("shield", this.cap.shield, new THREE.Vector3(this.drift.x * 2, -(800 / this.dChute) - 6, this.drift.z * 2), new THREE.Vector3(0.6, 0, 0.4));
+        this.release("shield", this.cap.shield, this.drift.clone().multiplyScalar(6 / this.dChute).add(new THREE.Vector3(0.6, -(800 / this.dChute) - 4, -0.4)), new THREE.Vector3(0.35, 0, 0.22));
         // the rover's wheels and the stage are visible through the open base now
         this.stage.g.visible = true;
       }
       // stowed inside the backshell, above the heat shield
-      this.setStage(this.alt + 1.6, off, dt);
+      this.setStage(this.alt + STOW, off, dt);
       this.hangRover();
-      // shots: wide under the canopy; after the shield drops, the downward lander camera
-      const lcam = this.pt > 2.6 && this.pt < 6.2;
-      if (lcam) {
-        this.setShot("lcam", this.capsulePos.clone().add(new THREE.Vector3(0, -2.4, 0)), this.capsulePos.clone().add(new THREE.Vector3(0.01, -100, 0)), 70, 0.002);
-        sh.up.set(this.side.x, 0, this.side.z);
+      const C = this.capsulePos;
+      if (this.pt < 2.6) {
+        // level with the riser, slowly orbiting: canopy above, capsule below, the hazy horizon behind
+        const a = 0.35 + this.clock * 0.035;
+        const p = C.clone().addScaledVector(this.side, Math.cos(a) * 80).addScaledVector(this.back, Math.sin(a) * 80).add(new THREE.Vector3(0, 12, 0));
+        this.setShot("chute", p, C.clone().add(new THREE.Vector3(0, 19, 0)), 46, 0.0015, true);
+      } else if (this.pt < 6.2) {
+        // the downward-looking lander camera: the heat shield tumbles away toward the ground
+        this.setShot("lcam", C.clone().add(new THREE.Vector3(0, 0.35, 0)), C.clone().add(new THREE.Vector3(0.01, -100, 0)).addScaledVector(this.back, 4), 58, 0.0012, true);
+        sh.up.copy(this.side);
       } else {
-        const p = this.capsulePos.clone().addScaledVector(this.side, 62).addScaledVector(this.back, 22).add(new THREE.Vector3(0, -6, 0));
-        this.setShot("chute", p, this.capsulePos.clone().add(new THREE.Vector3(0, 20, 0)), 55, 0.004);
+        // just under the open backshell: rover and stage packed inside, the canopy high above
+        const p = C.clone().addScaledVector(this.side, 10).addScaledVector(this.back, -3.5).add(new THREE.Vector3(0, -5.5, 0));
+        this.setShot("under", p, C.clone().add(new THREE.Vector3(0, 7, 0)), 64, 0.002, true);
       }
       if (this.pt >= this.dChute) {
         this.phase = "separation";
@@ -383,19 +349,20 @@ export class EDL {
         this.release("backshell", this.cap.back, new THREE.Vector3(this.drift.x, -this.vChute * this.timeScale, this.drift.z), new THREE.Vector3(0.05, 0, 0.08));
         // the chute rides away with the backshell
         this.cap.back.add(this.chute.g);
-        this.chute.g.position.set(0, 2.9, 0);
+        this.chute.g.position.set(0, 0.05, 0);
         this.chute.g.rotation.set(0, 0, 0);
       }
     } else if (this.phase === "separation") {
-      // a second of free fall before the engines light
+      // a second of free fall before the engines light; the backshell and chute seem to shoot upward
       this.timeScale = 1.5;
       const v0 = 800 / this.dChute;
       const fall = v0 * this.pt + 0.5 * this.world.g * 3 * this.pt * this.pt;
-      this.alt = 1000 + 1.6 - fall;
+      this.alt = 1000 + STOW - fall;
       this.vReal = (v0 + this.world.g * 3 * this.pt) / this.timeScale;
       this.setStage(this.alt, this.capsulePos.clone().sub(S), dt);
       this.hangRover();
-      this.setShot("sep", this.capsulePos.clone().addScaledVector(this.side, 26).add(new THREE.Vector3(0, -30, 0)), this.stagePos, 55, 0.006);
+      const p = this.stagePos.clone().addScaledVector(this.side, 13).addScaledVector(this.back, 5).add(new THREE.Vector3(0, -4, 0));
+      this.setShot("sep", p, this.stagePos.clone().add(new THREE.Vector3(0, 4, 0)), 60, 0.004, true);
       if (this.pt > 1.2) {
         this.phase = "powered";
         this.pt = 0;
@@ -418,8 +385,17 @@ export class EDL {
       this.throttle = lerp(0.95, 0.6, u);
       this.setStage(this.alt, off, dt);
       this.hangRover();
-      const p = this.stagePos.clone().addScaledVector(this.side, 24).addScaledVector(this.back, 16).add(new THREE.Vector3(0, 7, 0));
-      this.setShot("powered", p, this.stagePos.clone().add(new THREE.Vector3(0, -5, 0)), 50, 0.01);
+      if (u < 0.58) {
+        // riding alongside: the stage and its tucked-in rover over the terrain, engines blazing
+        const a = 2.2 + this.clock * 0.1;
+        const p = this.stagePos.clone().addScaledVector(this.side, Math.cos(a) * 13).addScaledVector(this.back, Math.sin(a) * 13).add(new THREE.Vector3(0, 2.6, 0));
+        this.setShot("powered", p, this.stagePos.clone().add(new THREE.Vector3(0, -1.6, 0)), 50, 0.004, true);
+      } else {
+        // from the ground: the stage comes down toward us out of the sky, the horizon along the bottom of the frame
+        const gp = this.groundPoint(S.clone().addScaledVector(this.side, 22).addScaledVector(this.back, -17), 1.5);
+        const fov = lerp(42, 50, smoothstep(0.58, 1, u));
+        this.setShot("approach", gp, this.skyLook(gp, this.stagePos, fov), fov, 0.0015, true);
+      }
       if (u >= 1) {
         this.phase = "skycrane";
         this.pt = 0;
@@ -437,18 +413,22 @@ export class EDL {
       this.setStage(this.alt, new THREE.Vector3(), dt);
       this.hangRover();
       // gentle pendulum on the bridles
-      this.rover.pos.x += Math.sin(this.clock * 1.7) * 0.06 * this.bridle / 7.5;
-      // upward-looking camera for the first seconds, then the classic view from the ground
-      if (this.pt < 3) {
-        const cam = this.rover.pos.clone().add(new THREE.Vector3(0, 0.75, 0));
-        this.setShot("upcam", cam, this.stagePos, 78, 0.004);
-        sh.up.set(this.back.x, 0, this.back.z);
+      this.rover.pos.x += (Math.sin(this.clock * 1.7) * 0.06 * this.bridle) / 7.5;
+      this.rover.pos.z += (Math.cos(this.clock * 1.3) * 0.04 * this.bridle) / 7.5;
+      if (this.pt < 0.8) {
+        const gp = this.groundPoint(S.clone().addScaledVector(this.side, 22).addScaledVector(this.back, -17), 1.5);
+        this.setShot("approach", gp, this.skyLook(gp, this.stagePos, 50), 50, 0.0015, true);
+      } else if (this.pt < 3.8) {
+        // the rover's up-look camera: the stage overhead, its engines glowing, the bridles paying out
+        const cam = this.rover.pos.clone().add(new THREE.Vector3(0, 0.95, 0)).addScaledVector(this.back, 0.15).addScaledVector(this.side, -0.6);
+        const look = this.stagePos.clone().addScaledVector(this.back, -0.6);
+        this.setShot("upcam", cam, look, 82, 0.0012, true);
+        sh.up.copy(this.back).multiplyScalar(-1);
       } else {
-        const gp = S.clone().addScaledVector(this.side, 26).addScaledVector(this.back, -22);
-        gp.y = this.ground.height(gp.x, gp.z) + 1.7;
-        if (gp.y < S.y - 50) gp.y = S.y + 1.7;
-        const mid = this.stagePos.clone().lerp(this.rover.pos, 0.55);
-        this.setShot("ground", gp, mid, 46, 0.003);
+        // the classic view: from the ground, looking up at the crane lowering the rover
+        const gp = this.groundPoint(S.clone().addScaledVector(this.side, 17).addScaledVector(this.back, -11), 1.3);
+        const mid = this.stagePos.clone().lerp(this.rover.pos, 0.52);
+        this.setShot("ground", gp, mid, 54, 0.001, true);
       }
     } else if (this.phase === "touchdown") {
       // hold the hover while the bridles go slack, then fire the cutters
@@ -460,9 +440,8 @@ export class EDL {
         this.pt = 0;
         this.log.push("Bridles cut — flyaway");
         this.sounds.push({ s: "cut" });
-        this.fly.dir.copy(this.side).multiplyScalar(-1).addScaledVector(this.back, -0.6).normalize();
       }
-      if (roverNow) this.chaseShot(roverNow, this.stagePos, 1);
+      if (roverNow) this.landedShot(roverNow, dt);
     } else if (this.phase === "flyaway" || this.phase === "done") {
       this.timeScale = 1;
       if (this.phase === "flyaway") {
@@ -478,55 +457,94 @@ export class EDL {
         const t = this.clock - this.touchT - 0.8;
         this.throttle = 1;
         const climb = Math.min(t, 3.5);
-        const off = this.fly.dir.clone().multiplyScalar(Math.max(0, climb * climb * 2.6));
-        this.alt = Math.max(this.alt, 0) + dt * Math.min(12, 1 + t * 6);
+        const off = this.fly.dir.clone().multiplyScalar(Math.max(0, climb * climb * 4.2));
+        this.alt = Math.max(this.alt, 0) + dt * Math.min(7, 1 + t * 3.5);
         this.setStage(this.alt, off, dt);
         if (t > 3.5) {
           this.throttle = 0;
           this.release("stage", this.stage.g, this.stageVel.clone(), new THREE.Vector3(0.4, 0, 0.7));
         }
       }
-      if (roverNow) this.chaseShot(roverNow, this.stagePos, this.phase === "flyaway" ? 1 : 0);
+      if (roverNow) this.landedShot(roverNow, dt);
     }
 
-    // stage plumes
+    // stage plumes and the glow inside the nozzles
     const t = this.clock;
+    const flame = this.throttle * (0.88 + Math.random() * 0.12);
     this.stage.pm.uniforms.uTime.value = t;
-    this.stage.pm.uniforms.uPower.value = this.throttle * (0.85 + Math.random() * 0.15);
-    this.stage.plumes.forEach((p, i) => p.scale.setScalar(this.throttle > 0.01 ? 0.7 + this.throttle * 0.5 + Math.sin(t * 50 + i) * 0.04 : 0.001));
+    this.stage.pm.uniforms.uPower.value = flame;
+    this.stage.plumes.forEach((p, i) => p.scale.setScalar(this.throttle > 0.01 ? 0.75 + this.throttle * 0.45 + Math.sin(t * 50 + i) * 0.03 : 0.001));
+    setNozzleGlow(this.m, this.stage.g.visible ? flame : 0, this.vacuum);
+    if (this.motes) this.motes.visible = this.phase === "chute" || this.phase === "separation" || this.phase === "powered";
 
-    // bridles
-    this.bridles.visible = (this.phase === "skycrane" || this.phase === "touchdown") && this.bridle > 0.05;
-    if (this.bridles.visible) {
-      const rp = this.attached || !roverNow ? this.rover : roverNow;
-      const pos = this.bridles.geometry.attributes.position as THREE.BufferAttribute;
-      const anchors = [new THREE.Vector3(0.6, 0.38, 0.6), new THREE.Vector3(-0.6, 0.38, 0.6), new THREE.Vector3(0, 0.38, -0.75), new THREE.Vector3(0.2, 0.4, 0)];
-      const tops = [new THREE.Vector3(0.35, -0.45, 0.35), new THREE.Vector3(-0.35, -0.45, 0.35), new THREE.Vector3(0, -0.45, -0.45), new THREE.Vector3(0, -0.5, 0)];
-      anchors.forEach((a, i) => {
-        const A = a.clone().applyQuaternion(rp.quat).add(rp.pos);
-        const B = tops[i].clone().applyQuaternion(this.stage.g.quaternion).add(this.stagePos);
-        // slack after touchdown: the lines sag
-        if (this.phase === "touchdown") A.lerp(B, 0.02);
-        pos.setXYZ(i * 2, A.x, A.y, A.z);
-        pos.setXYZ(i * 2 + 1, B.x, B.y, B.z);
-      });
-      pos.needsUpdate = true;
-    }
+    // bridles and umbilical, from the reel under the stage to the rover's deck
+    const show = (this.phase === "skycrane" || this.phase === "touchdown") && this.bridle > 0.05;
+    const rp = this.attached || !roverNow ? this.rover : roverNow;
+    const anchors = [new THREE.Vector3(0.55, 0.42, 0.55), new THREE.Vector3(-0.55, 0.42, 0.55), new THREE.Vector3(0, 0.42, -0.7), new THREE.Vector3(0.18, 0.45, 0.05)];
+    const bud = this.stage.bud;
+    const exits = [new THREE.Vector3(0.12, 0, 0.08), new THREE.Vector3(-0.12, 0, 0.08), new THREE.Vector3(0, 0, -0.12), new THREE.Vector3(0.05, -0.05, 0)];
+    this.lines.forEach((l, i) => {
+      l.visible = show;
+      if (!show) return;
+      const A = anchors[i].clone().applyQuaternion(rp.quat).add(rp.pos);
+      const B = exits[i].clone().add(bud).applyQuaternion(this.stage.g.quaternion).add(this.stagePos);
+      // slack after touchdown: the lines start to fall
+      if (this.phase === "touchdown") A.lerp(B, 0.02);
+      const d = B.clone().sub(A);
+      const r = i < 3 ? 0.013 : 0.017;
+      l.position.copy(A);
+      l.scale.set(r, d.length(), r);
+      l.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    });
 
     this.updateDebris(dt);
   }
 
-  private chaseShot(r: { pos: THREE.Vector3; quat: THREE.Quaternion }, look: THREE.Vector3, k: number) {
-    const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(r.quat);
-    const p = r.pos.clone().addScaledVector(fwd, -8).add(new THREE.Vector3(0, 3.4, 0)).addScaledVector(this.side, 2.5);
-    const target = r.pos.clone().lerp(look, 0.25 * k).add(new THREE.Vector3(0, 0.8, 0));
-    this.setShot("chase", p, target, 55, 0);
+  /** aim from a ground camera toward something in the sky, holding the view down so the horizon stays in frame */
+  private skyLook(cam: THREE.Vector3, target: THREE.Vector3, fov: number) {
+    const d = target.clone().sub(cam);
+    const h = Math.hypot(d.x, d.z);
+    const hf = THREE.MathUtils.degToRad(fov / 2);
+    const eS = Math.atan2(d.y, h);
+    // the target in the upper part of the frame; the horizon kept in shot unless that would lose the target
+    const e = clamp(eS - hf * 0.55, 0.04, Math.max(hf * 0.75, eS - hf * 0.8));
+    return cam.clone().add(new THREE.Vector3(d.x, Math.tan(e) * h, d.z));
   }
 
-  private setShot(name: string, pos: THREE.Vector3, look: THREE.Vector3, fov: number, shake: number) {
+  /** a point on the ground, `h` metres up (or level with the site where there is no ground, as over a gas giant's deck) */
+  private groundPoint(p: THREE.Vector3, h: number) {
+    const gy = this.ground.ground(p.x, p.z);
+    p.y = (gy > -1000 && gy > this.site.y - 50 ? gy : this.site.y) + h;
+    return p;
+  }
+
+  /** where the touchdown camera aims: the rover low in the frame, tilted up toward the stage while it is still in the air */
+  private landedLook(r: THREE.Vector3) {
+    const cam = this.groundCam;
+    const toR = r.clone().sub(cam);
+    const dR = Math.hypot(toR.x, toR.z);
+    const eR = Math.atan2(toR.y + 0.6, dR);
+    let e = eR + 0.12;
+    const stageUp = !this.debris.some((d) => d.kind === "stage" && d.landed);
+    if (stageUp) {
+      const toS = this.stagePos.clone().sub(cam);
+      const eS = Math.atan2(toS.y, Math.hypot(toS.x, toS.z));
+      e = clamp(lerp(eR, eS, 0.55), eR + 0.12, eR + 0.36);
+    }
+    const h = new THREE.Vector3(toR.x, 0, toR.z).normalize();
+    return cam.clone().addScaledVector(h, dR).add(new THREE.Vector3(0, Math.tan(e) * dR, 0));
+  }
+
+  /** after touchdown: the rover framed low in the shot, the stage climbing away beyond it */
+  private landedShot(r: { pos: THREE.Vector3; quat: THREE.Quaternion }, dt: number) {
+    this.groundLook.lerp(this.landedLook(r.pos), 1 - Math.exp(-2.5 * dt));
+    this.setShot("landed", this.groundCam, this.groundLook, 50, 0.0006, true);
+  }
+
+  private setShot(name: string, pos: THREE.Vector3, look: THREE.Vector3, fov: number, shake: number, rigid = false) {
     const sh = this.shot;
-    sh.cut = name !== this.shotName && ["lcam", "upcam", "ground", "chute", "sep"].includes(name);
-    if (this.shotName === "lcam" || this.shotName === "upcam") sh.cut = name !== this.shotName;
+    // rigid shots ride with what they film, so they are placed exactly each frame
+    sh.cut = rigid || name !== this.shotName;
     this.shotName = name;
     sh.pos.copy(pos);
     sh.look.copy(look);

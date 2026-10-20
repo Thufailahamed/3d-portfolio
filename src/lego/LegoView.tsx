@@ -17,7 +17,17 @@ const LegoScene = dynamic(() => import("./LegoScene"), { ssr: false });
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const host = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-const INK = "#15171c";
+const INK = "#16181d";
+/** the printed stock every control and readout sits on: warm white card, a hairline edge, a real shadow */
+const SKIN = "rounded-[10px] bg-[#fbfaf6] text-[#16181d] shadow-[0_0_0_1px_rgba(22,24,29,.1),0_1px_2px_rgba(22,24,29,.08),0_12px_28px_-14px_rgba(22,24,29,.42)]";
+
+/** A hex colour mixed toward white (t > 0) or black (t < 0), for the faces of a drawn brick. */
+const shade = (hex: string, t: number) => {
+  const n = parseInt(hex.slice(1), 16);
+  const to = t > 0 ? 255 : 0;
+  const k = Math.abs(t);
+  return `rgb(${[16, 8, 0].map((s) => Math.round(((n >> s) & 255) * (1 - k) + to * k)).join(",")})`;
+};
 
 /** Stops: 0 home, 1 the projects heading, 2–7 one per project, then about and contact. */
 const PROJECT0 = 2;
@@ -182,26 +192,29 @@ function CameraMenu({ cam, slowmo, sound, light }: { cam: CamMode; slowmo: boole
       removeEventListener("keydown", esc);
     };
   }, [open]);
-  const item = "flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2 text-left transition-colors";
+  const item = "flex w-full items-center gap-3 rounded-[7px] px-2 py-1.5 text-left transition-colors";
+  const well = (on = false) => `grid h-8 w-8 shrink-0 place-items-center rounded-[6px] ${on ? "bg-white/[0.12]" : "bg-[#16181d]/[0.06]"}`;
   return (
     <div ref={box} className="relative">
-      <BrickButton
-        color={cam === "tour" ? "#ffffff" : "#15171c"}
-        ink={cam === "tour" ? INK : "#ffffff"}
-        studs={2}
+      <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={`Camera: ${CAM[cam].label} (K to switch)`}
-        title="Camera (K)"
-        className="max-sm:!px-3 lg:max-2xl:!px-3"
+        className={`inline-flex h-11 items-center gap-2 px-3.5 text-[13px] font-semibold transition-colors ${SKIN} ${open ? "!bg-[#f1efe8]" : "hover:!bg-[#f1efe8]"}`}
       >
         <CamIcon id={cam === "tour" ? "camera" : cam} size={15} />
         <span className="hidden xl:inline">{cam === "tour" ? "Camera" : CAM[cam].label}</span>
-      </BrickButton>
+        <svg aria-hidden width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={`opacity-50 transition-transform duration-200 max-sm:hidden ${open ? "rotate-180" : ""}`}>
+          <path d="m2 3.75 3 3 3-3" />
+        </svg>
+      </button>
       {open && (
-        <div role="menu" className="sr-rise absolute left-0 top-[calc(100%+10px)] z-30 w-[300px] max-w-[calc(100vw-32px)] rounded-[18px] bg-white/92 p-2 text-[#15171c] shadow-[0_30px_70px_-28px_rgba(16,24,40,.6)] ring-1 ring-black/[0.07] backdrop-blur-xl max-sm:fixed max-sm:inset-x-4 max-sm:top-[70px] max-sm:w-auto">
-          <p className="px-2.5 pb-1.5 pt-1 font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#15171c]/45">Camera · K to cycle</p>
+        <div role="menu" className="sr-rise absolute left-0 top-[calc(100%+8px)] z-30 w-[316px] max-w-[calc(100vw-32px)] rounded-[10px] bg-[#fbfaf6] p-1.5 text-[#16181d] shadow-[0_0_0_1px_rgba(22,24,29,.1),0_24px_60px_-20px_rgba(22,24,29,.5)] max-sm:fixed max-sm:inset-x-4 max-sm:top-[70px] max-sm:w-auto">
+          <p className="brick-label flex items-center justify-between px-2 pb-1.5 pt-1.5 text-[#16181d]/45">
+            Cameras <Kbd>K</Kbd>
+          </p>
           {CAMS.map((c) => {
             const on = c.id === cam;
             return (
@@ -214,70 +227,67 @@ function CameraMenu({ cam, slowmo, sound, light }: { cam: CamMode; slowmo: boole
                   setCam(c.id);
                   setOpen(false);
                 }}
-                className={`${item} ${on ? "bg-[#15171c] text-white" : "hover:bg-black/[0.05]"}`}
+                className={`${item} ${on ? "bg-[#16181d] text-[#fbfaf6]" : "hover:bg-[#16181d]/[0.05]"}`}
               >
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[9px] ${on ? "bg-white/12" : "bg-black/[0.05]"}`}>
+                <span className={well(on)}>
                   <CamIcon id={c.id} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[13px] font-semibold leading-tight">{c.label}</span>
-                  <span className={`block truncate text-[11.5px] leading-tight ${on ? "text-white/60" : "text-[#15171c]/55"}`}>{c.blurb}</span>
+                  <span className="block text-[13.5px] font-semibold leading-tight tracking-[-0.01em]">{c.label}</span>
+                  <span className={`block truncate text-[12px] leading-snug ${on ? "text-white/55" : "text-[#16181d]/50"}`}>{c.blurb}</span>
                 </span>
-                <span className={`hidden font-mono text-[9px] uppercase tracking-[0.08em] sm:block ${on ? "text-white/50" : "text-[#15171c]/35"}`}>{c.lens.split(" · ")[0]}</span>
+                <span className={`brick-num hidden text-[10.5px] font-medium sm:block ${on ? "text-white/45" : "text-[#16181d]/40"}`}>{c.lens.split(" · ")[0]}</span>
               </button>
             );
           })}
-          <div className="my-1.5 h-px bg-black/[0.07]" />
-          <p className="px-2.5 pb-1.5 pt-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#15171c]/45">Photo kit</p>
-          <button type="button" role="menuitem" onClick={() => (togglePhoto(), setOpen(false))} className={`${item} hover:bg-black/[0.05]`}>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-black/[0.05]">
+          <div className="mx-2 my-1.5 h-px bg-[#16181d]/[0.09]" />
+          <p className="brick-label px-2 pb-1.5 pt-1 text-[#16181d]/45">Photo kit</p>
+          <button type="button" role="menuitem" onClick={() => (togglePhoto(), setOpen(false))} className={`${item} hover:bg-[#16181d]/[0.05]`}>
+            <span className={well()}>
               <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M3 8V4h4M21 8V4h-4M3 16v4h4M21 16v4h-4" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </span>
-            <span className="flex-1 text-[13px] font-semibold">Photo mode</span>
-            <kbd className="font-mono text-[10px] text-[#15171c]/40">F</kbd>
+            <span className="flex-1 text-[13.5px] font-semibold">Photo mode</span>
+            <Kbd>F</Kbd>
           </button>
-          <button type="button" role="menuitemcheckbox" aria-checked={slowmo} onClick={toggleSlowmo} className={`${item} hover:bg-black/[0.05]`}>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-black/[0.05]">
+          <button type="button" role="menuitemcheckbox" aria-checked={slowmo} onClick={toggleSlowmo} className={`${item} hover:bg-[#16181d]/[0.05]`}>
+            <span className={well()}>
               <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="13" r="8" />
                 <path d="M12 9v4l2.5 2.5M10 2.5h4" />
               </svg>
             </span>
-            <span className="flex-1 text-[13px] font-semibold">Slow motion</span>
-            <span className={`h-[18px] w-[30px] rounded-full p-[2px] transition-colors ${slowmo ? "bg-[#15171c]" : "bg-black/15"}`}>
-              <span className={`block h-[14px] w-[14px] rounded-full bg-white transition-transform ${slowmo ? "translate-x-[12px]" : ""}`} />
+            <span className="flex-1 text-[13.5px] font-semibold">Slow motion</span>
+            <span className={`h-[18px] w-[30px] rounded-full p-[2px] transition-colors ${slowmo ? "bg-[#f5cd2f]" : "bg-[#16181d]/15"}`}>
+              <span className={`block h-[14px] w-[14px] rounded-full transition-transform ${slowmo ? "translate-x-[12px] bg-[#16181d]" : "bg-white shadow-[0_1px_2px_rgba(0,0,0,.25)]"}`} />
             </span>
-            <kbd className="font-mono text-[10px] text-[#15171c]/40">T</kbd>
+            <Kbd>T</Kbd>
           </button>
-          <button type="button" role="menuitem" onClick={() => (brickStorm(), setOpen(false))} className={`${item} hover:bg-black/[0.05]`}>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-black/[0.05]">
+          <button type="button" role="menuitem" onClick={() => (brickStorm(), setOpen(false))} className={`${item} hover:bg-[#16181d]/[0.05]`}>
+            <span className={well()}>
               <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6.5 15a4.5 4.5 0 1 1 1.2-8.8A5.5 5.5 0 0 1 18 8a3.5 3.5 0 0 1 .5 7z" />
                 <rect x="7" y="18" width="3.5" height="2.5" rx=".5" />
                 <rect x="13.5" y="17" width="3.5" height="2.5" rx=".5" />
               </svg>
             </span>
-            <span className="flex-1 text-[13px] font-semibold">Brick storm</span>
-            <kbd className="font-mono text-[10px] text-[#15171c]/40">B</kbd>
+            <span className="flex-1 text-[13.5px] font-semibold">Brick storm</span>
+            <Kbd>B</Kbd>
           </button>
-          <button type="button" role="menuitem" onClick={cycleTime} className={`${item} hover:bg-black/[0.05] sm:hidden`}>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-black/[0.05]">
+          <button type="button" role="menuitem" onClick={cycleTime} className={`${item} hover:bg-[#16181d]/[0.05] sm:hidden`}>
+            <span className={well()}>
               <LightIcon light={light} />
             </span>
-            <span className="flex-1 text-[13px] font-semibold">{LIGHT_NAME[light]}</span>
-            <span className="font-mono text-[10px] text-[#15171c]/40">tap to change</span>
+            <span className="flex-1 text-[13.5px] font-semibold">{LIGHT_NAME[light]}</span>
+            <span className="text-[11.5px] text-[#16181d]/40">Tap to change</span>
           </button>
-          <button type="button" role="menuitemcheckbox" aria-checked={sound} onClick={() => useLego.getState().set({ sound: !sound })} className={`${item} hover:bg-black/[0.05] sm:hidden`}>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-black/[0.05]">
-              <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 5 6 9H3v6h3l5 4z" />
-                {sound ? <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /> : <path d="m16 9 5 6M21 9l-5 6" />}
-              </svg>
+          <button type="button" role="menuitemcheckbox" aria-checked={sound} onClick={() => useLego.getState().set({ sound: !sound })} className={`${item} hover:bg-[#16181d]/[0.05] sm:hidden`}>
+            <span className={well()}>
+              <SoundIcon on={sound} />
             </span>
-            <span className="flex-1 text-[13px] font-semibold">{sound ? "Sound on" : "Sound off"}</span>
+            <span className="flex-1 text-[13.5px] font-semibold">{sound ? "Sound on" : "Sound off"}</span>
           </button>
         </div>
       )}
@@ -393,13 +403,13 @@ function GravityGauge({ g, on }: { g: number; on: boolean }) {
   const state = on ? (g > 0.04 ? "Gravity fading" : "Weightless") : "Gravity returning";
   return (
     <div className="flex items-center gap-3">
-      <span aria-hidden className="relative h-[26px] w-[6px] overflow-hidden rounded-full bg-white/15">
+      <span aria-hidden className="relative h-[26px] w-[5px] overflow-hidden rounded-full bg-white/15">
         <span className="absolute inset-x-0 bottom-0 rounded-full transition-[height] duration-100" style={{ height: `${g * 100}%`, background: g < 0.04 ? SPACE_INK : "#ffffff", boxShadow: g < 0.04 ? `0 0 8px ${SPACE_INK}` : undefined }} />
       </span>
-      <p className="text-[13px] leading-tight">
-        <span className="display text-[17px] tabular-nums">{g.toFixed(2)}</span>
-        <span className="text-white/55"> g</span>
-        <span className="block font-mono text-[9.5px] uppercase tracking-[0.14em] text-white/55">{state}</span>
+      <p className="leading-tight">
+        <span className="brick-num text-[15px] text-white">{g.toFixed(2)}</span>
+        <span className="brick-num text-[12px] text-white/50"> g</span>
+        <span className="block text-[11.5px] text-white/50">{state}</span>
       </p>
     </div>
   );
@@ -414,15 +424,37 @@ async function copy(text: string) {
   }
 }
 
-/** A row of studs, for anything that wants to look like it's made of bricks. */
+function SoundIcon({ on }: { on: boolean }) {
+  return (
+    <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 5 6 9H3v6h3l5 4z" />
+      {on ? <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /> : <path d="m16 9 5 6M21 9l-5 6" />}
+    </svg>
+  );
+}
+
+/** A keycap, for shortcuts: a little white cap with a thicker lip on the near edge. */
+function Kbd({ children, dark = false }: { children: ReactNode; dark?: boolean }) {
+  return (
+    <kbd
+      className={`brick-num inline-grid h-[19px] min-w-[19px] place-items-center rounded-[4px] border border-b-[2px] px-1 text-[10.5px] font-semibold leading-none ${dark ? "border-white/15 border-b-white/25 bg-white/[0.08] text-white/80" : "border-[#16181d]/15 border-b-[#16181d]/30 bg-white text-[#16181d]/75"}`}
+    >
+      {children}
+    </kbd>
+  );
+}
+
+/** A row of studs, seen from the side: each one shaded like the cylinder it is. */
 function Studs({ n, color, className = "" }: { n: number; color: string; className?: string }) {
   return (
-    <span aria-hidden className={`pointer-events-none absolute -top-[5px] left-0 right-0 flex justify-evenly ${className}`}>
+    <span aria-hidden className={`pointer-events-none absolute -top-[4px] left-0 right-0 flex justify-evenly px-1.5 ${className}`}>
       {Array.from({ length: n }, (_, i) => (
         <span
           key={i}
-          className="h-[7px] w-[18px] rounded-t-[4px]"
-          style={{ background: `linear-gradient(to bottom, color-mix(in oklab, ${color} 70%, white), ${color})`, boxShadow: "inset 0 -1px 0 rgba(0,0,0,.12)" }}
+          className="h-[5px] w-[16px] rounded-t-[3px]"
+          style={{
+            background: `linear-gradient(to right, ${shade(color, -0.22)}, ${shade(color, 0.28)} 32%, ${color} 62%, ${shade(color, -0.2)})`,
+          }}
         />
       ))}
     </span>
@@ -435,8 +467,8 @@ function BrickButton({ color, ink = INK, studs = 2, children, className = "", ..
     <button
       type="button"
       {...rest}
-      className={`relative mt-[5px] inline-flex items-center justify-center gap-2 rounded-[7px] px-4 py-2.5 text-[13px] font-semibold tracking-[-0.01em] transition-[transform,filter] duration-150 hover:brightness-105 active:translate-y-[2px] disabled:opacity-50 ${className}`}
-      style={{ background: color, color: ink, boxShadow: "inset 0 -3px 0 rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.35), 0 8px 18px -10px rgba(20,25,35,.55)" }}
+      className={`relative mt-[4px] inline-flex h-11 items-center justify-center gap-2 rounded-[4px] px-5 text-[14px] font-bold tracking-[-0.005em] transition-[transform,filter,box-shadow] duration-150 [font-stretch:104%] hover:-translate-y-px hover:brightness-[1.05] active:translate-y-[2px] disabled:opacity-50 ${className}`}
+      style={{ background: color, color: ink, boxShadow: `inset 0 -4px 0 ${shade(color, -0.24)}, inset 0 1px 0 rgba(255,255,255,.35), 0 0 0 1px ${shade(color, -0.32)}, 0 8px 14px -8px rgba(22,24,29,.55)` }}
     >
       <Studs n={studs} color={color} />
       {children}
@@ -444,35 +476,154 @@ function BrickButton({ color, ink = INK, studs = 2, children, className = "", ..
   );
 }
 
+/** A small button for the chips: quiet by default, or a solid colour when it should stand out. */
+function ChipButton({ color, ink = INK, children, className = "", ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { color?: string; ink?: string }) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={`inline-flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12.5px] font-semibold transition-[background-color,filter] duration-150 disabled:opacity-40 ${color ? "hover:brightness-[1.05]" : "bg-[#16181d]/[0.06] text-[#16181d] hover:bg-[#16181d]/[0.11]"} ${className}`}
+      style={color ? { background: color, color: ink, boxShadow: `inset 0 -2px 0 ${color.startsWith("#") ? shade(color, -0.22) : "rgba(0,0,0,.2)"}, inset 0 1px 0 rgba(255,255,255,.3)` } : undefined}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * One tool in the toolbar. Idle it's a quiet icon; switched on it fills with its own colour, like a
+ * brick pressed into place. Hovering shows its name and key.
+ */
+function Tool({ label, k, on = false, color = INK, ink = "#fbfaf6", children, className = "", ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string; k?: string; on?: boolean; color?: string; ink?: string }) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={`group relative grid h-9 w-9 shrink-0 place-items-center rounded-[7px] transition-[background-color,color,transform] duration-150 active:translate-y-px disabled:cursor-default disabled:opacity-40 ${on ? "" : "text-[#16181d]/70 hover:bg-[#16181d]/[0.06] hover:text-[#16181d]"} ${className}`}
+      style={on ? { background: color, color: ink, boxShadow: `inset 0 -2px 0 ${shade(color, -0.25)}, inset 0 1px 0 rgba(255,255,255,.3)` } : undefined}
+    >
+      {children}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute right-0 top-[calc(100%+10px)] z-30 flex items-center gap-2 whitespace-nowrap rounded-[6px] bg-[#16181d] py-1.5 pl-2.5 pr-1.5 text-[12px] font-medium text-white opacity-0 shadow-[0_12px_28px_-10px_rgba(0,0,0,.6)] transition-opacity duration-150 group-hover:opacity-100 group-hover:delay-300 group-focus-visible:opacity-100"
+      >
+        {label}
+        {k && <Kbd dark>{k}</Kbd>}
+      </span>
+    </button>
+  );
+}
+
+const Divider = ({ className = "" }: { className?: string }) => <span aria-hidden className={`mx-1 h-5 w-px shrink-0 bg-[#16181d]/[0.12] ${className}`} />;
+
 /** The site's logo, as a 2 × 4 brick seen from above. */
 function BrickLogo() {
   return (
-    <span aria-hidden className="grid h-[22px] w-[38px] grid-cols-4 grid-rows-2 place-items-center rounded-[4px] p-[3px]" style={{ background: C.red, boxShadow: "inset 0 -2px 0 rgba(0,0,0,.2)" }}>
+    <span aria-hidden className="grid h-[20px] w-[36px] grid-cols-4 grid-rows-2 place-items-center rounded-[3px] p-[2.5px]" style={{ background: C.red, boxShadow: "inset 0 -2px 0 rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.2), 0 0 0 1px #8f1206" }}>
       {Array.from({ length: 8 }, (_, i) => (
-        <span key={i} className="h-[6px] w-[6px] rounded-full" style={{ background: "#e0331f", boxShadow: "inset -1px -1px 0 rgba(0,0,0,.25), inset 1px 1px 0 rgba(255,255,255,.3)" }} />
+        <span key={i} className="h-[5.5px] w-[5.5px] rounded-full" style={{ background: "#d92a14", boxShadow: "inset -1px -1px 0 rgba(0,0,0,.28), inset 1px 1px 0 rgba(255,255,255,.32)" }} />
       ))}
     </span>
   );
 }
 
-function Card({ children, className = "", k, scroll }: { children: ReactNode; className?: string; k: string; scroll?: boolean }) {
+/**
+ * A brick drawn the way the parts callouts draw them: a three-quarter view with an ink outline,
+ * the top face lit, the end in shadow, and its studs standing up off the top.
+ */
+function Part({ studs = 2, color, size = 1 }: { studs?: number; color: string; size?: number }) {
+  const u = 9;
+  const w = studs * u;
+  const dx = 5;
+  const dy = 3.6;
+  const bh = 9.5;
+  const sh = 2.2;
+  const r = 2.5;
+  const top = sh + 1.6 + dy;
+  const line = shade(color, -0.55);
+  const edge = { stroke: line, strokeWidth: 0.7, strokeLinejoin: "round" as const };
   return (
-    <div
+    <svg aria-hidden width={(w + dx + 2) * size} height={(top + bh + 2) * size} viewBox={`-1 -1 ${w + dx + 2} ${top + bh + 2}`} className="shrink-0 overflow-visible">
+      <path d={`M0 ${top}h${w}v${bh}H0z`} fill={color} {...edge} />
+      <path d={`M${w} ${top}l${dx} ${-dy}v${bh}l${-dx} ${dy}z`} fill={shade(color, -0.22)} {...edge} />
+      <path d={`M0 ${top}l${dx} ${-dy}h${w}l${-dx} ${dy}z`} fill={shade(color, 0.22)} {...edge} />
+      {Array.from({ length: studs }, (_, i) => {
+        const cx = (i + 0.5) * u + dx / 2;
+        const cy = top - dy / 2;
+        return (
+          <g key={i}>
+            <path d={`M${cx - r} ${cy}v${-sh}a${r} ${r * 0.42} 0 0 0 ${2 * r} 0v${sh}a${r} ${r * 0.42} 0 0 1 ${-2 * r} 0z`} fill={color} {...edge} />
+            <ellipse cx={cx} cy={cy - sh} rx={r} ry={r * 0.42} fill={shade(color, 0.3)} {...edge} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+/** how many studs each line of a parts list gets, so a list reads as a handful of different pieces */
+const PART_STUDS = [2, 4, 1, 3, 2, 1];
+
+/**
+ * A card, printed like a page from the instruction booklet: warm white stock, a band of the
+ * section's colour along the top edge, and an optional strip at the foot for the small print.
+ */
+function Card({ children, className = "", k, scroll, foot, color }: { children: ReactNode; className?: string; k: string; scroll?: boolean; foot?: ReactNode; color: string }) {
+  return (
+    <section
       key={k}
       data-scroll={scroll || undefined}
-      className={`sr-panel pointer-events-auto rounded-[20px] bg-white/85 p-5 text-[#15171c] shadow-[0_28px_70px_-30px_rgba(16,24,40,.55)] ring-1 ring-black/[0.06] backdrop-blur-xl md:p-6 ${className}`}
+      className={`sr-panel pointer-events-auto overflow-hidden rounded-[8px] bg-[#fbfaf6] text-[#16181d] shadow-[0_0_0_1px_rgba(22,24,29,.1),0_2px_4px_rgba(22,24,29,.06),0_28px_60px_-28px_rgba(22,24,29,.55)] ${className}`}
     >
+      <div aria-hidden className="h-[6px]" style={{ background: color, boxShadow: `inset 0 -1px 0 ${shade(color, -0.25)}` }} />
+      <div className="px-5 pb-5 pt-4 md:px-7 md:pb-7 md:pt-5">{children}</div>
+      {foot && <div className="flex items-center justify-between gap-3 border-t border-[#16181d]/[0.09] bg-[#f1efe8] px-5 py-2.5 text-[12px] text-[#16181d]/55 md:px-7">{foot}</div>}
+    </section>
+  );
+}
+
+/**
+ * A card's first line, set like a booklet step: the big step number, what this step is,
+ * and anything that sits opposite.
+ */
+function CardHead({ n, children, sub, aside }: { n: number; children: ReactNode; sub?: ReactNode; aside?: ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 items-end gap-3">
+        <span className="brick-step text-[46px] md:text-[52px]">{n}</span>
+        <p className="min-w-0 pb-[3px] leading-tight">
+          <span className="block truncate text-[13px] font-semibold">{children}</span>
+          {sub && <span className="brick-num block truncate text-[11.5px] text-[#16181d]/50">{sub}</span>}
+        </p>
+      </div>
+      {aside}
+    </div>
+  );
+}
+
+/** The light-blue box a booklet puts the parts for a step in. */
+function Callout({ title, children, className = "" }: { title?: string; children: ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-[6px] border border-[#b3c9dc] bg-[#dde9f3] px-3.5 pb-3 pt-2.5 ${className}`}>
+      {title && <p className="brick-label mb-2 text-[#16181d]/50">{title}</p>}
       {children}
     </div>
   );
 }
 
-const Kicker = ({ children, color = C.red }: { children: ReactNode; color?: string }) => (
-  <p className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.16em] text-[#15171c]/60">
-    <span className="h-2 w-2 rounded-[2px]" style={{ background: color }} />
-    {children}
-  </p>
-);
+/** How to play: keycaps and what they do. Fades once it's been learned. */
+function Legend({ items, gone = false, bg }: { items: [string, string][]; gone?: boolean; bg?: string }) {
+  const dark = Boolean(bg);
+  return (
+    <p className={`flex flex-wrap items-center justify-end gap-x-3.5 gap-y-1.5 px-3 py-2 text-[12px] transition-opacity duration-700 ${SKIN} ${dark ? "!text-white/70" : "text-[#16181d]/65"} ${gone ? "opacity-0" : "opacity-100"}`} style={bg ? { background: bg } : undefined}>
+      {items.map(([key, does]) => (
+        <span key={key} className="flex items-center gap-1.5">
+          <Kbd dark={dark}>{key}</Kbd>
+          {does}
+        </span>
+      ))}
+    </p>
+  );
+}
 
 export default function LegoView() {
   const router = useRouter();
@@ -652,7 +803,7 @@ export default function LegoView() {
       ref={wrap}
       data-lenis-prevent
       data-cursor={hover ? CURSOR[hover] : undefined}
-      className="fixed inset-0 h-dvh select-none overflow-hidden bg-[#e9eee9] text-[#15171c]"
+      className="brick-ui fixed inset-0 h-dvh select-none overflow-hidden bg-[#e9eee9] text-[#15171c]"
       style={{ cursor: paint ? RETICLE : hover ? "pointer" : "crosshair" }}
     >
       <div className="absolute inset-0 touch-none">
@@ -674,16 +825,18 @@ export default function LegoView() {
 
       {/* —— top bar —— */}
       <header className={`pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 px-gutter pt-4 transition-opacity duration-300 md:pt-5 ${photo ? "invisible opacity-0" : ""}`}>
-        <div className="pointer-events-auto flex items-start gap-2">
-          <Link href="/" className="flex items-center gap-3 rounded-full bg-white/80 py-2 pl-3 pr-4 shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] ring-1 ring-black/5 backdrop-blur-xl" aria-label={`${person.name} — back to the main site`}>
+        <div className="pointer-events-auto flex items-center gap-2">
+          <Link href="/" className={`inline-flex h-11 items-center gap-3 pl-3.5 pr-4 transition-colors hover:!bg-[#f1efe8] ${SKIN}`} aria-label={`${person.name} — back to the main site`}>
             <BrickLogo />
-            <span className="display text-[15px] leading-none max-[420px]:hidden md:text-base">{person.shortName}</span>
-            <span className="hidden rounded-full bg-[#15171c] px-2 py-1 font-mono text-[9.5px] uppercase leading-none tracking-[0.14em] text-[#f5cd2f] sm:inline">Brick edition</span>
+            <span className="flex items-baseline gap-2 leading-none max-[420px]:hidden">
+              <span className="text-[14px] font-extrabold tracking-[-0.01em] [font-stretch:112%]">{person.shortName}</span>
+              <span className="brick-label hidden !text-[9.5px] text-[#16181d]/45 sm:inline">Brick Edition</span>
+            </span>
           </Link>
           <CameraMenu cam={cam} slowmo={slowmo} sound={sound} light={light} />
         </div>
 
-        <nav aria-label="Sections" className="pointer-events-auto absolute left-1/2 top-5 hidden -translate-x-1/2 gap-1 rounded-full bg-white/80 p-1 shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] ring-1 ring-black/5 backdrop-blur-xl lg:flex">
+        <nav aria-label="Sections" className={`pointer-events-auto absolute left-1/2 top-4 hidden -translate-x-1/2 items-center gap-0.5 p-1 md:top-5 lg:flex ${SKIN}`}>
           {GROUPS.map((g) => {
             const on = g.has(stop);
             return (
@@ -692,7 +845,7 @@ export default function LegoView() {
                 type="button"
                 onClick={() => go(g.stop)}
                 aria-current={on ? "true" : undefined}
-                className={`rounded-full px-4 py-2 text-[13px] font-semibold transition-colors ${on ? "bg-[#15171c] text-white" : "text-[#15171c]/60 hover:bg-black/5 hover:text-[#15171c]"}`}
+                className={`h-9 rounded-[7px] px-4 text-[13px] font-semibold transition-colors ${on ? "bg-[#16181d] text-[#fbfaf6] shadow-[inset_0_-2px_0_rgba(0,0,0,.5)]" : "text-[#16181d]/60 hover:bg-[#16181d]/[0.05] hover:text-[#16181d]"}`}
               >
                 {g.label}
               </button>
@@ -700,143 +853,152 @@ export default function LegoView() {
           })}
         </nav>
 
-        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
-          <BrickButton color={C.yellow} onClick={rebuild} disabled={building} aria-label="Rebuild everything (R)" title="Rebuild (R)" className="max-sm:!px-3 lg:max-2xl:!px-3">
-            <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+        <div role="toolbar" aria-label="Tools" className={`pointer-events-auto flex h-11 items-center gap-0.5 p-1 ${SKIN}`}>
+          <Tool label={building ? "Building…" : "Rebuild"} k="R" onClick={rebuild} disabled={building} aria-label="Rebuild everything (R)">
+            <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" className={building ? "animate-spin [animation-direction:reverse]" : ""}>
               <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
               <path d="M3 3v5h5" />
             </svg>
-            <span className="hidden sm:inline lg:hidden 2xl:inline">{building ? "Building…" : "Rebuild"}</span>
-          </BrickButton>
-          <BrickButton
-            color={vacuum ? "#3dff86" : "#ffffff"}
-            studs={2}
-            onClick={toggleVacuum}
-            aria-pressed={vacuum}
-            aria-label={vacuum ? "Put the vacuum away (V)" : "Get the vacuum out (V)"}
-            title="Vacuum (V)"
-            className="max-sm:!px-3 lg:max-2xl:!px-3"
-          >
-            <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          </Tool>
+          <Divider />
+          <Tool label="Vacuum" k="V" on={vacuum} color={C.brightGreen} ink="#fff" onClick={toggleVacuum} aria-pressed={vacuum} aria-label={vacuum ? "Put the vacuum away (V)" : "Get the vacuum out (V)"}>
+            <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 2.5v4.5" />
               <rect x="14.5" y="7" width="5" height="6.5" rx="2.2" />
               <path d="M17 13.5 9.5 19" />
               <path d="M4 19.5h8.5a1.5 1.5 0 0 0 0-3H6a2 2 0 0 0-2 2z" />
             </svg>
-            <span className="hidden sm:inline lg:hidden 2xl:inline">{vacuum ? "Vacuuming" : "Vacuum"}</span>
-          </BrickButton>
-          <BrickButton
-            color={paint ? PAINTS[paintColor].hex : "#ffffff"}
-            ink={paint && paintColor >= 4 && paintColor <= 6 ? "#fff" : INK}
-            studs={2}
+          </Tool>
+          <Tool
+            label="Paintball"
+            k="P"
+            on={paint}
+            color={PAINTS[paintColor].hex}
+            ink={paintColor >= 4 && paintColor <= 6 ? "#fff" : INK}
             onClick={togglePaint}
             aria-pressed={paint}
             aria-label={paint ? "Put the paintball marker away (P)" : "Pick up the paintball marker (P)"}
-            title="Paintball (P)"
-            className="max-sm:!px-3 lg:max-2xl:!px-3"
           >
-            <svg aria-hidden width="16" height="15" viewBox="0 0 26 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+            <svg aria-hidden width="16" height="15" viewBox="0 0 26 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M2 10h17.5M19.5 8.6h4.5v2.8h-4.5" />
               <path d="M2.5 7.5h15v5.5H8.5l-1.5 8H3.5l1.4-8H2.5z" />
               <path d="M11 13v3.5h3" />
               <ellipse cx="12" cy="4.2" rx="4.4" ry="2.6" />
             </svg>
-            <span className="hidden sm:inline lg:hidden 2xl:inline">{paint ? "Painting" : "Paintball"}</span>
-          </BrickButton>
-          <BrickButton
-            color={zeroG ? SPACE : "#ffffff"}
-            ink={zeroG ? SPACE_INK : INK}
-            studs={2}
-            onClick={toggleZeroG}
-            aria-pressed={zeroG}
-            aria-label={zeroG ? "Bring gravity back (G)" : "Switch gravity off (G)"}
-            title="Zero gravity (G)"
-            className="max-sm:!px-3 lg:max-2xl:!px-3"
-          >
-            <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
+          </Tool>
+          <Tool label="Zero gravity" k="G" on={zeroG} color={SPACE} ink={SPACE_INK} onClick={toggleZeroG} aria-pressed={zeroG} aria-label={zeroG ? "Bring gravity back (G)" : "Switch gravity off (G)"}>
+            <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="12" cy="12" r="3.6" />
               <ellipse cx="12" cy="12" rx="10" ry="4.2" transform="rotate(-28 12 12)" />
               <circle cx="20.9" cy="8.9" r="1.4" fill="currentColor" stroke="none" />
             </svg>
-            <span className="hidden sm:inline lg:hidden 2xl:inline">{zeroG ? "Floating" : "Zero-G"}</span>
-          </BrickButton>
-          <BrickButton
-            color={night ? "#1b2a5a" : golden ? GOLD : "#ffffff"}
+          </Tool>
+          <Divider className="max-sm:hidden" />
+          <Tool
+            label={LIGHT_NAME[light]}
+            k="N"
+            on={light !== "day"}
+            color={night ? "#25356d" : GOLD}
             ink={night ? "#ffe3a6" : INK}
-            studs={1}
             onClick={cycleTime}
             aria-label={`Light: ${LIGHT_NAME[light]} — switch to ${LIGHT_NAME[light === "day" ? "golden" : light === "golden" ? "night" : "day"]} (N)`}
-            title={`${LIGHT_NAME[light]} (N)`}
-            className="!px-3 max-sm:!hidden"
+            className="max-sm:!hidden"
           >
             <LightIcon light={light} />
-          </BrickButton>
-          <BrickButton color="#ffffff" studs={1} onClick={() => useLego.getState().set({ sound: !sound })} aria-pressed={sound} aria-label={sound ? "Mute brick sounds" : "Unmute brick sounds"} className="!px-3 max-sm:!hidden">
-            <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 5 6 9H3v6h3l5 4z" />
-              {sound ? <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /> : <path d="m16 9 5 6M21 9l-5 6" />}
-            </svg>
-          </BrickButton>
-          <Link
-            href="/"
-            className="relative mt-[5px] hidden items-center gap-1.5 rounded-[7px] bg-[#15171c] px-4 py-2.5 text-[13px] font-semibold text-white shadow-[inset_0_-3px_0_rgba(0,0,0,.4),0_8px_18px_-10px_rgba(20,25,35,.55)] md:inline-flex"
-          >
-            <Studs n={2} color="#2a2d35" />
+          </Tool>
+          <Tool label={sound ? "Sound on" : "Sound off"} onClick={() => useLego.getState().set({ sound: !sound })} aria-pressed={sound} aria-label={sound ? "Mute brick sounds" : "Unmute brick sounds"} className="max-sm:!hidden">
+            <SoundIcon on={sound} />
+          </Tool>
+          <Link href="/" className="ml-1 hidden h-9 items-center gap-1.5 rounded-[7px] bg-[#16181d] px-3.5 text-[13px] font-semibold text-[#fbfaf6] shadow-[inset_0_-2px_0_rgba(0,0,0,.5)] transition-colors hover:bg-[#2a2d34] md:inline-flex">
             Exit
-            <span aria-hidden>↗</span>
+            <svg aria-hidden width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="opacity-60">
+              <path d="M3 7 7 3M3.5 3H7v3.5" />
+            </svg>
           </Link>
         </div>
       </header>
 
       {/* —— which camera is rolling (anything but the tour) —— */}
       {ui && cam !== "tour" && (
-        <div key={cam} className="sr-rise pointer-events-auto absolute left-gutter top-[76px] z-10 hidden items-center gap-3 rounded-full bg-[#15171c]/80 py-1.5 pl-3 pr-1.5 text-white shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] backdrop-blur-xl md:top-[84px] md:flex">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[#ff3b30] shadow-[0_0_8px_#ff3b30]" />
-          <p className="font-mono text-[10px] uppercase leading-tight tracking-[0.14em]">
+        <div key={cam} className={`sr-rise pointer-events-auto absolute left-gutter top-[72px] z-10 hidden items-center gap-3 py-1.5 pl-3.5 pr-1.5 md:top-[80px] md:flex ${SKIN}`}>
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#e3261b] shadow-[0_0_0_3px_rgba(227,38,27,.18)]" />
+          <p className="text-[12.5px] font-semibold leading-tight">
             {CAM[cam].label}
-            <span className="block text-white/50">
+            <span className="block text-[11.5px] font-normal text-[#16181d]/50">
               {cam === "chase" ? `Car ${(((chaseCar % 8) + 8) % 8) + 1} of 8 · ← → to switch` : cam === "orbit" ? "Drag to circle · scroll to zoom" : cam === "cinema" ? "Rolling on its own · scroll to steer" : CAM[cam].lens}
             </span>
           </p>
-          {cam === "chase" && (
-            <BrickButton color="#ffffff" onClick={() => useLego.getState().set({ chaseCar: chaseCar + 1 })} className="!mt-0 !py-1.5 !text-[12px]" studs={2} title="Ride another car (→)">
-              Next car
-            </BrickButton>
-          )}
-          <BrickButton color="#ffffff" onClick={() => setCam("tour")} className="!mt-0 !py-1.5 !text-[12px]" studs={2} title="Back to the tour">
-            Exit
-          </BrickButton>
+          {cam === "chase" && <ChipButton onClick={() => useLego.getState().set({ chaseCar: chaseCar + 1 })}>Next car</ChipButton>}
+          <ChipButton onClick={() => setCam("tour")}>Exit</ChipButton>
         </div>
       )}
 
-      {/* —— the panel for the current stop —— */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-gutter pb-4 md:bottom-6 md:left-0 md:right-auto md:w-[min(440px,42vw)] md:pb-0">
+      {/* —— the page of the booklet for the current stop —— */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-gutter pb-4 md:bottom-6 md:left-0 md:right-auto md:w-[min(452px,42vw)] md:pb-0">
         {ui && stop === 0 && (
-          <Card k="hero">
-            <Kicker>{person.role} · {person.location}</Kicker>
-            <h1 className="display mt-3 text-[clamp(28px,3.2vw,44px)]">{beats.hero[0]}</h1>
-            <p className="mt-3 hidden text-[14.5px] leading-relaxed text-[#15171c]/70 md:block">{person.intro}</p>
-            <p className="mt-3 text-[14px] leading-relaxed text-[#15171c]/70 md:hidden">Everything here is built from bricks — and everything can be knocked down.</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Card
+            k="hero"
+            color={C.red}
+            foot={
+              <>
+                <span className="truncate">{person.location}</span>
+                {total > 0 && (
+                  <span className="brick-num shrink-0 font-semibold text-[#16181d]">
+                    {total.toLocaleString()}
+                    <span className="font-normal text-[#16181d]/50"> pcs/pzs</span>
+                  </span>
+                )}
+              </>
+            }
+          >
+            <CardHead n={stop + 1} sub={`Step ${stop + 1} of ${count}`}>
+              {person.role}
+            </CardHead>
+            <h1 className="brick-display mt-5 text-[clamp(32px,3.3vw,48px)]">{beats.hero[0]}</h1>
+            <p className="mt-4 hidden text-pretty text-[15px] leading-[1.6] text-[#16181d]/70 md:block">{person.intro}</p>
+            <p className="mt-3 text-[14.5px] leading-[1.55] text-[#16181d]/70 md:hidden">Everything here is built from bricks — and everything can be knocked down.</p>
+            <div className="mt-6 flex flex-wrap items-center gap-4">
               <BrickButton color={C.red} ink="#fff" onClick={() => go(1)} studs={3}>
-                See the work <span aria-hidden>→</span>
+                See the work
+                <svg aria-hidden width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 8h10M9 4l4 4-4 4" />
+                </svg>
               </BrickButton>
-              <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#15171c]/50">or scroll</span>
+              <span className="flex items-center gap-2 text-[12.5px] text-[#16181d]/50">
+                <Kbd>↓</Kbd> or scroll
+              </span>
             </div>
           </Card>
         )}
 
         {ui && stop === 1 && (
-          <Card k="projects">
-            <Kicker color={C.blue}>Selected work · {pad(projects.length)} builds</Kicker>
-            <h2 className="display mt-3 text-[clamp(26px,2.8vw,40px)]">Six systems, built brick by brick.</h2>
-            <p className="mt-3 text-[14.5px] leading-relaxed text-[#15171c]/70">Each one stands on its own plinth. Scroll to walk the line, click a poster to open its file — or knock it over first.</p>
-            <ol className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5">
+          <Card
+            k="projects"
+            color={C.blue}
+            foot={
+              <>
+                <span>Click a poster to open it — or knock it over first</span>
+                <span className="brick-num shrink-0 font-semibold text-[#16181d]">{projects.length} builds</span>
+              </>
+            }
+          >
+            <CardHead n={stop + 1} sub={`Step ${stop + 1} of ${count}`}>
+              Selected work
+            </CardHead>
+            <h2 className="brick-display mt-5 text-[clamp(28px,2.8vw,40px)]">Six systems, built brick by brick.</h2>
+            <ol className="mt-5 border-t border-[#16181d]/[0.1]">
               {projects.map((p, i) => (
                 <li key={p.slug}>
-                  <button type="button" onClick={() => go(PROJECT0 + i)} className="group flex w-full items-center gap-2 text-left text-[13px] font-medium">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ background: TINT[p.slug] }} />
-                    <span className="truncate group-hover:underline">{p.title}</span>
+                  <button type="button" onClick={() => go(PROJECT0 + i)} className="group flex w-full items-center gap-3 border-b border-[#16181d]/[0.08] py-2.5 text-left">
+                    <span className="brick-num w-4 text-[11px] font-semibold text-[#16181d]/35">{i + 1}</span>
+                    <span className="grid w-[30px] place-items-center">
+                      <Part studs={2} color={TINT[p.slug]} />
+                    </span>
+                    <span className="shrink-0 text-[14.5px] font-semibold underline decoration-transparent underline-offset-4 transition-colors group-hover:decoration-[#16181d]/40">{p.title}</span>
+                    <span className="hidden min-w-0 flex-1 truncate text-right text-[12px] text-[#16181d]/45 sm:block">{p.category}</span>
+                    <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="-translate-x-1 opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100">
+                      <path d="M3 8h10M9 4l4 4-4 4" />
+                    </svg>
                   </button>
                 </li>
               ))}
@@ -845,63 +1007,103 @@ export default function LegoView() {
         )}
 
         {ui && project && (
-          <Card k={project.slug} className="max-md:max-h-[46dvh] max-md:overflow-y-auto" scroll>
-            <div className="flex items-center justify-between gap-3">
-              <Kicker color={TINT[project.slug]}>
-                {pad(pi + 1)} / {pad(projects.length)} · {project.category}
-              </Kicker>
-              <div className="flex gap-1">
-                <button type="button" onClick={() => step(-1)} aria-label="Previous" className="h-8 w-8 rounded-full text-[#15171c]/60 ring-1 ring-black/10 transition-colors hover:bg-black/5 hover:text-[#15171c]">←</button>
-                <button type="button" onClick={() => step(1)} aria-label="Next" className="h-8 w-8 rounded-full text-[#15171c]/60 ring-1 ring-black/10 transition-colors hover:bg-black/5 hover:text-[#15171c]">→</button>
-              </div>
-            </div>
-            <h2 className="display mt-3 text-[clamp(30px,3.4vw,50px)]">{project.title}</h2>
-            <p className="mt-3 text-[15px] leading-snug text-[#15171c]/75">{project.tagline}</p>
+          <Card
+            k={project.slug}
+            color={TINT[project.slug]}
+            className="max-md:max-h-[50dvh] max-md:overflow-y-auto"
+            scroll
+            foot={
+              <>
+                {project.link ? (
+                  <a href={project.link} target="_blank" rel="noreferrer" className="truncate font-medium text-[#16181d]/70 underline decoration-[#16181d]/25 underline-offset-4 transition-colors hover:text-[#16181d] hover:decoration-[#16181d]/70">
+                    {host(project.link)} ↗
+                  </a>
+                ) : (
+                  <span>{project.category}</span>
+                )}
+                <span className="brick-num shrink-0">
+                  {project.year}
+                </span>
+              </>
+            }
+          >
+            <CardHead
+              n={pi + 1}
+              sub={`Build ${pi + 1} of ${projects.length}`}
+              aside={
+                <div className="flex shrink-0 gap-1">
+                  {[-1, 1].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => step(d)}
+                      aria-label={d < 0 ? "Previous" : "Next"}
+                      className="grid h-8 w-8 place-items-center rounded-[6px] border border-[#16181d]/[0.12] bg-white text-[#16181d]/70 shadow-[inset_0_-2px_0_rgba(22,24,29,.08)] transition-colors hover:border-[#16181d]/25 hover:text-[#16181d]"
+                    >
+                      <svg aria-hidden width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={d < 0 ? "rotate-180" : ""}>
+                        <path d="M3 8h10M9 4l4 4-4 4" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              }
+            >
+              {project.category}
+            </CardHead>
+            <h2 className="brick-display mt-5 text-[clamp(32px,3.4vw,50px)]">{project.title}</h2>
+            <p className="mt-3 text-pretty text-[15px] leading-[1.55] text-[#16181d]/70">{project.tagline}</p>
             {project.metrics && (
-              <dl className="mt-4 grid grid-cols-3 gap-2">
+              <dl className="mt-5 grid grid-cols-3 divide-x divide-[#16181d]/[0.1] border-y border-[#16181d]/[0.1]">
                 {project.metrics.map((m) => (
-                  <div key={m.label} className="rounded-[10px] bg-[#15171c]/[0.04] px-3 py-2.5">
+                  <div key={m.label} className="py-3 pl-3 pr-2 first:pl-0">
                     <dt className="sr-only">{m.label}</dt>
-                    <dd className="display text-[22px]">{m.value}</dd>
-                    <dd className="mt-1 text-[11px] leading-tight text-[#15171c]/55">{m.label}</dd>
+                    <dd className="brick-display brick-num text-[24px]">{m.value}</dd>
+                    <dd className="mt-1.5 text-[11.5px] leading-snug text-[#16181d]/55">{m.label}</dd>
                   </div>
                 ))}
               </dl>
             )}
-            <ul className="mt-3 flex flex-wrap gap-1.5">
-              {project.stack.map((s) => (
-                <li key={s} className="rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[#15171c]/70 ring-1 ring-black/10">
-                  {s}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Callout title="In the box" className="mt-5">
+              {/* laid out the way a booklet lays out a step's parts: each piece, its count under it */}
+              <ul className="grid grid-cols-4 gap-x-3 gap-y-3">
+                {project.stack.map((s, i) => (
+                  <li key={s} className="min-w-0">
+                    <span className="flex h-[27px] items-end">
+                      <Part studs={PART_STUDS[i % PART_STUDS.length]} color={TINT[project.slug]} size={1.15} />
+                    </span>
+                    <span className="brick-num mt-1.5 block text-[12.5px] font-bold leading-none">1×</span>
+                    <span className="mt-1 block text-[11.5px] font-medium leading-[1.25] text-[#16181d]/70 [overflow-wrap:anywhere]">{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </Callout>
+            <div className="mt-6">
               <BrickButton color={TINT[project.slug]} studs={3} onClick={() => router.push(`/projects/${project.slug}`)}>
                 Open the case study
+                <svg aria-hidden width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 8h10M9 4l4 4-4 4" />
+                </svg>
               </BrickButton>
-              {project.link && (
-                <a href={project.link} target="_blank" rel="noreferrer" className="text-[13px] font-semibold underline decoration-black/20 underline-offset-4 hover:decoration-black/60">
-                  {host(project.link)} ↗
-                </a>
-              )}
             </div>
           </Card>
         )}
 
         {ui && stop === ABOUT && (
-          <Card k="about">
-            <Kicker color={C.darkTurquoise}>About</Kicker>
-            <h2 className="display mt-3 text-[clamp(28px,3vw,44px)]">{about.headline}</h2>
+          <Card k="about" color={C.darkTurquoise}>
+            <CardHead n={stop + 1} sub={`Step ${stop + 1} of ${count}`}>
+              About the builder
+            </CardHead>
+            <h2 className="brick-display mt-5 text-[clamp(30px,3.1vw,46px)]">{about.headline}</h2>
             {about.body.map((b) => (
-              <p key={b} className="mt-3 text-[14px] leading-relaxed text-[#15171c]/70 max-md:[&:not(:first-of-type)]:hidden">
+              <p key={b} className="mt-3 text-pretty text-[14.5px] leading-[1.6] text-[#16181d]/70 max-md:[&:not(:first-of-type)]:hidden">
                 {b}
               </p>
             ))}
-            <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-black/[0.07] pt-4">
+            <dl className="mt-6 border-t border-[#16181d]/[0.1]">
               {about.annotations.map((a) => (
-                <div key={a.label}>
-                  <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#15171c]/45">{a.label}</dt>
-                  <dd className="text-[13.5px] font-semibold">{a.value}</dd>
+                <div key={a.label} className="flex items-baseline justify-between gap-4 border-b border-[#16181d]/[0.08] py-2.5">
+                  <dt className="shrink-0 text-[12.5px] text-[#16181d]/55">{a.label}</dt>
+                  <dd className="truncate text-right text-[14px] font-semibold tracking-[-0.01em]">{a.value}</dd>
                 </div>
               ))}
             </dl>
@@ -909,14 +1111,26 @@ export default function LegoView() {
         )}
 
         {ui && stop === CONTACT && (
-          <Card k="contact">
-            <Kicker color={C.lime}>{contact.label}</Kicker>
-            <h2 className="display mt-3 text-[clamp(28px,3vw,44px)]">{contact.heading}</h2>
-            <p className="mt-3 text-[14px] leading-relaxed text-[#15171c]/70">{contact.note}</p>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Card
+            k="contact"
+            color={C.lime}
+            foot={
+              <>
+                <span className="truncate">
+                  © {contact.year} {person.name}
+                </span>
+                <span className="shrink-0">three.js · Rapier</span>
+              </>
+            }
+          >
+            <CardHead n={stop + 1} sub={`Step ${stop + 1} of ${count} · last one`}>
+              {contact.label}
+            </CardHead>
+            <h2 className="brick-display mt-5 text-[clamp(30px,3.1vw,46px)]">{contact.heading}</h2>
+            <p className="mt-3 text-pretty text-[14.5px] leading-[1.6] text-[#16181d]/70">{contact.note}</p>
+            <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
               <BrickButton
-                color="#15171c"
-                ink={C.lime}
+                color={C.lime}
                 studs={4}
                 onClick={async () => {
                   const ok = await copy(person.email);
@@ -925,46 +1139,43 @@ export default function LegoView() {
               >
                 {person.email}
               </BrickButton>
-              {person.socials.map((s) => (
-                <a key={s.label} href={s.href} target="_blank" rel="noreferrer" className="px-1 text-[13px] font-semibold underline decoration-black/20 underline-offset-4 hover:decoration-black/60">
-                  {s.label} ↗
-                </a>
-              ))}
+              <span className="flex flex-wrap gap-x-4 gap-y-1">
+                {person.socials.map((s) => (
+                  <a key={s.label} href={s.href} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-[#16181d]/75 underline decoration-[#16181d]/25 underline-offset-4 transition-colors hover:text-[#16181d] hover:decoration-[#16181d]/70">
+                    {s.label} ↗
+                  </a>
+                ))}
+              </span>
             </div>
-            <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[#15171c]/40">© {contact.year} {person.name} · Built with three.js and Rapier</p>
           </Card>
         )}
       </div>
 
       {/* —— bottom right: how to play, and the damage done —— */}
       {ui && (
-        <div className="pointer-events-none absolute bottom-6 right-gutter z-10 hidden flex-col items-end gap-2 md:flex">
+        <div className="pointer-events-none absolute bottom-6 right-gutter z-10 hidden max-w-[min(560px,50vw)] flex-col items-end gap-2 md:flex">
           {slowmo && (
-            <div key="slowmo" className="sr-rise pointer-events-auto flex items-center gap-3 rounded-full bg-[#15171c]/85 py-1.5 pl-4 pr-1.5 text-white shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] backdrop-blur-xl">
-              <p className="text-[13px]">
-                <span className="display text-[17px] tabular-nums">0.2×</span>
-                <span className="text-white/55"> slow motion</span>
+            <div key="slowmo" className={`sr-rise pointer-events-auto flex items-center gap-3 py-1.5 pl-4 pr-1.5 ${SKIN}`}>
+              <p className="text-[12.5px] text-[#16181d]/55">
+                <span className="brick-num text-[15px] font-bold text-[#16181d]">0.2×</span> slow motion
               </p>
-              <BrickButton color="#ffffff" onClick={toggleSlowmo} className="!mt-0 !py-1.5 !text-[12px]" studs={2} title="Back to real time (T)">
-                Real time
-              </BrickButton>
+              <ChipButton onClick={toggleSlowmo}>Real time</ChipButton>
             </div>
           )}
           {(zeroG || gravity < 1) && (
-            <div key="zerog" className="sr-rise pointer-events-auto flex items-center gap-4 rounded-full py-1.5 pl-4 pr-1.5 text-white shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] backdrop-blur-xl" style={{ background: `color-mix(in oklab, ${SPACE} 88%, transparent)` }}>
+            <div key="zerog" className={`sr-rise pointer-events-auto flex items-center gap-4 py-1.5 pl-4 pr-1.5 !text-white ${SKIN}`} style={{ background: `color-mix(in oklab, ${SPACE} 96%, transparent)` }}>
               <GravityGauge g={gravity} on={zeroG} />
-              <BrickButton color={zeroG ? "#ffffff" : SPACE_INK} onClick={toggleZeroG} disabled={!zeroG} className="!mt-0 !py-1.5 !text-[12px]" studs={2} title="Bring gravity back (G)">
+              <ChipButton color={zeroG ? SPACE_INK : "#2a3456"} ink={zeroG ? SPACE : "#fff"} onClick={toggleZeroG} disabled={!zeroG}>
                 Gravity on
-              </BrickButton>
+              </ChipButton>
             </div>
           )}
           {paint && (
-            <div key="paint" className="sr-rise pointer-events-auto flex items-center gap-3 rounded-full bg-[#15171c]/85 py-1.5 pl-4 pr-1.5 text-white shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] backdrop-blur-xl">
-              <p className="text-[13px] tabular-nums">
-                <span className="display text-[17px]">{ammo < 0 ? "··" : ammo}</span>
-                <span className="text-white/55"> {ammo < 0 ? "loading" : "balls"} · {splats} splats</span>
+            <div key="paint" className={`sr-rise pointer-events-auto flex items-center gap-3.5 py-1.5 pl-4 pr-1.5 ${SKIN}`}>
+              <p className="text-[12.5px] text-[#16181d]/55">
+                <span className="brick-num text-[15px] font-bold text-[#16181d]">{ammo < 0 ? "··" : ammo}</span> {ammo < 0 ? "loading" : "balls"} · <span className="brick-num font-semibold text-[#16181d]/80">{splats}</span> splats
               </p>
-              <div role="radiogroup" aria-label="Paint colour" className="flex items-center gap-1">
+              <div role="radiogroup" aria-label="Paint colour" className="flex items-center gap-1.5">
                 {PAINTS.map((c, i) => (
                   <button
                     key={c.hex}
@@ -974,116 +1185,124 @@ export default function LegoView() {
                     aria-label={`${c.name} (${i + 1})`}
                     title={`${c.name} (${i + 1})`}
                     onClick={() => useLego.getState().set({ paintColor: i })}
-                    className={`h-[18px] w-[18px] rounded-full transition-transform duration-150 hover:scale-110 ${i === paintColor ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[#15171c]" : ""}`}
-                    style={{ background: `radial-gradient(circle at 35% 30%, color-mix(in oklab, ${c.hex} 55%, white), ${c.hex} 60%)`, boxShadow: "inset 0 -2px 3px rgba(0,0,0,.25)" }}
+                    className={`h-[17px] w-[17px] rounded-full transition-transform duration-150 hover:scale-110 ${i === paintColor ? "scale-110 ring-2 ring-[#16181d] ring-offset-2 ring-offset-[#fbfaf6]" : ""}`}
+                    style={{ background: `radial-gradient(circle at 35% 30%, ${shade(c.hex, 0.45)}, ${c.hex} 60%)`, boxShadow: "inset 0 -2px 3px rgba(0,0,0,.25), 0 0 0 1px rgba(22,24,29,.15)" }}
                   />
                 ))}
               </div>
-              <BrickButton color="#ffffff" onClick={() => useLego.getState().set({ washTick: useLego.getState().washTick + 1 })} disabled={!splats} className="!mt-0 !py-1.5 !text-[12px]" studs={2} title="Wash the paint off (C)">
+              <ChipButton onClick={() => useLego.getState().set({ washTick: useLego.getState().washTick + 1 })} disabled={!splats}>
                 Wash
-              </BrickButton>
+              </ChipButton>
             </div>
           )}
           {vacuum && (
-            <div key="sucked" className="sr-rise pointer-events-none flex items-center gap-2.5 rounded-full bg-[#15171c]/85 py-2 pl-3 pr-4 text-white shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] backdrop-blur-xl">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-[#3dff86] shadow-[0_0_10px_#3dff86]" />
-              <p className="text-[13px]">
-                <span className="display text-[17px] tabular-nums">{sucked}</span>
-                <span className="text-white/60"> {sucked === 1 ? "brick" : "bricks"} in the bin</span>
+            <div key="sucked" className={`sr-rise pointer-events-none flex items-center gap-2.5 py-2.5 pl-3.5 pr-4 ${SKIN}`}>
+              <span className="h-2 w-2 animate-pulse rounded-full" style={{ background: C.brightGreen, boxShadow: `0 0 0 3px ${shade(C.brightGreen, 0.7)}` }} />
+              <p className="text-[12.5px] text-[#16181d]/55">
+                <span className="brick-num text-[15px] font-bold text-[#16181d]">{sucked}</span> {sucked === 1 ? "brick" : "bricks"} in the bin
               </p>
             </div>
           )}
           {knocked > 0 && (
-            <div key="knocked" className="sr-rise pointer-events-auto flex items-center gap-3 rounded-full bg-white/85 py-1.5 pl-4 pr-1.5 shadow-[0_10px_30px_-18px_rgba(16,24,40,.6)] ring-1 ring-black/5 backdrop-blur-xl">
-              <p className="text-[13px]">
-                <span className="display text-[17px] tabular-nums">{knocked}</span>
-                <span className="text-[#15171c]/55"> of {total} bricks knocked loose</span>
+            <div key="knocked" className={`sr-rise pointer-events-auto flex items-center gap-3 py-1.5 pl-4 pr-1.5 ${SKIN}`}>
+              <p className="text-[12.5px] text-[#16181d]/55">
+                <span className="brick-num text-[15px] font-bold text-[#16181d]">{knocked}</span>
+                <span className="brick-num text-[#16181d]/40"> / {total}</span> pieces loose
               </p>
-              <BrickButton color={C.yellow} onClick={rebuild} disabled={building} className="!mt-0 !py-1.5 !text-[12px]" studs={2}>
+              <ChipButton color={C.yellow} onClick={rebuild} disabled={building}>
                 Rebuild
-              </BrickButton>
+              </ChipButton>
             </div>
           )}
           {zeroG && !paint && !vacuum ? (
-            <p key="zg-hint" className={`rounded-full px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-white/85 backdrop-blur transition-opacity duration-700 ${throws > 8 ? "opacity-0" : "opacity-100"}`} style={{ background: `color-mix(in oklab, ${SPACE} 80%, transparent)` }}>
-              Click to throw — no arc, it flies dead straight · G brings gravity back · R rebuilds
-            </p>
+            <Legend key="zg-hint" gone={throws > 8} bg={`color-mix(in oklab, ${SPACE} 96%, transparent)`} items={[["Click", "throw — it flies dead straight"], ["G", "gravity back"], ["R", "rebuild"]]} />
           ) : paint ? (
-            <p key="paint-hint" className={`rounded-full bg-[#15171c]/80 px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-white/85 backdrop-blur transition-opacity duration-700 ${fired > 40 ? "opacity-0" : "opacity-100"}`}>
-              Click to fire · Hold for full auto · 1–8 paint · C washes it off · P to put it down
-            </p>
+            <Legend key="paint-hint" gone={fired > 40} items={[["Click", "fire"], ["Hold", "full auto"], ["1–8", "colour"], ["C", "wash"], ["P", "put down"]]} />
           ) : vacuum ? (
-            <p key="vac-hint" className="rounded-full bg-[#15171c]/80 px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-white/85 backdrop-blur">
-              Move to steer · Hold to boost · R puts it all back · V to stop
-            </p>
+            <Legend key="vac-hint" items={[["Move", "steer"], ["Hold", "boost"], ["R", "put it back"], ["V", "stop"]]} />
           ) : (
-            <p className={`rounded-full bg-[#15171c]/80 px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-white/85 backdrop-blur transition-opacity duration-700 ${throws > 2 ? "opacity-0" : "opacity-100"}`}>
-              Click to throw a brick · Drag to look · Scroll to explore · K for cameras · F for photo mode · B for a brick storm
-            </p>
+            <Legend key="hint" gone={throws > 2} items={[["Click", "throw a brick"], ["Drag", "look"], ["Scroll", "explore"], ["K", "cameras"], ["F", "photo"], ["B", "storm"]]} />
           )}
         </div>
       )}
 
-      {/* —— progress rail (stops) —— */}
+      {/* —— progress rail (stops), stacked like 1 × 2 plates —— */}
       {ui && (
-        <div aria-hidden className="pointer-events-none absolute right-gutter top-1/2 z-10 hidden -translate-y-1/2 flex-col items-center gap-2 lg:flex">
+        <div aria-hidden className="pointer-events-none absolute right-gutter top-1/2 z-10 hidden -translate-y-1/2 flex-col items-center gap-1.5 lg:flex">
           {Array.from({ length: count }, (_, i) => (
-            <span key={i} className="block rounded-full transition-all duration-500" style={{ width: 8, height: i === stop ? 22 : 8, background: i === stop ? C.red : "rgba(21,23,28,.22)" }} />
+            <span
+              key={i}
+              className="block rounded-[2px] transition-all duration-500"
+              style={{ width: 7, height: i === stop ? 26 : 7, background: i === stop ? C.red : "#fbfaf6", boxShadow: i === stop ? "inset 0 -2px 0 rgba(0,0,0,.25), 0 0 0 1px #8f1206" : "0 0 0 1px rgba(22,24,29,.22), 0 1px 2px rgba(22,24,29,.2)" }}
+            />
           ))}
         </div>
       )}
 
-      {/* —— mobile: a hint under the panel —— */}
+      {/* —— mobile: a hint under the top bar —— */}
       {ui && vacuum && (
-        <p className="pointer-events-none absolute inset-x-0 top-[72px] z-10 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-[#15171c]/60 md:hidden">
-          Drag to vacuum · {sucked} in the bin
+        <p className="pointer-events-none absolute inset-x-0 top-[72px] z-10 flex justify-center md:hidden">
+          <span className={`px-3 py-1.5 text-[12px] text-[#16181d]/70 ${SKIN}`}>
+            Drag to vacuum · <span className="brick-num font-bold text-[#16181d]">{sucked}</span> in the bin
+          </span>
         </p>
       )}
       {ui && paint && (
         <div className="pointer-events-auto absolute inset-x-0 top-[72px] z-10 flex flex-col items-center gap-2 md:hidden">
-          <div className="flex gap-1.5 rounded-full bg-[#15171c]/80 p-1.5 backdrop-blur">
+          <div className={`flex gap-1.5 p-1.5 ${SKIN}`}>
             {PAINTS.map((c, i) => (
               <button
                 key={c.hex}
                 type="button"
                 aria-label={c.name}
                 onClick={() => useLego.getState().set({ paintColor: i })}
-                className={`h-6 w-6 rounded-full ${i === paintColor ? "ring-2 ring-white ring-offset-2 ring-offset-[#15171c]" : ""}`}
-                style={{ background: c.hex }}
+                className={`h-6 w-6 rounded-full ${i === paintColor ? "ring-2 ring-[#16181d] ring-offset-2 ring-offset-[#fbfaf6]" : ""}`}
+                style={{ background: c.hex, boxShadow: "inset 0 -2px 3px rgba(0,0,0,.25)" }}
               />
             ))}
           </div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#15171c]/60">Tap to fire · Hold for full auto · {splats} splats</p>
+          <p className={`px-3 py-1.5 text-[12px] text-[#16181d]/70 ${SKIN}`}>
+            Tap to fire · hold for full auto · <span className="brick-num font-bold text-[#16181d]">{splats}</span> splats
+          </p>
         </div>
       )}
       {ui && zeroG && !vacuum && !paint && (
-        <p className="pointer-events-none absolute inset-x-0 top-[72px] z-10 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-[#15171c]/60 md:hidden">
-          {gravity.toFixed(2)} g · {gravity > 0.04 ? "gravity fading" : "weightless"} · tap to throw
+        <p className="pointer-events-none absolute inset-x-0 top-[72px] z-10 flex justify-center md:hidden">
+          <span className={`px-3 py-1.5 text-[12px] !text-white/75 ${SKIN}`} style={{ background: SPACE }}>
+            <span className="brick-num font-bold text-white">{gravity.toFixed(2)} g</span> · {gravity > 0.04 ? "gravity fading" : "weightless"} · tap to throw
+          </span>
         </p>
       )}
       {ui && !vacuum && !paint && !zeroG && throws === 0 && (
-        <p className="pointer-events-none absolute inset-x-0 top-[72px] z-10 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-[#15171c]/60 md:hidden">Tap to throw · Swipe to move</p>
+        <p className="pointer-events-none absolute inset-x-0 top-[72px] z-10 flex justify-center md:hidden">
+          <span className={`px-3 py-1.5 text-[12px] text-[#16181d]/70 ${SKIN}`}>Tap to throw · swipe to move</span>
+        </p>
       )}
 
-      {/* —— loader —— */}
+{/* —— loader —— */}
       <div
         aria-hidden={shown}
-        className={`absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-[#e9eee9] transition-opacity duration-700 ${shown ? "pointer-events-none opacity-0" : "opacity-100"}`}
+        className={`absolute inset-0 z-30 flex flex-col items-center justify-center gap-7 bg-[#e9eee9] transition-opacity duration-700 ${shown ? "pointer-events-none opacity-0" : "opacity-100"}`}
       >
         <div className="relative flex h-16 items-end gap-1">
           {[C.red, C.yellow, C.blue, C.lime].map((c, i) => (
             <span
               key={c}
               className="lego-loader-brick relative block h-5 w-10 rounded-[3px]"
-              style={{ background: c, animationDelay: `${i * 0.18}s`, boxShadow: "inset 0 -3px 0 rgba(0,0,0,.18)" }}
+              style={{ background: c, animationDelay: `${i * 0.18}s`, boxShadow: "inset 0 -3px 0 rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.3)" }}
             >
               <Studs n={2} color={c} className="!-top-[4px]" />
             </span>
           ))}
         </div>
-        <div className="text-center">
-          <p className="display text-2xl">Sorting the bricks</p>
-          <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[#15171c]/55">{Math.round(progress * 100)}%</p>
+        <div className="flex flex-col items-center">
+          <p className="brick-display text-[28px]">Sorting the bricks</p>
+          <div className="mt-4 flex items-center gap-3">
+            <span className="relative h-[3px] w-40 overflow-hidden rounded-full bg-[#131417]/10">
+              <span className="absolute inset-y-0 left-0 rounded-full bg-[#131417] transition-[width] duration-300" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </span>
+            <span className="brick-num w-9 text-[11px] text-[#131417]/55">{Math.round(progress * 100)}%</span>
+          </div>
         </div>
       </div>
     </div>

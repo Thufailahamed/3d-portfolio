@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
+import { Archivo } from "next/font/google";
 import LegoView from "@/lego/LegoView";
+import "@/lego/brick.css";
+
+/** Brick edition type: Archivo throughout, its width axis doing the box-art headings. */
+const archivo = Archivo({ variable: "--font-archivo", subsets: ["latin"], axes: ["wdth"] });
 
 export const metadata: Metadata = {
   title: "Brick Edition",
@@ -8,5 +13,9 @@ export const metadata: Metadata = {
 };
 
 export default function LegoPage() {
-  return <LegoView />;
+  return (
+    <div className={archivo.variable}>
+      <LegoView />
+    </div>
+  );
 }

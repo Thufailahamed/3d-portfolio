@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Bloom, EffectComposer, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, HueSaturation, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -187,6 +187,8 @@ function World() {
       <EffectComposer key={tier} multisampling={0} enableNormalPass={false}>
         <Bloom mipmapBlur intensity={0.55} luminanceThreshold={1.4} luminanceSmoothing={0.25} radius={0.7} resolutionScale={tier === 2 ? 0.5 : 0.35} />
         <ToneMapping mode={ToneMappingMode.AGX} />
+        {/* AgX is gentle on colour; a touch more saturation brings back the look of a real camera */}
+        <HueSaturation saturation={0.08} />
         <Vignette offset={0.32} darkness={0.5} />
         <SMAA />
       </EffectComposer>

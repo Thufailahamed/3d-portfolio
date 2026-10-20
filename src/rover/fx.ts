@@ -291,31 +291,70 @@ export class Tracks {
   }
 }
 
-/** Rocket exhaust: an additive flickering cone. In vacuum the plume flares wide and nearly invisible. */
+const GLSL_NOISE2 = /* glsl */ `
+float fxh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float fxn(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(fxh(i), fxh(i + vec2(1, 0)), f.x), mix(fxh(i + vec2(0, 1)), fxh(i + vec2(1, 1)), f.x), f.y); }
+`;
+
+/**
+ * Rocket exhaust, drawn so it reads from any angle: a ribbon that turns about the nozzle axis to face
+ * the camera (a hot narrow core inside a turbulent sheath, shock diamonds in air), plus a glow at the
+ * nozzle exit that grows as you look straight up the plume. In vacuum the plume flares wide and faint.
+ */
 export function plumeMaterial(vacuum: boolean) {
   return new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uPower: { value: 0 }, uVac: { value: vacuum ? 1 : 0 } },
     vertexShader: /* glsl */ `
-varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+attribute float aSide; attribute float aR; attribute float aPart; attribute vec2 aCorner;
+varying vec2 vUv; varying float vPart; varying float vEnd;
 void main() {
-  vUv = uv;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  vN = normalize(normalMatrix * normal);
-  vV = normalize(-mv.xyz);
-  gl_Position = projectionMatrix * mv;
+  vec3 axis = normalize(mat3(modelMatrix) * vec3(0.0, -1.0, 0.0));
+  float sc = length(modelMatrix[0].xyz);
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vec3 toCam = normalize(cameraPosition - wp.xyz);
+  float endOn = abs(dot(axis, toCam));
+  if (aPart < 0.5) {
+    vec3 side = cross(axis, toCam);
+    float l = length(side);
+    side = l > 1e-4 ? side / l : normalize(cross(axis, vec3(0.31, 0.95, 0.0)));
+    wp.xyz += side * aSide * aR * sc;
+  } else {
+    vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+    vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    wp.xyz += (right * aCorner.x + up * aCorner.y) * aR * sc * mix(1.0, 2.6, endOn * endOn);
+  }
+  vUv = uv; vPart = aPart; vEnd = endOn;
+  gl_Position = projectionMatrix * viewMatrix * wp;
 }`,
     fragmentShader: /* glsl */ `
 uniform float uTime; uniform float uPower; uniform float uVac;
-varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+varying vec2 vUv; varying float vPart; varying float vEnd;
+${GLSL_NOISE2}
 void main() {
-  float along = 1.0 - vUv.y;
-  float edge = pow(abs(dot(vN, vV)), 1.5);
-  float flick = 0.75 + 0.25 * sin(uTime * 63.0 + vUv.y * 40.0) * sin(uTime * 37.0 + vUv.x * 20.0);
-  float diamonds = mix(1.0, 0.75 + 0.25 * sin(along * 38.0 - uTime * 30.0), 1.0 - uVac);
-  float a = edge * (1.0 - along) * (1.0 - along) * uPower * flick * diamonds * mix(1.0, 0.35, uVac);
-  vec3 hot = mix(vec3(1.0, 0.75, 0.45), vec3(0.75, 0.82, 1.0), uVac);
-  vec3 c = mix(hot * 3.0, vec3(1.0, 0.95, 0.9) * 6.0, pow(1.0 - along, 6.0));
-  gl_FragColor = vec4(c * a, a);
+  if (uPower < 0.003) discard;
+  vec3 col; float a;
+  if (vPart < 0.5) {
+    float x = vUv.x * 2.0 - 1.0;
+    float along = vUv.y;
+    float turb = fxn(vec2(x * 2.5 + 7.0, along * 9.0 - uTime * 31.0)) * 0.55 + fxn(vec2(x * 6.0, along * 22.0 - uTime * 47.0)) * 0.45;
+    float core = exp(-x * x * mix(26.0, 5.0, along)) * pow(1.0 - along, mix(3.0, 6.0, uVac));
+    float sheath = (1.0 - x * x) * (1.0 - x * x) * (0.3 + 0.9 * turb);
+    float diamonds = mix(0.65 + 0.35 * pow(0.5 + 0.5 * cos(along * 46.0 - uTime * 4.0), 3.0), 1.0, uVac);
+    float fade = pow(1.0 - along, mix(2.2, 2.6, uVac)) * smoothstep(0.0, 0.025, along);
+    a = uPower * fade * (core * 1.3 * diamonds + sheath * mix(0.2, 0.12, uVac)) * (1.0 - pow(vEnd, 4.0) * 0.85);
+    vec3 outer = mix(vec3(1.0, 0.46, 0.16), vec3(0.45, 0.6, 1.0), uVac);
+    vec3 inner = mix(vec3(1.0, 0.86, 0.66), vec3(0.85, 0.92, 1.0), uVac);
+    col = mix(outer * 1.8, inner * 7.0, clamp(core * 1.6 - along, 0.0, 1.0));
+  } else {
+    float d = length(vUv * 2.0 - 1.0);
+    float flick = 0.85 + 0.15 * fxn(vec2(uTime * 37.0, 3.0));
+    float g = (exp(-d * d * 9.0) * 0.9 + exp(-d * d * 3.0) * 0.18) * (1.0 - smoothstep(0.55, 1.0, d));
+    a = uPower * g * flick * (0.55 + vEnd * 0.9);
+    col = mix(vec3(1.0, 0.78, 0.5), vec3(0.75, 0.85, 1.0), uVac) * 6.0;
+  }
+  if (a < 0.002) discard;
+  gl_FragColor = vec4(col, min(a, 1.0));
 }`,
     transparent: true,
     depthWrite: false,
@@ -324,22 +363,61 @@ void main() {
   });
 }
 
+/** geometry for `plumeMaterial`: a ribbon along −y (len long, widening from r at the nozzle) and an exit glow */
 export function plumeGeometry(len: number, r: number) {
-  const g = new THREE.CylinderGeometry(r * 2.4, r * 0.7, len, 16, 1, true);
-  g.translate(0, -len / 2, 0);
+  const N = 24;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const side: number[] = [];
+  const rad: number[] = [];
+  const part: number[] = [];
+  const corner: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    // the plume swells quickly off the lip, then grows slowly
+    const w = r * (0.8 + 2.6 * Math.sqrt(t) + 1.2 * t);
+    for (const s of [-1, 1]) {
+      pos.push(0, -t * len, 0);
+      uv.push(s < 0 ? 0 : 1, t);
+      side.push(s);
+      rad.push(w);
+      part.push(0);
+      corner.push(0, 0);
+    }
+    if (i < N) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const b = pos.length / 3;
+  for (const [cx, cy] of [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ]) {
+    pos.push(0, -r * 0.4, 0);
+    uv.push((cx + 1) / 2, (cy + 1) / 2);
+    side.push(0);
+    rad.push(r * 1.7);
+    part.push(1);
+    corner.push(cx, cy);
+  }
+  idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute("aSide", new THREE.Float32BufferAttribute(side, 1));
+  g.setAttribute("aR", new THREE.Float32BufferAttribute(rad, 1));
+  g.setAttribute("aPart", new THREE.Float32BufferAttribute(part, 1));
+  g.setAttribute("aCorner", new THREE.Float32BufferAttribute(corner, 2));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, -len / 2, 0), len);
   return g;
 }
 
-/**
- * Entry glow around a capsule whose heat shield faces −y: a bright shock cap just ahead of the shield
- * and a wake of ionised gas streaming back past the shoulders.
- */
-export function entryGlow(color: string) {
-  const g = new THREE.Group();
-  const mk = (mode: number) =>
-    new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uHeat: { value: 0 }, uColor: { value: new THREE.Color(color) }, uMode: { value: mode } },
-      vertexShader: /* glsl */ `
+const GLOW_VERT = /* glsl */ `
 varying vec2 vUv; varying vec3 vN; varying vec3 vV;
 void main() {
   vUv = uv;
@@ -347,54 +425,174 @@ void main() {
   vN = normalize(normalMatrix * normal);
   vV = normalize(-mv.xyz);
   gl_Position = projectionMatrix * mv;
-}`,
+}`;
+
+/**
+ * The plasma around an entering aeroshell whose heat shield faces −y (shield units, metres): the
+ * shield's own incandescence, a bright bow-shock layer standing off it, a turbulent shear-layer wake
+ * peeling off the shoulder and closing into a neck, a hot recirculating core, ablation sparks, and a
+ * light that throws the glow onto the backshell.
+ */
+export function entryGlow(color: string, profile: THREE.Vector2[], quality = 2) {
+  const g = new THREE.Group();
+  const species = new THREE.Color(color);
+  const mats: THREE.ShaderMaterial[] = [];
+  const geos: THREE.BufferGeometry[] = [];
+  const mk = (mode: number, side: THREE.Side = THREE.DoubleSide) => {
+    const m = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 }, uHeat: { value: 0 }, uColor: { value: species }, uMode: { value: mode } },
+      vertexShader: GLOW_VERT,
       fragmentShader: /* glsl */ `
 uniform float uTime; uniform float uHeat; uniform vec3 uColor; uniform float uMode;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV;
-float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+${GLSL_NOISE2}
 void main() {
-  float facing = abs(dot(vN, vV));
-  vec3 hot = vec3(1.0, 0.92, 0.85);
+  float facing = abs(dot(normalize(vN), normalize(vV)));
+  vec3 white = vec3(1.0, 0.93, 0.86);
+  float along = vUv.y;
+  vec3 c; float a;
   if (uMode < 0.5) {
-    // shock cap: brightest at the stagnation point
-    float k = pow(facing, 0.6) * (0.75 + 0.25 * n(vUv * vec2(40.0, 8.0) + uTime * 6.0));
-    vec3 c = mix(uColor, hot, k) * 4.0;
-    float a = uHeat * k;
-    gl_FragColor = vec4(c * a, a);
+    // the shield itself, glowing dull red to orange
+    float n = fxn(vUv * vec2(60.0, 14.0) + vec2(0.0, uTime * 0.6));
+    float k = (1.0 - along * 0.55) * (0.75 + 0.25 * n);
+    c = mix(vec3(1.0, 0.25, 0.05), vec3(1.0, 0.6, 0.25), k) * 2.2;
+    a = uHeat * k * 0.85;
+  } else if (uMode < 1.5) {
+    // the shock layer: brightest at the stagnation point, limb-brightened where we look through more gas
+    float n = fxn(vec2(vUv.x * 90.0, along * 10.0 - uTime * 9.0)) * 0.6 + fxn(vec2(vUv.x * 23.0, along * 3.0 - uTime * 5.0)) * 0.4;
+    float stag = pow(1.0 - smoothstep(0.0, 0.85, along), 1.3);
+    float limb = clamp(0.25 / (facing + 0.12), 0.0, 2.4);
+    float k = (stag * 1.3 + limb * 0.45 * (1.0 - smoothstep(0.55, 1.0, along))) * (0.7 + 0.45 * n);
+    c = mix(uColor * 2.5, white * 9.0, clamp(stag * 0.9 + n * 0.15, 0.0, 1.0));
+    a = uHeat * k * 0.75;
+  } else if (uMode < 2.5) {
+    // shear-layer wake: streaming filaments that thin and cool downstream
+    float s1 = fxn(vec2(vUv.x * 70.0, along * 7.0 - uTime * 16.0));
+    float s2 = fxn(vec2(vUv.x * 19.0 + 3.0, along * 2.5 - uTime * 8.0));
+    float fil = pow(s1 * 0.6 + s2 * 0.6, 3.0);
+    float limb = clamp(0.2 / (facing + 0.1), 0.0, 2.0);
+    float k = fil * (0.35 + limb) * pow(1.0 - along, 2.2) * smoothstep(0.0, 0.04, along);
+    c = mix(white * 4.0, uColor * 2.6, smoothstep(0.0, 0.35, along));
+    a = uHeat * k * 0.85;
   } else {
-    // wake: streaks that thin out downstream (vUv.y = 0 at the shield, 1 far behind)
-    float along = vUv.y;
-    float streak = n(vec2(vUv.x * 48.0, along * 6.0 - uTime * 14.0)) * 0.65 + n(vec2(vUv.x * 13.0, along * 2.0 - uTime * 7.0)) * 0.5;
-    float edge = pow(1.0 - facing, 1.2);
-    float wisp = streak * streak * 1.6;
-    float a = uHeat * pow(1.0 - along, 2.4) * wisp * (0.08 + edge * 1.2) * smoothstep(0.0, 0.06, along);
-    vec3 c = mix(hot, uColor, smoothstep(0.0, 0.3, along)) * 2.2;
-    gl_FragColor = vec4(c * a, a);
+    // recirculating core: a softer, pulsing glow along the axis
+    float n = fxn(vec2(vUv.x * 12.0, along * 5.0 - uTime * 11.0));
+    float k = pow(facing, 1.5) * (0.5 + 0.7 * n) * pow(1.0 - along, 2.6);
+    c = mix(white * 3.0, uColor * 2.2, smoothstep(0.0, 0.5, along));
+    a = uHeat * k * 0.5;
   }
+  if (a < 0.002) discard;
+  gl_FragColor = vec4(c, min(a, 1.0));
 }`,
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
+      side,
     });
-  const capMat = mk(0);
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(2.75, 48, 16, 0, Math.PI * 2, Math.PI * 0.6, Math.PI * 0.4), capMat);
-  cap.scale.set(1, 0.45, 1);
-  cap.position.y = -0.2;
-  const wakeMat = mk(1);
-  const wakeGeo = new THREE.CylinderGeometry(4.2, 2.4, 26, 48, 1, true);
-  wakeGeo.translate(0, 13, 0);
-  const wake = new THREE.Mesh(wakeGeo, wakeMat);
-  g.add(cap, wake);
-  const set = (t: number, heat: number) => {
-    for (const m of [capMat, wakeMat]) {
+    mats.push(m);
+    return m;
+  };
+  const lathe = (pts: THREE.Vector2[], seg: number) => {
+    const geo = new THREE.LatheGeometry(pts, seg);
+    geos.push(geo);
+    return geo;
+  };
+  // 1 — incandescent shield skin, just proud of the PICA
+  const skin = new THREE.Mesh(lathe(profile.map((p) => new THREE.Vector2(p.x * 1.004 + 0.004, p.y - 0.008)), 64), mk(0, THREE.FrontSide));
+  // 2 — bow shock: standoff ~0.35 m at the nose, wrapping past the shoulder
+  const shockPts = profile.filter((_, i) => i % 2 === 0).map((p) => new THREE.Vector2(p.x * 1.07 + 0.02, p.y - 0.38 + p.x * 0.05));
+  const last = shockPts[shockPts.length - 1];
+  shockPts.push(new THREE.Vector2(last.x + 0.35, last.y + 0.6), new THREE.Vector2(last.x + 0.75, last.y + 1.7), new THREE.Vector2(last.x + 1.1, last.y + 3.4));
+  const shock = new THREE.Mesh(lathe(shockPts, 72), mk(1));
+  // 3 — shear-layer wake: peels off the shoulder, necks down ~3 diameters back, then spreads
+  const wakePts = [
+    [2.3, 0.9],
+    [2.75, 2.4],
+    [2.7, 5],
+    [1.9, 9],
+    [1.35, 14],
+    [1.8, 24],
+    [2.9, 40],
+    [3.9, 62],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  const wake = new THREE.Mesh(lathe(wakePts, 64), mk(2));
+  const wake2 = new THREE.Mesh(lathe(wakePts.map((p) => new THREE.Vector2(p.x * 0.8, p.y * 0.75 + 0.5)), 48), mk(2));
+  // 4 — hot core behind the backshell
+  const core = new THREE.Mesh(
+    lathe(
+      [
+        [0.2, 3.2],
+        [0.9, 5],
+        [1.2, 12],
+        [1.1, 24],
+        [0.6, 40],
+      ].map(([r, y]) => new THREE.Vector2(r, y)),
+      32,
+    ),
+    mk(3),
+  );
+  g.add(skin, shock, wake, wake2, core);
+
+  // 5 — ablation sparks streaming off the shoulder (stateless: positions are a function of time)
+  const N = quality >= 2 ? 420 : quality >= 1 ? 240 : 120;
+  const seeds = new Float32Array(N * 3);
+  for (let i = 0; i < N * 3; i++) seeds[i] = Math.random();
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  sg.setAttribute("aSeed", new THREE.BufferAttribute(seeds, 3));
+  sg.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 20, 0), 60);
+  geos.push(sg);
+  const sparkMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uHeat: { value: 0 }, uColor: { value: species } },
+    vertexShader: /* glsl */ `
+attribute vec3 aSeed; uniform float uTime; uniform float uHeat;
+varying float vA; varying float vT;
+void main() {
+  float t = fract(uTime * (0.45 + aSeed.x * 0.7) + aSeed.y);
+  float ang = aSeed.z * 6.2832 + t * 0.6;
+  float r = 2.25 + t * (1.2 + aSeed.x * 2.4) + aSeed.y * 0.3;
+  vec3 p = vec3(cos(ang) * r, 0.9 + t * t * 55.0 * (0.4 + aSeed.x), sin(ang) * r);
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float sc = length(modelMatrix[0].xyz);
+  gl_PointSize = clamp((0.04 + aSeed.z * 0.06) * sc * 1000.0 / -mv.z * (1.0 - t * 0.6), 0.0, 6.0);
+  vA = uHeat * (1.0 - t) * (1.0 - t) * step(0.35, aSeed.x * aSeed.z + 0.3);
+  vT = t;
+}`,
+    fragmentShader: /* glsl */ `
+uniform vec3 uColor; varying float vA; varying float vT;
+void main() {
+  float d = length(gl_PointCoord - 0.5) * 2.0;
+  float a = vA * exp(-d * d * 3.0);
+  if (a < 0.003) discard;
+  gl_FragColor = vec4(mix(vec3(1.0, 0.9, 0.7) * 8.0, uColor * 4.0, vT), a);
+}`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  mats.push(sparkMat);
+  const sparks = new THREE.Points(sg, sparkMat);
+  sparks.frustumCulled = false;
+  g.add(sparks);
+  for (const o of [skin, shock, wake, wake2, core, sparks]) o.renderOrder = 4;
+
+  // 6 — the plasma's light on the backshell and anything nearby
+  const light = new THREE.PointLight(species.clone().lerp(new THREE.Color("#ffd7b0"), 0.4), 0, 0, 2);
+  light.position.set(0, -0.6, 0);
+  g.add(light);
+
+  const set = (t: number, heat: number, lightScale = 1) => {
+    for (const m of mats) {
       m.uniforms.uTime.value = t;
       m.uniforms.uHeat.value = heat;
     }
-    g.visible = heat > 0.01;
+    light.intensity = heat * lightScale * (0.85 + Math.random() * 0.3);
+    g.visible = heat > 0.005;
   };
-  return { g, set };
+  const dispose = () => {
+    mats.forEach((m) => m.dispose());
+    geos.forEach((x) => x.dispose());
+  };
+  return { g, set, light, dispose };
 }
-

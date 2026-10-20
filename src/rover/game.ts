@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { Deck, DeckView, DECK_R } from "./deck";
 import { EDL } from "./edl";
-import { Dust, Tracks, entryGlow, plumeGeometry, plumeMaterial } from "./fx";
+import { Dust, Tracks, entryGlow } from "./fx";
+import { aeroshell, descentStage, hardwareMaterials, setNozzleGlow, shieldProfile, type HwMats } from "./hardware";
 import { clamp, damp, lerp, smoothstep } from "./noise";
 import { EARTH, ROVER, RoverSim, SPEEDS } from "./physics";
 import { RoverModel } from "./rover";
@@ -72,7 +73,7 @@ export class Game {
     snapNext: false,
   };
   private cruise: { tr: Transfer; t: number; waitDur: number; flyDur: number; jd0: number; from: World; to: World } | null = null;
-  private ap: { t: number; dur: number; world: World; craft: THREE.Group; glow: ReturnType<typeof entryGlow> | null; plume: THREE.ShaderMaterial | null; E: THREE.Vector3; f: THREE.Vector3; e: THREE.Vector3; side: THREE.Vector3 } | null = null;
+  private ap: { t: number; dur: number; world: World; craft: THREE.Group; glow: ReturnType<typeof entryGlow> | null; plume: THREE.ShaderMaterial | null; hw: HwMats; E: THREE.Vector3; f: THREE.Vector3; e: THREE.Vector3; side: THREE.Vector3 } | null = null;
   private pending: World | null = null;
   private building: Promise<void> | null = null;
   private dustAcc = new Float32Array(8);
@@ -307,40 +308,37 @@ export class Game {
     this.space.approach.visible = true;
     this.space.setApproach(w);
     const vacuum = w.atm.rho < 0.001;
+    const hw = hardwareMaterials();
     const craft = new THREE.Group();
     let glow: ReturnType<typeof entryGlow> | null = null;
     let plume: THREE.ShaderMaterial | null = null;
     if (!vacuum) {
-      const shield = new THREE.Mesh(new THREE.ConeGeometry(2.25, 0.7, 32), new THREE.MeshStandardMaterial({ color: "#3a2a1f", roughness: 0.9 }));
-      shield.rotation.x = Math.PI;
-      shield.position.y = -0.35;
-      const back = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 2.25, 2.4, 32), new THREE.MeshStandardMaterial({ color: "#d8d4cb", roughness: 0.55 }));
-      back.position.y = 1.2;
-      // shock-layer colour follows the gas: CO₂ glows orange-red, N₂/CH₄ violet-pink, H₂ pink
-      glow = entryGlow(w.id === "titan" ? "#c070ff" : w.surface === "deck" ? "#ff6aa8" : w.id === "earth" ? "#ff7a3a" : "#ff5a2a");
-      craft.add(shield, back, glow.g);
+      // the aeroshell flies heat shield first; the shock-layer colour follows the gas: CO₂ glows orange-red, N₂/CH₄ violet, H₂ pink
+      craft.add(aeroshell(hw).g);
+      glow = entryGlow(w.id === "titan" ? "#c070ff" : w.surface === "deck" ? "#ff6aa8" : w.id === "earth" ? "#ff7a3a" : "#ff5a2a", shieldProfile(), this.quality);
+      craft.add(glow.g);
     } else {
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.3, 0.6, 8), new THREE.MeshStandardMaterial({ color: "#c9a04a", metalness: 1, roughness: 0.35 }));
-      const roverBox = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 2.2), new THREE.MeshStandardMaterial({ color: "#e8e6e1", roughness: 0.5 }));
-      roverBox.position.y = -0.9;
-      plume = plumeMaterial(true);
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-        const p = new THREE.Mesh(plumeGeometry(9, 0.2), plume);
-        p.position.set(Math.cos(a) * 1.6, -0.3, Math.sin(a) * 1.6);
-        craft.add(p);
-      }
-      craft.add(body, roverBox);
+      // no air to brake against: the descent stage, rover tucked beneath, burns its engines into the direction of travel
+      const stage = descentStage(hw, true);
+      const rover = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.0), hw.frame);
+      rover.position.y = -1.05;
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 1.9), hw.gold);
+      deck.position.y = -0.77;
+      craft.add(stage.g, rover, deck);
+      plume = stage.pm;
     }
     craft.scale.setScalar(0.03);
     this.space.approach.add(craft);
-    // enter over the sunlit low latitudes (away from the polar caps), heading into the dayside
-    const e = new THREE.Vector3(0.62, 0.32, 0.72).normalize();
-    const f = new THREE.Vector3(1, 0, -0.3);
-    f.addScaledVector(e, -f.dot(e)).normalize();
+    // enter over the low latitudes (away from the polar caps) in the mid-afternoon, the Sun ~60° from the zenith
+    // so the relief throws long shadows, flying across the light so it rakes the aeroshell from the side
+    const sun = this.space.bigSun;
+    const across = new THREE.Vector3(-sun.z, 0, sun.x).normalize();
+    const e = sun.clone().multiplyScalar(0.5).addScaledVector(across, 0.866).normalize();
+    const toSun = sun.clone().addScaledVector(e, -sun.dot(e)).normalize();
+    const f = toSun.clone().multiplyScalar(0.5).addScaledVector(new THREE.Vector3().crossVectors(e, toSun), 0.866).normalize();
     const side = new THREE.Vector3().crossVectors(e, f).normalize();
     const E = e.clone().multiplyScalar(103.2);
-    this.ap = { t: 0, dur: vacuum ? 8 : 9.5, world: w, craft, glow, plume, E, f, e, side };
+    this.ap = { t: 0, dur: vacuum ? 8 : 10, world: w, craft, glow, plume, hw, E, f, e, side };
     this.fade.k = 1;
     this.fade.to = 0;
     this.fade.color = "#000000";
@@ -350,13 +348,13 @@ export class Game {
 
   private endApproach() {
     if (!this.ap) return;
+    this.ap.glow?.dispose();
     this.ap.craft.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.isMesh) {
-        m.geometry.dispose();
-        (m.material as THREE.Material).dispose();
-      }
+      if (m.isMesh) m.geometry.dispose();
     });
+    this.ap.plume?.dispose();
+    this.ap.hw.dispose();
     this.ap.craft.removeFromParent();
     this.ap = null;
   }
@@ -481,14 +479,16 @@ export class Game {
     this.sun.visible = true;
     this.hemi.visible = true;
     this.sun.color.set(s.sun);
-    this.sun.intensity = s.sunIntensity * s.exposure;
-    this.sun.shadow.intensity = ws.world.id === "venus" || ws.world.id === "titan" ? 0.3 : ws.world.atm.rho > 0.5 ? 0.85 : 1;
+    // direct sun carries the image; skylight fills the shadows at roughly the real diffuse fraction
+    // (≈35% under Mars' dusty sky, ≈15% under Earth's blue one, almost nothing in vacuum)
+    this.sun.intensity = s.sunIntensity * s.exposure * 0.86;
+    this.sun.shadow.intensity = ws.world.id === "venus" ? 0.35 : ws.world.id === "titan" ? 0.5 : ws.world.atm.rho > 0.5 ? 0.88 : 1;
     this.hemi.color.set(s.hemiSky);
     this.hemi.groundColor.set(s.hemiGround);
-    this.hemi.intensity = s.hemiK * s.exposure;
+    this.hemi.intensity = s.hemiK * s.exposure * 0.72;
     this.scene.fog = s.fogDensity > 0 ? new THREE.FogExp2(s.fog, s.fogDensity) : null;
     this.scene.environment = ws.env;
-    this.scene.environmentIntensity = 0.35 * s.exposure;
+    this.scene.environmentIntensity = 0.3 * s.exposure;
     this.scene.background = null;
     const amb = new THREE.Color(s.hemiSky).multiplyScalar(s.hemiK * 0.35);
     ws.dust.setLight(new THREE.Color(s.sun).multiplyScalar(Math.min(1.4, s.sunIntensity * 0.35 * s.exposure)), amb);
@@ -829,38 +829,56 @@ export class Game {
     const { E, f, e, side } = a;
     let P: THREE.Vector3;
     let vdir: THREE.Vector3;
-    const split = 0.42;
+    const split = 0.4;
     if (s < split) {
       const u = s / split;
       P = E.clone().addScaledVector(f, -42 * (1 - u)).addScaledVector(e, 7 * (1 - u) * (1 - u));
-      vdir = f.clone().addScaledVector(e, -14 * (1 - u) / 42).normalize();
+      vdir = f.clone().addScaledVector(e, (-14 * (1 - u)) / 42).normalize();
     } else {
       const u = (s - split) / (1 - split);
       P = E.clone().addScaledVector(f, 7 * u).addScaledVector(e, -2.4 * Math.pow(u, 1.25));
       vdir = f.clone().multiplyScalar(7).addScaledVector(e, -2.4 * 1.25 * Math.pow(Math.max(u, 0.01), 0.25)).normalize();
     }
     a.craft.position.copy(P);
-    // heat shield into the flow (or engines against it)
+    // heat shield into the flow (or engines against it), with a slow roll as the guidance banks the lift vector
     a.craft.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), vdir);
-    const heat = s < split ? 0 : Math.sin(Math.PI * clamp(((s - split) / (1 - split)) * 1.15, 0, 1));
-    a.glow?.set(this.t, heat * 1.3);
+    a.craft.rotateY(this.t * 0.12);
+    const u2 = clamp((s - split) / (1 - split), 0, 1);
+    const heat = s < split ? 0 : Math.pow(Math.sin(Math.PI * clamp(u2 * 1.12, 0, 1)), 0.8);
+    a.glow?.set(this.t, heat * 1.25, 0.012);
     if (a.plume) {
+      const burn = s > 0.22 ? smoothstep(0.22, 0.3, s) * (0.9 + Math.random() * 0.1) : 0;
       a.plume.uniforms.uTime.value = this.t;
-      a.plume.uniforms.uPower.value = s > 0.25 ? 1 : 0;
+      a.plume.uniforms.uPower.value = burn;
+      setNozzleGlow(a.hw, burn, true);
     }
     let camPos: THREE.Vector3;
     let look: THREE.Vector3;
-    let fov = 45;
+    let fov = 46;
     if (s < split) {
-      camPos = P.clone().addScaledVector(f, -3.2).addScaledVector(e, 1.1).addScaledVector(side, 1.6);
-      look = P.clone().addScaledVector(f, 5).addScaledVector(e, -1.2);
+      // coasting in: close behind the aeroshell, the limb of the planet sweeping across the frame
+      const u = s / split;
+      camPos = P.clone()
+        .addScaledVector(f, -0.62 + u * 0.12)
+        .addScaledVector(e, 0.16 + 0.06 * (1 - u))
+        .addScaledVector(side, -lerp(0.42, 0.24, u));
+      look = P.clone().addScaledVector(f, 1.6).addScaledVector(e, -0.32);
+      fov = 44;
     } else {
-      // beside and slightly ahead, looking back: the shock layer on the shield, the wake streaming away
-      const shake = heat * 0.003;
-      camPos = P.clone().addScaledVector(vdir, 0.12).addScaledVector(side, 0.62).addScaledVector(e, 0.14);
-      camPos.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
-      look = P.clone().addScaledVector(vdir, -0.12);
-      fov = 50;
+      // in the fire: beside and a little ahead, looking back along the shield face and the wake
+      const k = smoothstep(0, 0.25, u2);
+      camPos = P.clone()
+        .addScaledVector(vdir, lerp(-0.05, 0.12, k))
+        .addScaledVector(side, -lerp(0.42, 0.5, k))
+        .addScaledVector(e, lerp(0.16, 0.1, k));
+      // airless: no fireball to look back on, so keep the stage and its braking plumes in the middle of the frame
+      look = vacuum ? P.clone().addScaledVector(vdir, 0.12) : P.clone().addScaledVector(vdir, -0.22);
+      // buffeting grows with the dynamic pressure
+      const sh = heat * 0.0035;
+      const tt = this.t;
+      camPos.addScaledVector(side, Math.sin(tt * 37) * sh + Math.sin(tt * 91) * sh * 0.4);
+      camPos.addScaledVector(e, Math.sin(tt * 43 + 1) * sh + Math.sin(tt * 77) * sh * 0.4);
+      fov = 52 - heat * 4;
     }
     this.setCamera(camPos, look, fov, 0.004, 3000, e);
     const alt = Math.max(0, (P.length() - 100) / 100) * a.world.radiusKm * 1000;
@@ -930,7 +948,7 @@ export class Game {
       for (const snd of edl.sounds.splice(0)) {
         const d = snd.at ? snd.at.distanceTo(this.camera.position) : 0;
         this.audio.hit(snd.s === "engines" ? "pyro" : snd.s === "cut" ? "pyro" : snd.s, snd.s === "chute" ? 1 : 0.9, d);
-        if (snd.s === "crash" && snd.at) this.burst(snd.at, 160, 14, 1.4);
+        if (snd.s === "crash" && snd.at) this.burst(snd.at, this.quality >= 1 ? 260 : 140, 16, 1.6);
         if (snd.s === "thud" && snd.at) this.burst(snd.at, 50, 6, 0.8);
       }
       for (const l of edl.landed.splice(0)) {
@@ -940,19 +958,25 @@ export class Game {
           useRover.getState().set({ pois: [...this.pois] });
         }
       }
-      // rocket blast on the ground under the stage
-      const stageAlt = edl.stagePos.y - ws.ground.height(edl.stagePos.x, edl.stagePos.z);
-      if (edl.throttle > 0.05 && stageAlt < 40 && stageAlt > -1 && W.soil.dust > 0) {
-        const k = edl.throttle * (1 - stageAlt / 40) * W.soil.dust;
-        const n = Math.floor(k * 60 * dt * 60) + (Math.random() < 0.5 ? 1 : 0);
-        const gp = new THREE.Vector3(edl.stagePos.x, ws.ground.height(edl.stagePos.x, edl.stagePos.z) + 0.2, edl.stagePos.z);
+      // rocket blast on the ground under the stage: a ring of dust racing outward from under each engine pair
+      const gH = ws.ground.height(edl.stagePos.x, edl.stagePos.z);
+      const stageAlt = edl.stagePos.y - gH;
+      if (edl.throttle > 0.05 && stageAlt < 55 && stageAlt > -1 && W.soil.dust > 0) {
+        const k = edl.throttle * Math.pow(1 - stageAlt / 55, 1.5) * W.soil.dust;
+        const q = this.quality >= 2 ? 1 : this.quality >= 1 ? 0.6 : 0.35;
+        const n = Math.floor(k * 110 * q * dt * 60) + (Math.random() < 0.5 ? 1 : 0);
         const vac = W.atm.rho < 0.001;
+        const blast = Math.min(1, 10 / Math.max(stageAlt, 3));
         for (let i = 0; i < n; i++) {
           const a = Math.random() * Math.PI * 2;
-          const sp = vac ? 18 + Math.random() * 22 : 5 + Math.random() * 9;
-          tmpV.set(Math.cos(a) * sp, vac ? 0.6 + Math.random() * 1.6 : 1 + Math.random() * 3, Math.sin(a) * sp);
-          const p = gp.clone().add(new THREE.Vector3(Math.cos(a) * 1.5, 0, Math.sin(a) * 1.5));
-          ws.dust.emit(p, tmpV, vac ? 1 : 2, vac ? 0.35 : 1.2, vac ? 3 : 5, vac ? 0.5 : 0.35, vac ? 0 : 1.6);
+          const r0 = 1.5 + Math.random() * (2 + stageAlt * 0.25);
+          const sp = (vac ? 18 + Math.random() * 24 : 6 + Math.random() * 12) * (0.5 + blast * 0.8);
+          tmpV.set(Math.cos(a) * sp, vac ? 0.5 + Math.random() * 1.8 : 0.6 + Math.random() * 3.2, Math.sin(a) * sp);
+          tmpV2.set(edl.stagePos.x + Math.cos(a) * r0, 0, edl.stagePos.z + Math.sin(a) * r0);
+          tmpV2.y = ws.ground.height(tmpV2.x, tmpV2.z) + 0.25;
+          // in thick air (Titan, Venus) the dust hangs where it is thrown, so throw less of it
+          const thick = W.soil.dustDrag > 3;
+          ws.dust.emit(tmpV2, tmpV, vac ? 1 : 2.5, vac ? 0.35 : 1.0 + Math.random() * 1.4, vac ? 3 : thick ? 2.6 : 5.5, vac ? 0.5 : thick ? 0.14 : 0.32, vac ? 0 : thick ? 1.2 : 2.2);
         }
       }
     }

@@ -100,6 +100,141 @@ export function makeGrainNormal(size = 512) {
   return t;
 }
 
+export type DetailKind = "regolith" | "gravel" | "sand" | "ice" | "basalt";
+
+/**
+ * Close-up ground for one kind of surface, tileable: RG = normal (x, z), B = height (cavities dark),
+ * A = albedo variation around 0.5. Regolith gets a power-law of micro-craters, gravel a desert
+ * pavement of pebbles sat in sand, ice smooth sublimation pits, basalt vesicles and hairline cracks.
+ */
+export function makeDetailTexture(kind: DetailKind, size = 512) {
+  const N = size * size;
+  const h = new Float32Array(N);
+  const alb = new Float32Array(N).fill(0.5);
+  const fine = kind === "ice" ? 0.12 : kind === "sand" ? 0.35 : 0.5;
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const i = y * size + x;
+      h[i] = (tileFbm(x / size, y / size, 32, 4, 31) - 0.5) * fine;
+      alb[i] += (tileFbm(x / size, y / size, 8, 4, 57) - 0.5) * 0.35;
+    }
+  const r = rng(kind.length * 977 + 13);
+  const wrap = (v: number) => ((v % size) + size) % size;
+  /** stamp a radial profile f(q) (q = d²/R²) into height and albedo */
+  const stamp = (cx: number, cy: number, R: number, fh: (q: number) => number, fa?: (q: number) => number, sy = 1) => {
+    const Ri = Math.ceil(R * 1.6);
+    for (let dy = -Ri; dy <= Ri; dy++)
+      for (let dx = -Ri; dx <= Ri; dx++) {
+        const q = (dx * dx + (dy * dy) / (sy * sy)) / (R * R);
+        if (q >= 2.6) continue;
+        const i = wrap(Math.floor(cy + dy)) * size + wrap(Math.floor(cx + dx));
+        h[i] += fh(q);
+        if (fa) alb[i] += fa(q);
+      }
+  };
+  if (kind === "regolith") {
+    // micro-craters: many tiny, few large; raised rims, fresh ones with bright ejecta
+    for (let k = 0; k < 900; k++) {
+      const R = 1.2 + Math.pow(r(), 3.2) * 30;
+      const depth = R * (0.025 + r() * 0.035);
+      const fresh = r() < 0.2;
+      stamp(r() * size, r() * size, R, (q) => (q < 1 ? (q - 1) * depth * 1.1 + depth * 0.25 : depth * 0.25 * Math.exp(-(q - 1) * 4)), fresh ? (q) => (q < 2.4 ? 0.12 * Math.exp(-q * 0.8) : 0) : undefined);
+    }
+    for (let k = 0; k < 160; k++) {
+      const R = 1 + r() * r() * 3;
+      const a = r() * 2;
+      stamp(r() * size, r() * size, R, (q) => (q < 1 ? Math.sqrt(1 - q) * R * 0.25 : 0), (q) => (q < 1 ? (a - 1) * 0.12 : 0));
+    }
+  } else if (kind === "gravel") {
+    // desert pavement: angular-ish pebbles of every size, sat in finer sand
+    for (let k = 0; k < 2600; k++) {
+      const R = 1.1 + Math.pow(r(), 2.4) * 9;
+      const sy = 0.6 + r() * 0.8;
+      const tone = (r() - 0.5) * 0.55;
+      stamp(r() * size, r() * size, R, (q) => (q < 1 ? Math.pow(1 - q, 0.6) * R * 0.32 : 0), (q) => (q < 1 ? tone - 0.04 : q < 1.5 ? -0.06 * (1.5 - q) : 0), sy);
+    }
+  } else if (kind === "sand") {
+    for (let k = 0; k < 1800; k++) {
+      const R = 0.8 + r() * r() * 3;
+      const tone = (r() - 0.5) * 0.4;
+      stamp(r() * size, r() * size, R, (q) => (q < 1 ? Math.sqrt(1 - q) * R * 0.25 : 0), (q) => (q < 1 ? tone : 0));
+    }
+  } else if (kind === "ice") {
+    // shallow sublimation pits with dark tholin-stained floors
+    for (let k = 0; k < 320; k++) {
+      const R = 3 + Math.pow(r(), 2) * 22;
+      const d = R * (0.04 + r() * 0.04);
+      stamp(r() * size, r() * size, R, (q) => (q < 1 ? -(1 - q) * (1 - q) * d * 2 : 0), (q) => (q < 1 ? -0.18 * (1 - q) : 0));
+    }
+  } else {
+    // basalt: vesicles and a hairline crack web
+    for (let k = 0; k < 900; k++) {
+      const R = 0.8 + r() * r() * 3;
+      stamp(r() * size, r() * size, R, (q) => (q < 1 ? -(1 - q) * R * 0.4 : 0), (q) => (q < 1 ? -0.12 : 0));
+    }
+    const P = 9;
+    const pts: [number, number][] = [];
+    for (let j = 0; j < P; j++) for (let i = 0; i < P; i++) pts.push([(i + 0.15 + 0.7 * r()) / P, (j + 0.15 + 0.7 * r()) / P]);
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const u = x / size;
+        const v = y / size;
+        let f1 = 9;
+        let f2 = 9;
+        const ci = Math.floor(u * P);
+        const cj = Math.floor(v * P);
+        for (let oy = -1; oy <= 1; oy++)
+          for (let ox = -1; ox <= 1; ox++) {
+            const ii = ci + ox;
+            const jj = cj + oy;
+            const wi = ((ii % P) + P) % P;
+            const wj = ((jj % P) + P) % P;
+            const [px, py] = pts[wj * P + wi];
+            const d = Math.hypot(u - (px + (ii - wi) / P), v - (py + (jj - wj) / P));
+            if (d < f1) {
+              f2 = f1;
+              f1 = d;
+            } else if (d < f2) f2 = d;
+          }
+        const e = (f2 - f1) * P;
+        const c = 1 - Math.min(1, e / 0.05);
+        h[y * size + x] -= c * 1.2;
+        alb[y * size + x] -= c * 0.25;
+      }
+  }
+  const data = new Uint8Array(N * 4);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < N; i++) {
+    lo = Math.min(lo, h[i]);
+    hi = Math.max(hi, h[i]);
+  }
+  const k = 1.4;
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const l = h[y * size + wrap(x - 1)];
+      const rr = h[y * size + wrap(x + 1)];
+      const d = h[wrap(y - 1) * size + x];
+      const u = h[wrap(y + 1) * size + x];
+      const nx = (l - rr) * k;
+      const nz = (d - u) * k;
+      const inv = 1 / Math.hypot(nx, 1, nz);
+      const i = (y * size + x) * 4;
+      data[i] = (nx * inv * 0.5 + 0.5) * 255;
+      data[i + 1] = (nz * inv * 0.5 + 0.5) * 255;
+      data[i + 2] = ((h[y * size + x] - lo) / Math.max(1e-6, hi - lo)) * 255;
+      data[i + 3] = Math.max(0, Math.min(1, alb[y * size + x])) * 255;
+    }
+  const t = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.anisotropy = 8;
+  t.generateMipmaps = true;
+  t.needsUpdate = true;
+  return t;
+}
+
 function canvas(w: number, h: number) {
   const c = document.createElement("canvas");
   c.width = w;

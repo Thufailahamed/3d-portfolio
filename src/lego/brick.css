@@ -1,0 +1,43 @@
+/*
+ * brick edition type and paper. Everything is set in Archivo: wide and heavy for the box-art
+ * headings and step numbers, normal width for the reading text. The panels are printed pages
+ * from an instruction booklet: warm white stock, black ink, light-blue parts callouts.
+ */
+.brick-ui {
+  --paper: #fbfaf6;
+  --paper-2: #f1efe8;
+  --ink: #16181d;
+  --callout: #dde9f3;
+  --callout-edge: #b3c9dc;
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-stretch: 100%;
+  font-feature-settings: "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+.brick-display {
+  font-weight: 800;
+  font-stretch: 100%;
+  letter-spacing: -0.032em;
+  line-height: 0.96;
+  text-wrap: balance;
+}
+/* the step numbers, set the way the booklets set them: heavy, plain, close to the edge */
+.brick-step {
+  font-weight: 800;
+  font-stretch: 100%;
+  letter-spacing: -0.045em;
+  line-height: 0.8;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.brick-num {
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0;
+}
+/* the small print on a box: capitals, a little air between them */
+.brick-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  font-stretch: 108%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
