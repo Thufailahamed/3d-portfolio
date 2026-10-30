@@ -229,6 +229,10 @@ export class ControlRoom {
   group = new THREE.Group();
   pickables: THREE.Mesh[] = [];
   private heads: THREE.InstancedMesh[] = [];
+  private bodies: THREE.InstancedMesh[] = [];
+  private bodyBase: THREE.Matrix4[] = [];
+  private lean = 0;
+  private cheer = 0;
   private headBase: { p: THREE.Vector3; yaw: number; seed: number; row: number }[] = [];
   private sign: THREE.Mesh;
   private signText = "";
@@ -556,6 +560,8 @@ export class ControlRoom {
     });
     g.add(bodies, heads, hair, sets);
     this.heads = [heads, hair, sets];
+    this.bodies = [bodies, pants, skin];
+    this.bodyBase = people.map((p) => p.m.clone());
     this.updateHeads(0);
 
     // —— light ——
@@ -577,25 +583,46 @@ export class ControlRoom {
     g.add(this.patches);
   }
 
-  private updateHeads(t: number) {
+  private updateHeads(t: number, dt = 0) {
     const s = useMC.getState();
     const live = s.ops.phase === "flight";
+    // the room leans in from the last minute of the count through powered flight, and erupts when it is over
+    const tense = live || (s.ops.phase === "count" && !s.ops.holding && s.ops.tMinus < 60);
+    const won = s.ops.phase === "post" && s.ops.result === "success";
+    this.lean += ((tense ? 1 : 0) - this.lean) * Math.min(1, dt * 1.5);
+    this.cheer += ((won ? 1 : 0) - this.cheer) * Math.min(1, dt * (won ? 3 : 0.4));
     const dummy = new THREE.Object3D();
+    const lift = new THREE.Matrix4();
+    const tilt = new THREE.Matrix4();
+    const m4 = new THREE.Matrix4();
+    const moving = this.lean > 0.002 || this.cheer > 0.002;
     this.headBase.forEach((h, i) => {
+      // applause: a bounce in the seat, out of step from one person to the next; the gallery is the loudest
+      const clap = this.cheer * Math.max(0, Math.sin(t * (8 + (h.seed % 3)) + h.seed)) * (h.row === 4 ? 0.07 : 0.045);
+      const lean = this.lean * (h.row === 4 ? 0.04 : 0.1) * (0.6 + 0.4 * Math.sin(h.seed));
       // watch the wall during flight, the monitors otherwise
-      const look = live ? -0.18 + Math.sin(t * 0.4 + h.seed) * 0.05 : 0.18 + Math.sin(t * 0.25 + h.seed) * 0.08;
-      const yaw = h.yaw + Math.sin(t * 0.17 + h.seed * 2) * 0.35 * (h.row === 4 ? 0.3 : 1) + (Math.sin(t * 0.05 + h.seed) > 0.97 ? 0.8 : 0);
+      const look = live ? -0.18 + Math.sin(t * 0.4 + h.seed) * 0.05 : this.cheer > 0.3 ? -0.25 + Math.sin(t * 3 + h.seed) * 0.1 : 0.18 + Math.sin(t * 0.25 + h.seed) * 0.08;
+      const yaw = h.yaw + Math.sin(t * 0.17 + h.seed * 2) * 0.35 * (h.row === 4 ? 0.3 : 1) * (1 - this.lean * 0.7) + (Math.sin(t * 0.05 + h.seed) > 0.97 ? 0.8 : 0) + this.cheer * Math.sin(t * 1.3 + h.seed) * 0.5;
       dummy.position.copy(h.p);
+      dummy.position.y += clap - lean * 0.9;
+      dummy.position.z -= lean * 1.25;
       dummy.rotation.set(look, yaw, 0, "YXZ");
       dummy.updateMatrix();
       for (const m of this.heads) m.setMatrixAt(i, dummy.matrix);
+      if (moving || dt === 0) {
+        lift.makeTranslation(0, clap, 0);
+        tilt.makeRotationX(-lean);
+        m4.multiplyMatrices(lift, this.bodyBase[i]).multiply(tilt);
+        for (const b of this.bodies) b.setMatrixAt(i, m4);
+      }
     });
     for (const m of this.heads) m.instanceMatrix.needsUpdate = true;
+    if (moving || dt === 0) for (const b of this.bodies) b.instanceMatrix.needsUpdate = true;
   }
 
   update(dt: number) {
     this.t += dt;
-    this.updateHeads(this.t);
+    this.updateHeads(this.t, dt);
     const s = useMC.getState();
     const text = s.ops.phase === "count" ? (s.ops.holding ? "HOLDING" : "COUNTDOWN") : s.ops.phase === "flight" ? "IN FLIGHT" : s.ops.phase === "post" ? (s.ops.result === "success" ? "MISSION SUCCESS" : s.ops.result.toUpperCase()) : "PLANNING";
     if (text !== this.signText) {

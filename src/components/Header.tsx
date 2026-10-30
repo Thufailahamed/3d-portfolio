@@ -9,6 +9,7 @@ import { gsap, useGSAP } from "@/lib/gsap";
 import { setSound } from "@/lib/sound";
 import { useApp } from "@/store/useApp";
 import FullExperienceLink from "./FullExperienceLink";
+import { isLanding } from "./landing/routes";
 import { lenis } from "./SmoothScroll";
 
 const NAV: { id: ChapterId; label: string; href: string; lite: string }[] = [
@@ -18,7 +19,7 @@ const NAV: { id: ChapterId; label: string; href: string; lite: string }[] = [
   { id: "contact", label: "Contact", href: "/contact", lite: "/lite#contact" },
 ];
 // standalone WebGL pieces, listed apart from the journey
-const PLAYGROUND = [
+export const PLAYGROUND = [
   { label: "Cars", href: "/cars", blurb: "Showroom, compare, crash lab" },
   { label: "Bricks", href: "/lego", blurb: "The portfolio in bricks" },
   { label: "Ramps", href: "/hotwheels", blurb: "Die-cast stunt park" },
@@ -38,8 +39,8 @@ export default function Header() {
   const menu = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const onJourney = JOURNEY.has(pathname) && !lite;
-  // the pavilion and the brick world draw their own chrome
-  const onFlow = pathname === "/flow" || pathname.startsWith("/lego") || pathname.startsWith("/hotwheels") || pathname.startsWith("/rover") || pathname.startsWith("/diffusion") || pathname.startsWith("/voice");
+  // the pavilion, the brick world and the paper edition draw their own chrome
+  const onFlow = pathname === "/flow" || pathname.startsWith("/lite") || pathname.startsWith("/lego") || pathname.startsWith("/hotwheels") || pathname.startsWith("/rover") || pathname.startsWith("/diffusion") || pathname.startsWith("/voice") || isLanding(pathname);
   // on the hero the giant name *is* the logo
   const hideLogo = onJourney && chapter === "hero";
 

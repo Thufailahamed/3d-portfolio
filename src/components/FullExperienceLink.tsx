@@ -3,7 +3,7 @@
 import Link from "next/link";
 
 /** Leaves the lite site for the WebGL journey (full reload, so the scene boots clean). */
-export default function FullExperienceLink({ className = "" }: { className?: string }) {
+export default function FullExperienceLink({ className = "", children }: { className?: string; children?: React.ReactNode }) {
   return (
     <Link
       href="/"
@@ -15,7 +15,7 @@ export default function FullExperienceLink({ className = "" }: { className?: str
       }}
       className={className}
     >
-      Full 3D experience ↗
+      {children ?? "Full 3D experience ↗"}
     </Link>
   );
 }

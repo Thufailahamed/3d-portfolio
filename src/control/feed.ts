@@ -56,22 +56,120 @@ function canvasTex(w: number, h: number, draw: (c: CanvasRenderingContext2D) => 
   return t;
 }
 
+/**
+ * A cauliflower puff: a cluster of soft lobes. Alpha is the density; red is how much the top-left
+ * of each lobe faces the light, so a billboard reads as a lit, rounded cumulus and not a disc.
+ */
 const smokeTex = () =>
+  canvasTex(256, 256, (c) => {
+    const S = 256;
+    const dens = new Float32Array(S * S);
+    const lit = new Float32Array(S * S);
+    const lobes: [number, number, number][] = [[128, 136, 70]];
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2, r = 20 + Math.random() * 52;
+      lobes.push([128 + Math.cos(a) * r, 132 + Math.sin(a) * r * 0.9, 18 + Math.random() * 30]);
+    }
+    for (const [lx, ly, lr] of lobes) {
+      const x0 = Math.max(0, Math.floor(lx - lr)), x1 = Math.min(S - 1, Math.ceil(lx + lr));
+      const y0 = Math.max(0, Math.floor(ly - lr)), y1 = Math.min(S - 1, Math.ceil(ly + lr));
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) {
+          const dx = (x - lx) / lr, dy = (y - ly) / lr;
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= 1) continue;
+          const k = y * S + x;
+          const v = (1 - d2) * (1 - d2);
+          dens[k] = Math.min(1, dens[k] + v * 0.75);
+          // sphere normal facing up and a little toward the viewer
+          const nz = Math.sqrt(1 - d2);
+          lit[k] = Math.max(lit[k], (-dy * 0.75 + nz * 0.55 - dx * 0.15) * 0.5 + 0.5);
+        }
+    }
+    const img = c.createImageData(S, S);
+    for (let y = 0; y < S; y++)
+      for (let x = 0; x < S; x++) {
+        const k = y * S + x;
+        const r = Math.hypot(x - 128, y - 128) / 128;
+        const edge = Math.max(0, 1 - Math.pow(r, 3));
+        const grain = 0.85 + Math.random() * 0.15;
+        img.data[k * 4] = Math.round(255 * Math.min(1, lit[k] * grain));
+        img.data[k * 4 + 1] = img.data[k * 4 + 2] = 255;
+        img.data[k * 4 + 3] = Math.round(255 * Math.min(1, dens[k] * edge * 1.15));
+      }
+    c.putImageData(img, 0, 0);
+  }, false);
+
+/** soft radial glow for lamps and plume flare */
+const glowTex = () =>
   canvasTex(128, 128, (c) => {
-    const g = c.createRadialGradient(64, 64, 4, 64, 64, 62);
+    const g = c.createRadialGradient(64, 64, 0, 64, 64, 64);
     g.addColorStop(0, "rgba(255,255,255,1)");
-    g.addColorStop(0.45, "rgba(255,255,255,0.65)");
+    g.addColorStop(0.12, "rgba(255,255,255,0.55)");
+    g.addColorStop(0.4, "rgba(255,255,255,0.12)");
     g.addColorStop(1, "rgba(255,255,255,0)");
     c.fillStyle = g;
     c.fillRect(0, 0, 128, 128);
-    for (let i = 0; i < 260; i++) {
-      const a = Math.random() * Math.PI * 2, r = Math.random() * 50;
-      c.fillStyle = `rgba(0,0,0,${Math.random() * 0.12})`;
-      c.beginPath();
-      c.arc(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 3 + Math.random() * 9, 0, Math.PI * 2);
-      c.fill();
-    }
   }, false);
+
+/** painted stage skin: panel seams, stringer shading, a name down the side and (optionally) flight soot */
+function skinTex(base: string, opts: { soot?: boolean; text?: string; textColor?: string; seams?: number } = {}) {
+  return canvasTex(512, 2048, (c) => {
+    c.fillStyle = base;
+    c.fillRect(0, 0, 512, 2048);
+    // stringers: faint vertical shading
+    for (let x = 0; x < 512; x += 16) {
+      c.fillStyle = `rgba(0,0,0,${0.015 + Math.random() * 0.02})`;
+      c.fillRect(x, 0, 2, 2048);
+    }
+    // barrel-section welds
+    const seams = opts.seams ?? 9;
+    for (let i = 1; i < seams; i++) {
+      const y = (i / seams) * 2048;
+      c.fillStyle = "rgba(0,0,0,0.13)";
+      c.fillRect(0, y, 512, 3);
+      c.fillStyle = "rgba(255,255,255,0.08)";
+      c.fillRect(0, y + 3, 512, 2);
+    }
+    // a raceway (cable tunnel) down one side
+    c.fillStyle = "rgba(0,0,0,0.1)";
+    c.fillRect(380, 0, 18, 2048);
+    c.fillStyle = "rgba(255,255,255,0.08)";
+    c.fillRect(380, 0, 3, 2048);
+    if (opts.text) {
+      c.save();
+      c.translate(128, 1650);
+      c.rotate(-Math.PI / 2);
+      c.fillStyle = opts.textColor ?? "#1b1d22";
+      c.font = "bold 92px Arial, Helvetica, sans-serif";
+      c.textBaseline = "middle";
+      c.fillText(opts.text, 0, 0);
+      c.restore();
+    }
+    if (opts.soot) {
+      // a flown booster: soot streaks up from the engines and down from the interstage
+      const g = c.createLinearGradient(0, 2048, 0, 1100);
+      g.addColorStop(0, "rgba(28,24,20,0.92)");
+      g.addColorStop(0.35, "rgba(40,34,28,0.45)");
+      g.addColorStop(1, "rgba(40,34,28,0)");
+      c.fillStyle = g;
+      c.fillRect(0, 0, 512, 2048);
+      for (let i = 0; i < 90; i++) {
+        const x = Math.random() * 512, len = 200 + Math.random() * 900;
+        const gs = c.createLinearGradient(0, 2048, 0, 2048 - len);
+        gs.addColorStop(0, `rgba(20,16,12,${0.15 + Math.random() * 0.3})`);
+        gs.addColorStop(1, "rgba(20,16,12,0)");
+        c.fillStyle = gs;
+        c.fillRect(x, 2048 - len, 4 + Math.random() * 14, len);
+      }
+      const top = c.createLinearGradient(0, 0, 0, 380);
+      top.addColorStop(0, "rgba(30,26,22,0.5)");
+      top.addColorStop(1, "rgba(30,26,22,0)");
+      c.fillStyle = top;
+      c.fillRect(0, 0, 512, 380);
+    }
+  });
+}
 
 const landingTex = (kind: "asds" | "lz") =>
   canvasTex(512, 512, (c) => {
@@ -130,7 +228,7 @@ function ogive(r: number, h: number, y0: number, mat: THREE.Material, tipR = 0.0
   return lathe([[0, y0], ...pts], mat);
 }
 function nozzle(rExit: number, len: number, mat: THREE.Material) {
-  const m = lathe([[rExit * 0.35, 0], [rExit * 0.42, -len * 0.25], [rExit * 0.7, -len * 0.6], [rExit, -len], [rExit * 0.97, -len]], mat, 24);
+  const m = lathe([[rExit * 0.35, 0], [rExit * 0.42, -len * 0.25], [rExit * 0.7, -len * 0.6], [rExit, -len], [rExit * 0.97, -len]], mat, 48);
   return m;
 }
 
@@ -138,7 +236,25 @@ function stdMat(color: string, rough = 0.55, metal = 0.05, extra: Partial<THREE.
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
 }
 
-export function buildVehicle(v: Vehicle, crewed: boolean): VehicleModel {
+/**
+ * The radiatively cooled vacuum bell (lathe v runs throat → exit, i.e. canvas bottom → top): the
+ * regeneratively cooled throat stays dark, the extension glows hottest just below it and cools to a
+ * dull cherry red at the lip.
+ */
+function nozzleGlowTex() {
+  return canvasTex(64, 256, (c) => {
+    const g = c.createLinearGradient(0, 256, 0, 0);
+    g.addColorStop(0, "#000000");
+    g.addColorStop(0.18, "#120200");
+    g.addColorStop(0.3, "#d8561a");
+    g.addColorStop(0.55, "#b23206");
+    g.addColorStop(1, "#420800");
+    c.fillStyle = g;
+    c.fillRect(0, 0, 64, 256);
+  });
+}
+
+export function buildVehicle(v: Vehicle, crewed: boolean, flown = false): VehicleModel {
   const root = new THREE.Group();
   const core = new THREE.Group();
   const upper = new THREE.Group();
@@ -148,12 +264,16 @@ export function buildVehicle(v: Vehicle, crewed: boolean): VehicleModel {
   const legs: THREE.Mesh[] = [];
   const fins: THREE.Mesh[] = [];
   const P = v.paint;
-  const body = stdMat(P.body, P.metal ? 0.38 : 0.55, P.metal ? 0.85 : 0.05);
+  const body = P.metal ? stdMat(P.body, 0.38, 0.85) : new THREE.MeshStandardMaterial({ map: skinTex(P.body, { seams: 5 }), roughness: 0.55, metalness: 0.05 });
+  // the stages that have a name painted on them, and the booster that has flown before
+  const label = v.kit === "f9" || v.kit === "fh" ? v.name.replace(/ Block \d+/, "").toUpperCase() : "";
+  const stage1 = P.metal ? body : new THREE.MeshStandardMaterial({ map: skinTex(P.body, { soot: flown, text: label, seams: 9 }), roughness: flown ? 0.7 : 0.55, metalness: 0.05 });
   const inter = stdMat(P.inter, 0.6, P.metal ? 0.8 : 0.1);
   const accent = stdMat(P.accent, 0.5);
   const dark = stdMat("#1b1c1e", 0.7, 0.2);
-  const engineMat = stdMat("#3a3532", 0.35, 0.85);
-  const nozzleMat = new THREE.MeshStandardMaterial({ color: "#5b4a3d", roughness: 0.3, metalness: 0.9, emissive: new THREE.Color("#ff5a1a"), emissiveIntensity: 0 });
+  // bells are open shells: render both faces so you can see into them
+  const engineMat = stdMat("#3a3532", 0.35, 0.85, { side: THREE.DoubleSide });
+  const nozzleMat = new THREE.MeshStandardMaterial({ color: "#2b2725", roughness: 0.6, metalness: 0.7, emissive: new THREE.Color("#ffffff"), emissiveMap: nozzleGlowTex(), emissiveIntensity: 0, side: THREE.DoubleSide });
   const R = v.diameter / 2;
   let coreLen = 0;
   let upperBase = 0;
@@ -171,7 +291,7 @@ export function buildVehicle(v: Vehicle, crewed: boolean): VehicleModel {
 
   if (v.kit === "f9" || v.kit === "fh") {
     const s1 = 41.2, is = 6.7, s2 = 12.6;
-    core.add(cyl(R, s1, body, 0));
+    core.add(cyl(R, s1, stage1, 0));
     core.add(cyl(R, 0.6, dark, 0));
     addEngines(core, 9, R * 0.62, 0.48, 1.4, 0);
     // landing legs folded against the stage, grid fins at the top of the interstage
@@ -227,7 +347,7 @@ export function buildVehicle(v: Vehicle, crewed: boolean): VehicleModel {
     if (v.kit === "fh") {
       for (const side of [-1, 1]) {
         const b = new THREE.Group();
-        b.add(cyl(R, s1, body, 0));
+        b.add(cyl(R, s1, stage1, 0));
         b.add(cyl(R, 0.6, dark, 0));
         addEngines(b, 9, R * 0.62, 0.48, 1.4, 0);
         b.add(ogive(R, 6, s1, stdMat("#e8e8e6", 0.5)));
@@ -487,7 +607,7 @@ const plumeFrag = /* glsl */ `
     float flick = 0.8 + 0.2 * n1(uTime * 37.0 + uSeed + ax * 9.0) + 0.15 * n1(vUv.x * 30.0 + uTime * 12.0);
     float diamonds = (1.0 - uVac) * smoothstep(0.55, 1.0, 0.5 + 0.5 * sin(ax * 46.0 - uTime * 2.0)) * smoothstep(0.42, 0.05, ax) * 0.9;
     vec3 col = mix(uOuter, uCore, clamp(pow(max(1.0 - ax, 1e-5), 3.0) * edge * 1.4 + diamonds, 0.0, 1.0));
-    float a = fall * edge * flick * uThr * mix(1.0, 0.1, uVac);
+    float a = fall * edge * flick * uThr * mix(1.0, 0.05, uVac);
     gl_FragColor = vec4(max(col * a * (2.4 + diamonds * 3.0), vec3(0.0)), clamp(a, 0.0, 1.0));
   }`;
 
@@ -516,7 +636,7 @@ function setPlume(p: THREE.Mesh, thr: number, vac: number, r: number, len: numbe
   u.uVac.value = vac;
   u.uTime.value = t;
   p.visible = thr > 0.01;
-  const spread = (0.75 + vac * vac * 9) * (1 - 0.25 * (1 - vac));
+  const spread = (1.3 + vac * vac * 8.5) * (1 - 0.25 * (1 - vac));
   p.scale.set(r * spread, len * (1 + vac * 2.5), r * spread);
 }
 
@@ -562,9 +682,10 @@ class Smoke {
         attribute vec3 aC; attribute float aS; attribute vec2 aA; attribute float aH;
         varying vec2 vUv; varying float vA; varying float vH; varying float vRot; varying float vSh;
         void main(){
-          vUv = uv; vA = aA.x; vH = aH; vSh = aA.y;
+          // mirror half the puffs; only a small roll, so the lit side of each lobe stays on top
+          vUv = vec2(aA.y > 0.5 ? 1.0 - uv.x : uv.x, uv.y); vA = aA.x; vH = aH; vSh = aA.y;
           vec4 mv = modelViewMatrix * vec4(aC, 1.0);
-          float r = aA.y * 6.2831;
+          float r = (fract(aA.y * 7.13) - 0.5) * 0.9;
           vec2 p = mat2(cos(r), -sin(r), sin(r), cos(r)) * position.xy;
           mv.xy += p * aS;
           gl_Position = projectionMatrix * mv;
@@ -576,9 +697,12 @@ class Smoke {
           vec4 t = texture2D(uTex, vUv);
           float a = t.a * vA;
           if (a < 0.004) discard;
-          float lit = 0.45 + 0.55 * clamp(uSun.y * 1.4 + (vUv.y - 0.5) * 0.8, 0.0, 1.0);
-          vec3 c = mix(uAmb, uLight, lit) * (0.82 + 0.18 * t.r);
-          c += vec3(1.0, 0.55, 0.2) * vH * uGlow * 0.7;
+          // lobes facing the sky and sun are bright, the undersides fall into blue-grey shadow
+          float sunUp = clamp(uSun.y * 2.0 + 0.4, 0.0, 1.0);
+          float lit = clamp(t.r * (0.55 + 0.45 * sunUp) + 0.08, 0.0, 1.0);
+          vec3 c = mix(uAmb, uLight, lit);
+          // the plume lights the cloud from inside and below
+          c += vec3(1.0, 0.5, 0.18) * uGlow * (vH * 1.6 + (1.0 - t.r) * vH * 1.2);
           gl_FragColor = vec4(c, a);
         }`,
       transparent: true,
@@ -672,6 +796,76 @@ class Smoke {
   }
 }
 
+// ———————————————————————————— the camera chain ————————————————————————————
+
+/**
+ * What the range cameras add on their way to the wall: lens glare around anything brighter than
+ * white, a little chromatic fringe toward the corners, heat shimmer over hot ground, sensor grain
+ * that grows in the dark, a soft vignette, the on-screen display, and — when the downlink is
+ * struggling — dropped macroblocks, smeared rows and a frozen frame.
+ */
+const BROADCAST = {
+  depthTest: false,
+  depthWrite: false,
+  toneMapped: false,
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tRaw; uniform sampler2D tOsd; uniform vec2 uRes; uniform float uTime;
+    uniform float uGrain; uniform float uGlitch; uniform float uShimmer; uniform float uShimmerY; uniform float uCA; uniform float uFish;
+    varying vec2 vUv;
+    float h2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    vec3 hot(vec3 c){ return max(c - vec3(1.1), vec3(0.0)); }
+    void main(){
+      vec2 uv = vUv;
+      vec2 cc = uv - 0.5;
+      // wide-angle onboard lenses barrel a little
+      uv = 0.5 + cc * (1.0 - uFish * dot(cc, cc) * 0.35);
+      // heat shimmer: strongest low in the frame, where the long lens looks through hot air
+      float sh = uShimmer * (0.35 + 0.65 * smoothstep(uShimmerY + 0.25, uShimmerY - 0.2, uv.y));
+      uv.x += sh * (sin(uv.y * 310.0 + uTime * 23.0) * 0.6 + sin(uv.y * 133.0 - uTime * 17.0) * 0.4) * 0.00035;
+      uv.y += sh * sin(uv.x * 240.0 + uTime * 19.0) * 0.00018;
+      // the downlink: lost macroblocks hold stale or smeared data
+      float g = uGlitch;
+      if (g > 0.0) {
+        vec2 blk = floor(uv * vec2(48.0, 27.0));
+        float t8 = floor(uTime * 9.0);
+        float r = h2(blk + t8);
+        float rowR = h2(vec2(blk.y, t8 * 1.7));
+        if (rowR < g * 0.35) uv.x = floor(uv.x * 48.0) / 48.0 + (h2(vec2(blk.y, t8)) - 0.5) * 0.08 * g;
+        if (r < g * 0.25) uv = (blk + vec2(h2(blk + 3.0), h2(blk + 5.0)) * 0.6) / vec2(48.0, 27.0);
+      }
+      vec2 ca = (uv - 0.5) * uCA;
+      vec3 col = vec3(texture2D(tRaw, uv - ca).r, texture2D(tRaw, uv).g, texture2D(tRaw, uv + ca).b);
+      // lens glare: a soft halo and a faint horizontal streak around blown-out highlights
+      vec2 px = 1.0 / uRes;
+      vec3 gl = vec3(0.0);
+      for (int i = 0; i < 12; i++) {
+        float a = float(i) * 2.3998;
+        float rr = (2.0 + float(i) * 2.6);
+        gl += hot(texture2D(tRaw, uv + vec2(cos(a), sin(a)) * rr * px).rgb) * (1.0 - float(i) / 13.0);
+      }
+      for (int i = 1; i < 13; i++) {
+        float o = float(i) * 4.0;
+        gl += (hot(texture2D(tRaw, uv + vec2(o, 0.0) * px).rgb) + hot(texture2D(tRaw, uv - vec2(o, 0.0) * px).rgb)) * 0.12 * (1.0 - float(i) / 13.0);
+      }
+      col += gl * 0.09;
+      if (g > 0.0) {
+        // badly hit blocks lose their detail: one flat colour per 8×8 macroblock
+        vec2 blk = floor(vUv * vec2(160.0, 90.0));
+        if (h2(floor(blk / 4.0) + floor(uTime * 9.0) + 11.0) < g * 0.3) col = texture2D(tRaw, (blk + 0.5) / vec2(160.0, 90.0)).rgb * 1.05;
+        col *= 1.0 - g * 0.25 * step(0.92, h2(vec2(floor(uv.y * 140.0), floor(uTime * 24.0))));
+      }
+      // sensor grain: grows in the shadows
+      float lum = dot(col, vec3(0.299, 0.587, 0.114));
+      float n = h2(vUv * uRes + fract(uTime * 7.31) * 913.0) - 0.5;
+      col += n * uGrain * (0.25 + 0.75 * (1.0 - smoothstep(0.0, 0.6, lum))) * (0.25 + sqrt(max(lum, 0.0)));
+      col *= 1.0 - 0.32 * smoothstep(0.35, 0.85, length(cc * vec2(1.0, 0.8)) * 1.3);
+      vec4 o = texture2D(tOsd, vUv);
+      col = mix(col, o.rgb * 1.1, o.a);
+      gl_FragColor = vec4(max(col, vec3(0.0)), 1.0);
+    }`,
+};
+
 // ———————————————————————————— the feed ————————————————————————————
 
 type Debris = { mesh: THREE.Object3D; p: THREE.Vector3; v: THREE.Vector3; w: THREE.Vector3; t: number };
@@ -707,6 +901,7 @@ export class LaunchFeed {
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
   private camFov = 30;
+  private camUp = new THREE.Vector3(0, 1, 0);
   private camMode = "";
   private lastFlight: Flight | null = null;
   private seen = new Set<string>();
@@ -719,11 +914,42 @@ export class LaunchFeed {
   private t = 0;
   private asdsTex = landingTex("asds");
   private lzTex = landingTex("lz");
+  // night lighting on the pad and the glare of the engines
+  private glow = glowTex();
+  private beacons: THREE.Sprite[] = [];
+  private lampGlows: THREE.Sprite[] = [];
+  private beams: THREE.Mesh[] = [];
+  private flare: THREE.Sprite;
+  private night = 0;
+  // the camera itself: the scene renders to `raw`, the broadcast pass composites it into `rt`
+  private raw: THREE.WebGLRenderTarget;
+  private post: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private postScene = new THREE.Scene();
+  private postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private osd: HTMLCanvasElement;
+  private osdTex: THREE.CanvasTexture;
+  private osdKey = "";
+  private glitch = 0;
+  private dropT = 0;
 
   constructor(private renderer: THREE.WebGLRenderer, nightTex: THREE.Texture | null, landTex: THREE.Texture | null, quality: number) {
     const w = quality >= 2 ? 1280 : quality === 1 ? 1024 : 768;
-    this.rt = new THREE.WebGLRenderTarget(w, Math.round((w * 9) / 16), { type: THREE.HalfFloatType, samples: quality >= 1 ? 4 : 0 });
+    const h = Math.round((w * 9) / 16);
+    this.raw = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: quality >= 1 ? 4 : 0 });
+    this.raw.texture.generateMipmaps = false;
+    this.rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: false });
     this.rt.texture.generateMipmaps = false;
+    this.osd = document.createElement("canvas");
+    this.osd.width = 1024;
+    this.osd.height = 576;
+    this.osdTex = new THREE.CanvasTexture(this.osd);
+    this.osdTex.colorSpace = THREE.SRGBColorSpace;
+    this.post = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ ...BROADCAST, uniforms: { tRaw: { value: this.raw.texture }, tOsd: { value: this.osdTex }, uRes: { value: new THREE.Vector2(w, h) }, uTime: { value: 0 }, uGrain: { value: 0.04 }, uGlitch: { value: 0 }, uShimmer: { value: 0 }, uShimmerY: { value: 0.5 }, uCA: { value: 0.0015 }, uFish: { value: 0 } } }));
+    this.post.frustumCulled = false;
+    this.postScene.add(this.post);
+    this.flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glow, color: new THREE.Color(1, 0.72, 0.42), blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true, toneMapped: false }));
+    this.flare.renderOrder = 8;
+    this.world.add(this.flare);
     this.scene.add(this.world, this.sun, this.sun.target, this.hemi, this.plumeLight, this.smoke.mesh);
     // sky-and-ground image lighting for paint and steel
     const envScene = new THREE.Scene();
@@ -868,33 +1094,60 @@ export class LaunchFeed {
     // stars are drawn by the sky shader, which knows where the planet is
     // ground
     this.groundMat = new THREE.ShaderMaterial({
-      uniforms: { uSun: { value: new THREE.Vector3(0, 1, 0) }, uSea: { value: new THREE.Vector3(1, 0, 0) }, uSeaD: { value: 1500 }, uLand: { value: new THREE.Color("#5f6d3c") }, uHaze: { value: new THREE.Color("#a9c4df") }, uHasSea: { value: 1 }, uOrigin: { value: new THREE.Vector3() }, uDay: { value: 1 }, uOpacity: { value: 1 } },
+      uniforms: { uSun: { value: new THREE.Vector3(0, 1, 0) }, uSea: { value: new THREE.Vector3(1, 0, 0) }, uSeaD: { value: 1500 }, uLand: { value: new THREE.Color("#5f6d3c") }, uHaze: { value: new THREE.Color("#a9c4df") }, uHasSea: { value: 1 }, uOrigin: { value: new THREE.Vector3() }, uDay: { value: 1 }, uOpacity: { value: 1 }, uLamps: { value: 0 }, uBlast: { value: 0 }, uBlastAt: { value: new THREE.Vector2() }, uTime: { value: 0 } },
       transparent: true,
       vertexShader: /* glsl */ `varying vec3 vW; varying vec3 vP; void main(){ vP = position; vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: /* glsl */ `
         uniform vec3 uSun; uniform vec3 uSea; uniform float uSeaD; uniform vec3 uLand; uniform vec3 uHaze; uniform float uHasSea; uniform float uDay; uniform float uOpacity;
+        uniform float uLamps; uniform float uBlast; uniform vec2 uBlastAt; uniform float uTime;
         varying vec3 vW; varying vec3 vP;
         float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
         float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a * n(p); p *= 2.07; a *= 0.5; } return s; }
+        float pool(vec2 p, vec2 c, float r){ vec2 d = p - c; return exp(-dot(d, d) / (r * r)); }
         void main(){
-          vec2 p = vP.xz;
-          float coast = dot(vec2(p.x, -p.y), uSea.xy) - uSeaD + (fbm(p * 0.0007) - 0.5) * 2600.0;
+          // the circle is built in its own XY plane and laid flat: x is east, y is north
+          vec2 p = vP.xy;
+          float coast = dot(p, uSea.xy) - uSeaD + (fbm(p * 0.0007) - 0.5) * 2600.0;
           float water = uHasSea * smoothstep(-40.0, 40.0, coast);
           float beach = uHasSea * (1.0 - smoothstep(0.0, 160.0, abs(coast + 60.0)));
-          vec3 land = uLand * (0.75 + 0.5 * fbm(p * 0.004)) * (0.85 + 0.3 * fbm(p * 0.05));
-          land = mix(land, vec3(0.62, 0.58, 0.48), beach * 0.7);
+          // coastal scrub: muted olive with darker palmetto clumps, sandy clearings and dirt tracks
+          vec3 base = mix(uLand, vec3(dot(uLand, vec3(0.3, 0.55, 0.15))), 0.35);
+          float clump = smoothstep(0.45, 0.7, fbm(p * 0.03));
+          float clear = smoothstep(0.62, 0.8, fbm(p * 0.006 + 3.1));
+          vec3 land = base * (0.7 + 0.5 * fbm(p * 0.004)) * (0.8 + 0.35 * n(p * 0.9));
+          land = mix(land, base * 0.45, clump * 0.7);
+          land = mix(land, vec3(0.55, 0.5, 0.4), clear * 0.45);
+          land = mix(land, vec3(0.66, 0.61, 0.5), beach * 0.8);
+          // the pad apron: weathered concrete with expansion joints and scorch around the flame trench
           float padD = max(abs(p.x), abs(p.y));
-          land = mix(vec3(0.55, 0.54, 0.52) * (0.9 + 0.1 * n(p * 0.5)), land, smoothstep(60.0, 75.0, padD));
-          float road = (1.0 - smoothstep(4.0, 6.0, abs(p.y + 0.0))) * step(p.x, -60.0) * step(-2000.0, p.x);
-          land = mix(land, vec3(0.32, 0.32, 0.33), road);
+          vec2 j = abs(fract(p / 6.0) - 0.5);
+          float joint = 1.0 - smoothstep(0.0, 0.015, min(j.x, j.y));
+          vec3 conc = vec3(0.56, 0.55, 0.52) * (0.88 + 0.14 * n(p * 0.5)) * (1.0 - joint * 0.25);
+          float scorch = exp(-(p.x * p.x) / 300.0 - pow(max(0.0, -p.y - 8.0), 2.0) / 4000.0) * step(p.y, 0.0);
+          conc *= 1.0 - 0.6 * scorch;
+          land = mix(conc, land, smoothstep(60.0, 66.0, padD));
+          // the crawlerway/access road west, and a perimeter road
+          float road = (1.0 - smoothstep(4.0, 6.0, abs(p.y))) * step(p.x, -60.0) * step(-2400.0, p.x);
+          float ring = 1.0 - smoothstep(3.0, 4.5, abs(padD - 230.0));
+          land = mix(land, vec3(0.3, 0.3, 0.31) * (0.9 + 0.2 * n(p * 0.3)), max(road, ring));
           vec3 sea = mix(vec3(0.03, 0.12, 0.2), vec3(0.06, 0.2, 0.28), fbm(p * 0.002));
+          float waves = fbm(p * 0.05 + vec2(uTime * 0.4, uTime * 0.25));
           vec3 col = mix(land, sea, water);
           float lit = max(uSun.y, 0.0);
-          col *= 0.18 + 1.1 * lit;
+          col *= 0.02 + 1.15 * lit + 0.12 * smoothstep(-0.2, 0.0, uSun.y);
+          // at night the xenon floods make pools of hard white light around the pad
+          float lamps = pool(p, vec2(0.0), 85.0) * 1.1 + pool(p, vec2(-120.0, 90.0), 30.0) + pool(p, vec2(130.0, 100.0), 30.0) + pool(p, vec2(0.0, -140.0), 30.0);
+          // sodium street lights every 60 m along the access road
+          float sl = mod(p.x, 60.0) - 30.0;
+          lamps += 0.5 * exp(-(sl * sl + p.y * p.y) / 60.0) * step(p.x, -70.0) * step(-2400.0, p.x);
+          col += uLamps * lamps * vec3(1.0, 0.93, 0.8) * (land * 1.6 + 0.02);
+          // and the plume turns the whole pad orange
+          float bd = length(p - uBlastAt);
+          col += uBlast * vec3(1.0, 0.55, 0.22) * (exp(-bd / 70.0) * 1.2 + exp(-bd / 300.0) * 0.1) * (0.15 + land);
           vec3 V = normalize(cameraPosition - vW);
           vec3 H = normalize(normalize(uSun) + V);
-          col += water * pow(max(H.y, 0.0), 180.0) * 3.0 * uDay;
+          col += water * pow(max(H.y, 0.0), 180.0) * 3.0 * uDay * (0.7 + 0.6 * waves);
           float d = length(vW - cameraPosition);
           float fog = 1.0 - exp(-d / 26000.0);
           col = mix(col, uHaze, fog);
@@ -1004,7 +1257,7 @@ export class LaunchFeed {
       }
       mastPts.push(new THREE.Vector3(x1, mastH - 3, z1), new THREE.Vector3(0, H + 8, 0));
     }
-    this.pad.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(mastPts), new THREE.LineBasicMaterial({ color: "#2b2b2b", transparent: true, opacity: 0.6 })));
+    this.pad.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(mastPts), new THREE.LineBasicMaterial({ color: "#2b2b2b", transparent: true, opacity: 0.3 })));
     // water tower, propellant farm
     const wt = new THREE.Group();
     for (const [x, z] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) wt.add(cyl(0.5, 60, steel, -3, 0.5, 8).translateX(x).translateZ(z));
@@ -1024,29 +1277,79 @@ export class LaunchFeed {
       t.position.set(-170, 0, -150 + k * 7);
       this.pad.add(t);
     }
-    // pad floodlights
+    // pad floodlights: xenon banks on poles, their beams standing in the humid night air
     for (const l of this.padLights) this.scene.remove(l, l.target);
     this.padLights = [];
+    this.lampGlows = [];
+    this.beams = [];
+    this.beacons = [];
+    // point sources keep the same size on screen at any range, like a real lamp seen through a lens
+    const glowSprite = (color: THREE.ColorRepresentation, size: number) => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glow, color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false, sizeAttenuation: false }));
+      sp.scale.setScalar(size);
+      sp.renderOrder = 6;
+      return sp;
+    };
+    const aim = new THREE.Vector3(0, v.height * 0.5, 0);
     for (const [x, z] of [[-120, -90], [130, -100], [0, 140]]) {
       const s = new THREE.SpotLight("#fff1d6", 0, 900, 0.3, 0.7, 2);
       s.position.set(x, 18, z);
-      s.target.position.set(0, v.height * 0.5, 0);
+      s.target.position.copy(aim);
       this.pad.add(s, s.target);
       this.padLights.push(s);
-      const lamp = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 1), new THREE.MeshBasicMaterial({ color: "#fff4dd" }));
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color("#fff4dd").multiplyScalar(3), toneMapped: false }));
       lamp.position.set(x, 18, z);
-      lamp.lookAt(0, 30, 0);
+      lamp.lookAt(aim);
       const pole = cyl(0.35, 18, stdMat("#6f7378", 0.6, 0.5), -3, 0.35, 8);
       pole.position.set(x, 6, z);
       this.pad.add(pole);
       this.pad.add(lamp);
+      const g = glowSprite("#fff0d8", 0.05);
+      g.position.set(x, 18, z).lerp(aim, 0.012);
+      this.pad.add(g);
+      this.lampGlows.push(g);
+      // the beam: an open cone from the lamp toward the vehicle, brightest at the lamp, soft at its edges
+      const from = new THREE.Vector3(x, 18, z);
+      const dir = aim.clone().sub(from);
+      const len = dir.length() * 1.25;
+      const cone = new THREE.CylinderGeometry(1.2, len * 0.16, len, 32, 1, true);
+      cone.translate(0, -len / 2, 0);
+      const beam = new THREE.Mesh(cone, new THREE.ShaderMaterial({
+        uniforms: { uI: { value: 0 } },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        toneMapped: false,
+        vertexShader: /* glsl */ `varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
+        fragmentShader: /* glsl */ `uniform float uI; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+          void main(){ float edge = pow(abs(dot(normalize(vN), normalize(vV))), 2.0); float a = uI * pow(vUv.y, 2.2) * edge; gl_FragColor = vec4(vec3(1.0, 0.95, 0.85) * a, a); }`,
+      }));
+      beam.position.copy(from);
+      beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir.normalize());
+      beam.renderOrder = 3;
+      this.pad.add(beam);
+      this.beams.push(beam);
     }
+    // red obstruction beacons on the lightning masts and the top of the tower
+    for (const [x, z] of masts) {
+      const b = glowSprite("#ff2a1a", 0.022);
+      b.position.set(x, mastH - 2, z);
+      this.pad.add(b);
+      this.beacons.push(b);
+    }
+    const tb = glowSprite("#ff2a1a", 0.02);
+    tb.position.set(this.tower.position.x, H + 1.5, 0);
+    tb.visible = this.tower.visible;
+    this.pad.add(tb);
+    this.beacons.push(tb);
     this.pad.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
         o.castShadow = true;
         o.receiveShadow = true;
       }
     });
+    for (const b of this.beams) b.castShadow = b.receiveShadow = false;
     // ground shading for this site
     const u = this.groundMat.uniforms;
     u.uLand.value.set(site.land);
@@ -1062,7 +1365,9 @@ export class LaunchFeed {
     const s = useMC.getState();
     const d = mc.pending?.draft ?? s.draft;
     const crewed = d.payload === "crew" || d.payload === "artemis";
-    const key = `${d.vehicle}|${d.site}|${crewed}`;
+    // a recoverable Falcon is flight-proven: it rolls out with the soot of its earlier flights
+    const flown = d.recovery !== "expend";
+    const key = `${d.vehicle}|${d.site}|${crewed}|${flown}`;
     if (key === this.modelKey && this.lastFlight === mc.flight) return;
     const vehicleChanged = key !== this.modelKey;
     this.modelKey = key;
@@ -1087,7 +1392,7 @@ export class LaunchFeed {
     this.landing.clear();
     this.landingSet = null;
     this.boom = 0;
-    const m = buildVehicle(v, crewed);
+    const m = buildVehicle(v, crewed, flown);
     this.model = m;
     this.world.add(m.root);
     // plumes: one per engine group
@@ -1136,6 +1441,21 @@ export class LaunchFeed {
     smokeU.uLight.value.setRGB(1, 0.97, 0.92).multiplyScalar(0.2 + 0.95 * day);
     smokeU.uAmb.value.setRGB(0.3, 0.36, 0.46).multiplyScalar(0.25 + 0.75 * day);
     for (const l of this.padLights) l.intensity = (1 - day) * (1 - day) * 9e4;
+    // night lighting: floods, their beams in the haze, the blinking obstruction lights
+    const night = (this.night = (1 - day) * (1 - day));
+    const lowCam = 1 - THREE.MathUtils.smoothstep(camAltM, 3000, 12_000);
+    this.groundMat.uniforms.uLamps.value = night;
+    this.groundMat.uniforms.uTime.value = this.t;
+    for (const b of this.beams) {
+      (b.material as THREE.ShaderMaterial).uniforms.uI.value = night * 0.16 * lowCam;
+      b.visible = night > 0.02;
+    }
+    for (const g of this.lampGlows) {
+      g.material.opacity = 0.25 + 0.75 * night;
+      g.material.color.setRGB(1, 0.94, 0.85).multiplyScalar(0.4 + 1.6 * night);
+    }
+    const blink = Math.sin(this.t * Math.PI * 2 * 0.5) > 0 ? 1 : 0.08;
+    for (const b of this.beacons) b.material.color.setRGB(1, 0.16, 0.1).multiplyScalar((0.4 + 3 * night) * blink);
     return day;
   }
 
@@ -1235,13 +1555,15 @@ export class LaunchFeed {
     if (!f && preIgn && v.boosters && !v.boosters.solid) thr.b = preIgn * 0.9;
     for (const p of this.plumes) {
       const t = thr[p.group];
-      setPlume(p.mesh, t, vac, p.r, p.len * (0.5 + 0.5 * t), this.t);
+      // a vacuum engine plume is almost transparent: a faint blue haze, not a cone of smoke
+      setPlume(p.mesh, p.group === "u" ? t * 0.3 : t, vac, p.r, p.len * (0.5 + 0.5 * t), this.t);
+      if (p.group === "u") p.mesh.visible = t > 0.01;
       if (p.group === "b" && p.obj.parent !== m.root) p.mesh.visible = false;
       if (p.group === "c" && p.obj.parent !== m.root) p.mesh.visible = false;
     }
     if (m.nozzleUpper) {
       const mat = m.nozzleUpper.material as THREE.MeshStandardMaterial;
-      const target = thr.u > 0 ? 2.5 : 0;
+      const target = thr.u > 0 ? 1.1 : 0;
       mat.emissiveIntensity += (target - mat.emissiveIntensity) * Math.min(1, dt * 0.25);
     }
     // —— returners (boosters flying home) ——
@@ -1312,11 +1634,37 @@ export class LaunchFeed {
       const a = Math.random() * Math.PI * 2;
       this.smoke.spawn(Math.cos(a) * v.diameter * 0.55, y, Math.sin(a) * v.diameter * 0.55, Math.cos(a) * 0.6, -1.6, Math.sin(a) * 0.6, 1.2, 1.6, 9, 0);
     }
+    // sound suppression: the deluge floods the deck from T−6 s and the exhaust flashes it to steam
+    if (liftT > -6 && liftT < 9 && (!f || f.alt < 300)) {
+      const hot = liftT > -2.5 ? 1 : 0.35;
+      const rate = Math.round(dt * 70 * hot) + (Math.random() < dt * 70 * hot % 1 ? 1 : 0);
+      for (let k = 0; k < rate; k++) {
+        const a = Math.random() * Math.PI * 2, r = v.diameter * (0.8 + Math.random() * 2);
+        const out = 6 + Math.random() * 14 * hot;
+        this.smoke.spawn(Math.cos(a) * r, 0.5, Math.sin(a) * r, Math.cos(a) * out, 6 + Math.random() * 16 * hot, Math.sin(a) * out, 3 + Math.random() * 3, 6 + Math.random() * 5, 18 + Math.random() * 14, 0.35 * hot);
+      }
+    }
     // —— plume light ——
     const totalF = f ? f.fB + f.fC : preIgn * 5e6;
     this.plumeLight.intensity = Math.min(2.6e4, totalF * 1.6e-3) * (1 - vac);
     this.plumeLight.position.copy(rocketPos).addScaledVector(up, -10);
     this.smoke.mat.uniforms.uGlow.value = Math.min(1, totalF / 4e7) * (1 - vac);
+    // the plume floods the pad with orange light while the vehicle is still close to it
+    const gu = this.groundMat.uniforms;
+    const near = 1 - THREE.MathUtils.smoothstep(rocketPos.y, 80, 1500);
+    gu.uBlast.value = Math.min(1, totalF / 6e6) * near * (0.4 + 0.6 * this.night) * (0.9 + 0.1 * Math.sin(this.t * 41));
+    gu.uBlastAt.value.set(rocketPos.x, -rocketPos.z);
+    // engine flare: the brightest thing in any night shot
+    const thrAll = Math.max(thr.b, thr.c, thr.u);
+    this.flare.visible = thrAll > 0.02 && m.root.visible;
+    if (this.flare.visible) {
+      const below = thr.c > 0.02 || thr.b > 0.02 ? -2 : m.upperBase - 3;
+      this.flare.position.copy(rocketPos).addScaledVector(up, below);
+      const dist = Math.max(1, this.camPos.distanceTo(this.flare.position));
+      const sz = Math.min(dist * 0.03, v.diameter * (thr.c > 0.02 ? 4 : 2.2)) * (0.7 + 0.3 * thrAll) * (0.6 + 0.6 * this.night) * (1 - 0.5 * vac);
+      this.flare.scale.setScalar(sz * (0.95 + 0.05 * Math.sin(this.t * 53)));
+      this.flare.material.color.setRGB(1, 0.72, 0.42).multiplyScalar(thr.c > 0.02 || thr.b > 0.02 ? 1.6 : 0.6);
+    }
 
     // —— camera ——
     const mode = s.feedCam === "auto" ? autoCam(f) : s.feedCam;
@@ -1327,6 +1675,7 @@ export class LaunchFeed {
     this.focus.copy(this.camPos);
     this.world.position.copy(this.focus).multiplyScalar(-1);
     this.camera.position.set(0, 0, 0);
+    this.camera.up.copy(this.camUp);
     this.camera.lookAt(this.tmp.copy(this.camLook).sub(this.focus));
     this.camera.fov = this.camFov;
     this.camera.near = Math.max(0.3, Math.min(50, this.camPos.distanceTo(this.camLook) * 0.004));
@@ -1343,12 +1692,101 @@ export class LaunchFeed {
     this.sun.shadow.camera.far = 12000;
     this.sun.shadow.camera.updateProjectionMatrix();
 
+    // —— the downlink and the camera chain ——
+    const los = performance.now() < mc.losUntil;
+    const onboard = mode === "onboard" || mode === "booster";
+    // onboard video rides a narrow link: it breaks up now and then, and badly far downrange
+    if (onboard && f) {
+      this.dropT -= dt;
+      if (this.dropT <= 0) {
+        this.dropT = 2 + Math.random() * 7;
+        this.glitch = Math.random() < 0.3 + Math.min(0.5, f.t / 1200) ? 0.25 + Math.random() * 0.5 : 0;
+      }
+      this.glitch *= Math.exp(-dt * 1.4);
+    } else this.glitch = 0;
+    const pu = this.post.material.uniforms;
+    pu.uTime.value = this.t;
+    pu.uGlitch.value = los ? 0.9 : Math.min(1, this.glitch);
+    pu.uGrain.value = (mode === "tracking" ? 0.06 : onboard ? 0.08 : 0.035) * (1 + this.night * 1.5);
+    pu.uCA.value = mode === "tracking" ? 0.003 : onboard ? 0.004 : 0.0015;
+    pu.uFish.value = onboard ? 1 : 0;
+    // heat haze: the long lens looks through kilometres of warm air; the pad camera through the exhaust
+    const lowAlt = f ? 1 - THREE.MathUtils.smoothstep(f.alt, 200, 3000) : 0;
+    pu.uShimmer.value = onboard ? 0 : mode === "tracking" ? 0.5 + (1 - this.night) * 0.5 + lowAlt : lowAlt * Math.min(1, totalF / 5e6) * 1.6;
+    pu.uShimmerY.value = 0.45;
+    this.drawOsd(mode, f, los, s.ops.phase === "count" ? -s.ops.tMinus : f ? f.t : null, jd, site);
+
     const r = this.renderer;
     const prev = r.getRenderTarget();
+    // a lost signal freezes the last good frame
+    if (!los) {
+      r.setRenderTarget(this.raw);
+      r.clear();
+      r.render(this.scene, this.camera);
+    }
     r.setRenderTarget(this.rt);
-    r.clear();
-    r.render(this.scene, this.camera);
+    r.render(this.postScene, this.postCam);
     r.setRenderTarget(prev);
+  }
+
+  /** the burnt-in camera caption, redrawn only when its text changes */
+  private drawOsd(mode: string, f: Flight | null, los: boolean, met: number | null, jd: number, site: Site) {
+    const v = vehicleById[(mc.pending?.draft ?? useMC.getState().draft).vehicle];
+    const dist = mode === "tracking" ? this.camPos.distanceTo(this.camLook) : 0;
+    const cam =
+      mode === "pad" ? `CAM 2 · ${site.short} PAD PERIMETER`
+      : mode === "tracking" ? `LRT-3 TRACKER · ${(dist / 1000).toFixed(1)} KM · ${this.camFov < 1 ? "2000" : this.camFov < 4 ? "800" : "300"} MM`
+      : mode === "onboard" ? `${v.kit === "starship" ? "SHIP" : "STAGE 2"} ONBOARD · AFT`
+      : `${v.kit === "starship" ? "BOOSTER" : "STAGE 1"} ONBOARD · AFT`;
+    const sec = Math.floor(met ?? 0);
+    const g = O.dateOf(jd);
+    const tc = `${String(g.getUTCHours()).padStart(2, "0")}:${String(g.getUTCMinutes()).padStart(2, "0")}:${String(g.getUTCSeconds()).padStart(2, "0")}`;
+    const metTxt = met === null ? "" : `${met < 0 ? "T−" : "T+"}${String(Math.floor(Math.abs(sec) / 3600)).padStart(2, "0")}:${String(Math.floor((Math.abs(sec) % 3600) / 60)).padStart(2, "0")}:${String(Math.abs(sec) % 60).padStart(2, "0")}`;
+    const alt = f && mode !== "pad" ? `ALT ${(f.alt / 1000).toFixed(1)} KM` : "";
+    const blink = Math.floor(this.t * 1.2) % 2 === 0;
+    const key = `${cam}|${tc}|${metTxt}|${alt}|${los}|${blink}`;
+    if (key === this.osdKey) return;
+    this.osdKey = key;
+    const c = this.osd.getContext("2d")!;
+    const W = this.osd.width, H = this.osd.height;
+    c.clearRect(0, 0, W, H);
+    c.font = "600 14px 'JetBrains Mono', ui-monospace, Consolas, monospace";
+    c.textBaseline = "top";
+    const txt = (s: string, x: number, y: number, align: CanvasTextAlign = "left", color = "rgba(255,255,255,0.86)") => {
+      c.textAlign = align;
+      c.fillStyle = "rgba(0,0,0,0.55)";
+      c.fillText(s, x + 1.5, y + 1.5);
+      c.fillStyle = color;
+      c.fillText(s, x, y);
+    };
+    txt(cam, 26, 22);
+    if (los) txt("NO SIGNAL · HOLDING LAST FRAME", W / 2, H / 2 - 10, "center", "rgba(255,190,80,0.95)");
+    else {
+      if (blink) {
+        c.fillStyle = "#ff3b30";
+        c.beginPath();
+        c.arc(W - 92, 32, 6, 0, Math.PI * 2);
+        c.fill();
+      }
+      txt("LIVE", W - 26, 22, "right");
+    }
+    txt(`${tc} UTC`, 26, H - 40);
+    if (metTxt) txt(metTxt, W - 26, H - 40, "right");
+    if (alt) txt(alt, W - 26, H - 64, "right", "rgba(255,255,255,0.7)");
+    // framing corners on the long-lens tracker
+    if (mode === "tracking") {
+      c.strokeStyle = "rgba(255,255,255,0.5)";
+      c.lineWidth = 2;
+      const bx = W / 2, by = H / 2, s = 60, l = 14;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        c.beginPath();
+        c.moveTo(bx + sx * s, by + sy * (s - l));
+        c.lineTo(bx + sx * s, by + sy * s);
+        c.lineTo(bx + sx * (s - l), by + sy * s);
+        c.stroke();
+      }
+    }
+    this.osdTex.needsUpdate = true;
   }
 
   private attachReturner(ret: Returner, obj: THREE.Group, len: number) {
@@ -1404,6 +1842,7 @@ export class LaunchFeed {
     const pos = new THREE.Vector3();
     const look = new THREE.Vector3();
     let fov = 30;
+    this.camUp.set(0, 1, 0);
     if (mode === "pad") {
       pos.set(260, 6, -330);
       look.copy(rp).addScaledVector(up, H * 0.45);
@@ -1420,20 +1859,32 @@ export class LaunchFeed {
       look.x += Math.sin(this.t * 1.7) * d * 0.0004;
       look.y += Math.sin(this.t * 2.3) * d * 0.0003;
     } else if (mode === "onboard") {
-      // on the upper stage looking aft
+      // a ride-along camera on the skin looking aft: down the side of the first stage while it burns,
+      // then at the glowing vacuum bell once the upper stage is alone
       const side = new THREE.Vector3(1, 0, 0).applyQuaternion(m.root.quaternion);
-      pos.copy(rp).addScaledVector(up, m.upperBase + m.upperLen * 0.8).addScaledVector(side, v.diameter / 2 + 3.4);
-      look.copy(rp).addScaledVector(up, m.upperBase - 45).addScaledVector(side, v.diameter * 0.55);
-      fov = 70;
+      const R = v.diameter / 2;
+      if (m.core.parent === m.root) {
+        pos.copy(rp).addScaledVector(up, m.coreLen - 1.5).addScaledVector(side, R + 0.45);
+        look.copy(rp).addScaledVector(up, -60).addScaledVector(side, R + 9);
+        fov = 78;
+      } else {
+        pos.copy(rp).addScaledVector(up, m.upperBase - 0.15).addScaledVector(side, R + 0.3);
+        look.copy(rp).addScaledVector(up, m.upperBase - 9).addScaledVector(side, -R * 0.1);
+        fov = 72;
+      }
+      // the camera is bolted to the vehicle: it rolls and pitches with it
+      this.camUp.set(0, 0, 1).applyQuaternion(m.root.quaternion);
     } else {
       const ret = [...this.returners.keys()].find((r) => !r.done) ?? [...this.returners.keys()][0];
       const o = ret ? this.returners.get(ret) : null;
       if (o && ret) {
         const ax = new THREE.Vector3(0, 1, 0).applyQuaternion(o.obj.quaternion);
         const side = new THREE.Vector3(1, 0, 0).applyQuaternion(o.obj.quaternion);
-        pos.copy(o.obj.position).addScaledVector(ax, o.len * 0.9).addScaledVector(side, v.diameter / 2 + 1.6);
-        look.copy(o.obj.position).addScaledVector(ax, -o.len * 1.4).addScaledVector(side, v.diameter * 1.6 + o.len * 0.25);
-        fov = 70;
+        // on the interstage, looking down the booster at its engines, the legs and the ground coming up
+        pos.copy(o.obj.position).addScaledVector(ax, o.len - 2.5).addScaledVector(side, v.diameter / 2 + 0.45);
+        look.copy(o.obj.position).addScaledVector(ax, -o.len * 0.9).addScaledVector(side, v.diameter / 2 + 7);
+        fov = 78;
+        this.camUp.set(0, 0, 1).applyQuaternion(o.obj.quaternion);
       } else {
         pos.set(260, 6, -330);
         look.copy(rp);
@@ -1456,6 +1907,10 @@ export class LaunchFeed {
 
   dispose() {
     this.rt.dispose();
+    this.raw.dispose();
+    this.osdTex.dispose();
+    this.post.geometry.dispose();
+    this.post.material.dispose();
     this.scene.traverse((o) => {
       const mm = o as THREE.Mesh;
       mm.geometry?.dispose();

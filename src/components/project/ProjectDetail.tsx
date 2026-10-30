@@ -5,384 +5,598 @@ import Link from "next/link";
 import { useRef } from "react";
 import CopyEmail from "@/components/CopyEmail";
 import { curtain } from "@/components/Curtain";
-import type { Project } from "@/content/site";
+import { person, projects, type Project } from "@/content/site";
 import { gsap, ScrollTrigger, SplitText, useGSAP } from "@/lib/gsap";
+import { dotRuler, halftoneWipe } from "./canvasFx";
+import DotViz, { type DotKind } from "./DotViz";
+import { grotesk } from "./font";
+import Halftone from "./Halftone";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-/** a font size at which the title's longest word still fits the screen (never broken mid-word) */
-const fitWord = (title: string) => `${(88 / (Math.max(...title.split(/\s+/).map((w) => w.length)) * 0.7)).toFixed(2)}vw`;
 const host = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight"];
+const VIZ: DotKind[] = ["bars", "steps", "marquee", "fill"];
+// the light surface the halftone wipe resolves into
+const LIGHT = "#e7e7e7";
 
 type Props = { project: Project; index: number; total: number; prev: Project; next: Project };
 
 /**
- * The project case study, entered through the crystal. Tinted by the project's colour,
- * over the smoky backdrop the canvas draws behind /projects/[slug].
+ * The project case study, entered through the crystal. A monochrome, printed-feeling page:
+ * a halftone light over grey, a black story told against a dot ruler, then a halftone wipe
+ * into light where the work orbits, all set in Overused Grotesk.
  */
 export default function ProjectDetail({ project, index, total, prev, next }: Props) {
   const root = useRef<HTMLElement>(null);
-  let section = 0;
-  const num = () => pad(++section);
+  const p = project;
+
+  // the story: the build sequence if there is one, otherwise each friction and its move
+  const story = p.timeline
+    ? p.timeline.map((s) => ({ label: s.phase, lead: s.title, body: s.description }))
+    : (p.challenges ?? []).map((c) => ({ label: c.title, lead: c.title, body: c.move }));
+  const count = `${WORDS[story.length] ?? story.length} ${p.timeline ? "steps" : "moves"}`;
+
+  // the bento: three numbers and the stack, each with its own dot display
+  const tiles = [
+    ...(p.metrics ?? p.facts?.map((f) => ({ value: f.value, label: f.label })) ?? []).slice(0, 3).map((m) => ({ head: m.value, text: m.label })),
+    { head: "Stack", text: p.stack.join(" · ") },
+  ];
+  const lead = p.metrics?.[0];
+  const status = p.facts?.find((f) => f.label === "Status")?.value ?? "Live";
+  const ring = [...projects.slice(index), ...projects.slice(0, index)];
+  const outcomes = p.outcomes ?? p.challenges?.map((c) => c.move);
 
   useGSAP(
     () => {
-      // arriving through the crystal: the curtain dissolves over the hero
-      const through = curtain.reveal();
-      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      const delay = through ? 0.55 : 0.15;
+      const el = root.current!;
+      const html = document.documentElement;
+      const q = <T extends HTMLElement = HTMLElement>(s: string) => el.querySelector<T>(s);
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-      const title = root.current!.querySelector<HTMLElement>("[data-title]")!;
-      const split = SplitText.create(title, { type: "lines,words,chars", mask: "lines" });
-      gsap.from(split.chars, { yPercent: 115, duration: 1.1, stagger: 0.028, ease: "expo.out", delay });
-      gsap.from(".pd-in", { autoAlpha: 0, y: 24, duration: 0.9, stagger: 0.07, ease: "power3.out", delay: delay + 0.2 });
-      gsap.from(".pd-hero-img", { scale: 1.25, autoAlpha: 0, duration: 2.2, ease: "power2.out", delay: delay - 0.3 });
-
-      // reading progress
-      gsap.fromTo(
-        ".pd-progress",
-        { scaleX: 0 },
-        { scaleX: 1, ease: "none", scrollTrigger: { start: 0, end: "max", scrub: 0.3 } },
-      );
-
-      // the screen lifts out of the dark and flattens as it arrives
-      gsap.fromTo(
-        ".pd-frame",
-        { scale: 0.86, rotateX: 14, y: 80, autoAlpha: 0.4 },
-        {
-          scale: 1,
-          rotateX: 0,
-          y: 0,
-          autoAlpha: 1,
-          ease: "none",
-          scrollTrigger: { trigger: ".pd-frame", start: "top bottom", end: "top 25%", scrub: 0.6 },
-        },
-      );
-      gsap.fromTo(
-        ".pd-frame-img",
-        { yPercent: -5 },
-        { yPercent: 5, ease: "none", scrollTrigger: { trigger: ".pd-frame", start: "top bottom", end: "bottom top", scrub: true } },
-      );
-
-      // everything else rises out of a blur as it enters
-      const items = gsap.utils.toArray<HTMLElement>(".pd-reveal");
-      gsap.set(items, { autoAlpha: 0, y: 40, filter: "blur(8px)" });
-      ScrollTrigger.batch(items, {
-        start: "top 90%",
-        onEnter: (batch) =>
-          gsap.to(batch, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 1, stagger: 0.09, ease: "power3.out", overwrite: true }),
-      });
-
-      // numbers count up
-      for (const el of gsap.utils.toArray<HTMLElement>("[data-count]")) {
-        const raw = el.dataset.count!;
-        const m = raw.match(/^(\d+(?:\.\d+)?)(.*)$/);
-        if (!m) continue;
-        const target = parseFloat(m[1]);
-        const o = { v: 0 };
-        el.textContent = `0${m[2]}`;
-        gsap.to(o, {
-          v: target,
-          duration: 1.6,
-          ease: "power3.out",
-          scrollTrigger: { trigger: el, start: "top 88%", once: true },
-          onUpdate: () => void (el.textContent = `${Math.round(o.v)}${m[2]}`),
+      // the fixed header reads ink on paper, paper on the dark
+      for (const s of gsap.utils.toArray<HTMLElement>("[data-surface]")) {
+        ScrollTrigger.create({
+          trigger: s,
+          start: "top 40px",
+          end: "bottom 40px",
+          onToggle: (self) => self.isActive && (html.dataset.surface = s.dataset.surface),
         });
       }
 
-      // the timeline's spine fills as you read down it
-      if (root.current!.querySelector(".pd-spine")) {
+      // ── the wordmark: fitted edge to edge, its letters rolling over as the hero leaves
+      const mark = q(".pd-mark")!;
+      // (a short title would grow too tall, so it is capped and its letters spread across instead)
+      const fit = () => {
+        mark.style.width = "max-content";
+        mark.style.fontSize = "100px";
+        const size = (100 * mark.parentElement!.clientWidth) / mark.scrollWidth;
+        const cap = innerHeight * 0.26;
+        mark.style.fontSize = `${Math.min(size, cap)}px`;
+        mark.style.width = size > cap ? "100%" : "max-content";
+      };
+      fit();
+      document.fonts?.ready.then(fit);
+      const ro = new ResizeObserver(fit);
+      ro.observe(mark.parentElement!);
+
+      // arriving through the crystal: the curtain dissolves over the hero
+      const through = curtain.reveal();
+      const delay = through ? 0.55 : 0.2;
+      const head = q(".pd-hero-head")!;
+      const split = SplitText.create(head, { type: "lines", mask: "lines" });
+
+      if (!reduce) {
+        gsap.from(split.lines, { yPercent: 110, duration: 1.3, stagger: 0.09, ease: "expo.out", delay });
+        gsap.from(".pd-ch-in", { yPercent: 50, duration: 1.4, stagger: 0.045, ease: "expo.out", delay: delay + 0.1 });
+        gsap.from(".pd-in", { autoAlpha: 0, y: 18, duration: 1, stagger: 0.07, ease: "power3.out", delay: delay + 0.35 });
         gsap.fromTo(
-          ".pd-spine-fill",
-          { scaleY: 0 },
-          { scaleY: 1, ease: "none", scrollTrigger: { trigger: ".pd-spine", start: "top 70%", end: "bottom 55%", scrub: 0.4 } },
+          ".pd-ch-in",
+          { yPercent: 0 },
+          {
+            yPercent: -50,
+            ease: "none",
+            stagger: 0.06,
+            immediateRender: false,
+            scrollTrigger: { trigger: ".pd-hero", start: "top top", end: "bottom top", scrub: 0.4 },
+          },
         );
+        gsap.to(".pd-hero-fx", { yPercent: 18, autoAlpha: 0.2, ease: "none", scrollTrigger: { trigger: ".pd-hero", start: "top top", end: "bottom top", scrub: true } });
       }
-      return () => split.revert();
+
+      // reading progress
+      gsap.fromTo(".pd-progress", { scaleX: 0 }, { scaleX: 1, ease: "none", scrollTrigger: { start: 0, end: "max", scrub: 0.3 } });
+
+      // ── the backdrop: grey, sinking into black, then light once the wipe has passed
+      gsap.fromTo(".pd-bg-black", { opacity: 0 }, { opacity: 1, ease: "none", scrollTrigger: { trigger: ".pd-bento", start: "top 75%", end: "top 5%", scrub: true } });
+      const light = q(".pd-bg-light")!;
+
+      // ── bento: tiles lift in, and the numbers count up
+      ScrollTrigger.batch(".pd-tile", {
+        start: "top 90%",
+        onEnter: (b) => gsap.fromTo(b, { autoAlpha: 0, y: 60, scale: 0.96 }, { autoAlpha: 1, y: 0, scale: 1, duration: 1.2, stagger: 0.08, ease: "expo.out", overwrite: true }),
+      });
+      gsap.set(".pd-tile", { autoAlpha: 0 });
+      for (const n of gsap.utils.toArray<HTMLElement>("[data-count]")) {
+        const m = n.dataset.count!.match(/^(\d+(?:\.(\d+))?)(.*)$/);
+        if (!m) continue;
+        const dp = m[2]?.length ?? 0;
+        const width = m[1].split(".")[0].length;
+        const fmt = (v: number) => `${v.toFixed(dp).padStart(width + (dp ? dp + 1 : 0), "0")}${m[3]}`;
+        const o = { v: 0 };
+        n.textContent = fmt(0);
+        gsap.to(o, { v: parseFloat(m[1]), duration: 1.8, ease: "power3.out", scrollTrigger: { trigger: n, start: "top 92%", once: true }, onUpdate: () => void (n.textContent = fmt(o.v)) });
+      }
+
+      // ── story: one pinned stage; the ruler scrolls and each sentence lights word by word
+      const stage = q(".pd-story");
+      if (stage) {
+        const blocks = gsap.utils.toArray<HTMLElement>(".pd-say", stage);
+        const words = blocks.map((b) => gsap.utils.toArray<HTMLElement>(".pd-w", b));
+        const ruler = dotRuler(q<HTMLCanvasElement>(".pd-ruler")!, story.map((s) => s.label));
+        const steps = story.length;
+        let on = -1;
+        const paint = (pr: number) => {
+          const at = Math.min(blocks.length - 0.001, pr * blocks.length);
+          const k = Math.floor(at);
+          if (k !== on) {
+            blocks.forEach((b, i) => b.classList.toggle("is-on", i === k));
+            on = k;
+          }
+          words.forEach((ws, i) => {
+            const local = Math.max(0, Math.min(1, (at - i) / 0.7));
+            ws.forEach((w, j) => (w.style.opacity = String(0.16 + 0.84 * Math.max(0, Math.min(1, local * ws.length - j)))));
+          });
+          ruler(Math.max(0, Math.min(1, (at - 1) / Math.max(1, steps - 1))));
+        };
+        paint(0);
+        ScrollTrigger.create({ trigger: stage, start: "top top", end: "bottom bottom", onUpdate: (self) => paint(self.progress) });
+      }
+
+      // ── the wipe: dots swell into light; the light surface takes over as it completes
+      const wipe = q(".pd-wipe");
+      if (wipe) {
+        const draw = halftoneWipe(q<HTMLCanvasElement>(".pd-wipe-canvas")!, LIGHT);
+        draw(0);
+        ScrollTrigger.create({
+          trigger: wipe,
+          start: "top bottom",
+          end: "bottom bottom",
+          onUpdate: (self) => {
+            draw(self.progress);
+            light.style.opacity = String(Math.max(0, Math.min(1, (self.progress - 0.9) / 0.1)));
+          },
+          onLeaveBack: () => void (light.style.opacity = "0"),
+          onLeave: () => void (light.style.opacity = "1"),
+        });
+      }
+
+      // ── the orbit: every project's screen circles the title as you scroll
+      if (!reduce) {
+        gsap.fromTo(
+          ".pd-ring",
+          { "--spin": "30deg" },
+          { "--spin": "-250deg", ease: "none", scrollTrigger: { trigger: ".pd-orbit", start: "top top", end: "bottom bottom", scrub: 0.8 } },
+        );
+        gsap.from(".pd-scene", { scale: 0.7, autoAlpha: 0, ease: "power2.out", scrollTrigger: { trigger: ".pd-orbit", start: "top 80%", end: "top top", scrub: true } });
+      }
+
+      // ── everything else rises as it enters, headings unmasking line by line
+      const items = gsap.utils.toArray<HTMLElement>(".pd-reveal");
+      gsap.set(items, { autoAlpha: 0, y: 40 });
+      ScrollTrigger.batch(items, {
+        start: "top 90%",
+        onEnter: (b) => gsap.to(b, { autoAlpha: 1, y: 0, duration: 1.2, stagger: 0.08, ease: "expo.out", overwrite: true }),
+      });
+      const splits = gsap.utils.toArray<HTMLElement>(".pd-split").map((h) => {
+        const s = SplitText.create(h, { type: "lines", mask: "lines" });
+        if (!reduce) gsap.from(s.lines, { yPercent: 105, duration: 1.2, stagger: 0.08, ease: "expo.out", scrollTrigger: { trigger: h, start: "top 88%", once: true } });
+        return s;
+      });
+
+      return () => {
+        ro.disconnect();
+        split.revert();
+        splits.forEach((s) => s.revert());
+        delete html.dataset.surface;
+      };
     },
     { scope: root },
   );
 
-  const p = project;
-
   return (
-    <article ref={root} className="pd relative" style={{ "--tint": p.tint } as React.CSSProperties}>
+    <article ref={root} className={`pd ${grotesk.variable}`} style={{ "--tint": p.tint } as React.CSSProperties}>
+      {/* the backdrop: three surfaces, drifting light, and the printed dot lattice */}
+      <div aria-hidden className="pd-bg">
+        <div className="pd-bg-layer pd-bg-grey" />
+        <div className="pd-bg-layer pd-bg-black" />
+        <div className="pd-bg-layer pd-bg-light" />
+        <div className="pd-blobs">
+          <i />
+          <i />
+          <i />
+        </div>
+      </div>
       <div aria-hidden className="pd-progress fixed inset-x-0 top-0 z-[35] h-[2px] origin-left" />
-      {/* keeps the fixed header legible over the page as it scrolls under */}
-      <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-[30] h-24 bg-gradient-to-b from-bg via-bg/70 to-transparent" />
+      <div aria-hidden className="pd-topfade pointer-events-none fixed inset-x-0 top-0 z-[30] h-24" />
 
       {/* ── hero ───────────────────────────────────────────── */}
-      <header className="relative flex min-h-svh flex-col overflow-hidden">
-        <div aria-hidden className="pd-hero-img absolute inset-0">
-          <Image src={p.cover} alt="" fill priority sizes="100vw" className="object-cover object-top opacity-[0.16] blur-[2px]" />
-          <div className="pd-hero-wash absolute inset-0" />
+      <header className="pd-hero pd-dark relative flex min-h-svh flex-col overflow-hidden" data-surface="dark">
+        <div className="pd-hero-fx absolute inset-0">
+          <Halftone seed={index * 1.7} className="absolute inset-0 h-full w-full" />
         </div>
 
-        <nav
-          className="pd-in relative z-10 mx-auto flex w-full max-w-[1400px] items-center justify-between px-gutter pt-24 md:pt-28"
-          aria-label="Project navigation"
-        >
-          <Link href="/projects" scroll={false} className="pd-back label !text-fg" data-cursor="view">
+        <nav className="pd-in pd-shell relative z-10 flex items-center justify-between pt-24 md:pt-28" aria-label="Project navigation">
+          <Link href="/projects" scroll={false} className="pd-back pd-chip-btn" data-cursor="view">
             <span aria-hidden className="pd-back-arrow">←</span> All work
           </Link>
-          <span className="label tabular-nums">
-            Project {pad(index + 1)} <span className="text-fg/30">/ {pad(total)}</span>
+          <span className="pd-caption tabular-nums">
+            Project {pad(index + 1)} <span className="pd-soft">/ {pad(total)}</span>
           </span>
         </nav>
 
-        <div className="relative z-10 mx-auto mt-auto w-full max-w-[1400px] px-gutter pb-10 md:pb-14">
-          <p className="pd-in pd-tag">[ {p.category} ]</p>
-          <h1
-            data-title
-            className="display mt-5 text-[length:min(16vw,var(--fit))] md:text-[length:min(9.5vw,var(--fit))]"
-            style={{ "--fit": fitWord(p.title) } as React.CSSProperties}
-          >
-            {p.title}
-          </h1>
-
-          <div className="mt-8 flex flex-col gap-7 border-b border-fg/10 pb-9 md:flex-row md:items-end md:justify-between">
-            <p className="pd-in max-w-[36ch] text-balance text-xl leading-snug text-fg/80 md:text-[1.7rem]">{p.tagline}</p>
-            {p.link && (
-              <a href={p.link} target="_blank" rel="noreferrer" className="pd-in pd-cta" data-cursor="view">
-                {p.liveLabel ?? "Visit live site"}
-                <span aria-hidden className="pd-cta-arrow">↗</span>
-              </a>
+        <div className="pd-shell relative z-10 mt-auto grid gap-10 pb-8 md:grid-cols-12 md:items-end md:pb-10">
+          <div className="order-2 md:order-1 md:col-span-5">
+            {lead && (
+              <div className="pd-in">
+                <p className="pd-caption">In numbers</p>
+                <p className="pd-price mt-1">
+                  {lead.value} <span className="pd-soft">/{lead.label.toLowerCase()}</span>
+                </p>
+              </div>
             )}
+            <div className="mt-5 flex flex-wrap gap-2.5">
+              {p.link && (
+                <a href={p.link} target="_blank" rel="noreferrer" className="pd-in pd-btn pd-btn-tint" data-cursor="view">
+                  <span className="pd-btn-dot" aria-hidden>
+                    →
+                  </span>
+                  <span className="flex flex-col leading-none">
+                    {p.liveLabel ?? "Visit live site"}
+                    <small>{host(p.link)}</small>
+                  </span>
+                </a>
+              )}
+              <a href="#approach" className="pd-in pd-btn pd-btn-ghost">
+                <span className="pd-btn-dot" aria-hidden>
+                  ↓
+                </span>
+                Read the case
+              </a>
+            </div>
           </div>
+          <div className="order-1 md:order-2 md:col-span-6 md:col-start-7 md:self-start md:pb-24">
+            <p className="pd-in pd-caption mb-4 flex items-center gap-2.5">
+              <span aria-hidden className="pd-live" /> {p.category} <span className="pd-soft">· {p.year}</span>
+            </p>
+            <h1 className="pd-hero-head">
+              <span>{p.title}.</span> <span className="pd-soft">{p.tagline}</span>
+            </h1>
+          </div>
+        </div>
 
-          {p.facts && (
-            <dl className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-4">
-              {p.facts.map((f) => (
-                <div key={f.label} className="pd-in pd-glass px-5 py-4">
-                  <dt className="label">{f.label}</dt>
-                  <dd className="mt-1.5 text-base font-medium md:text-lg">{f.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
+        <div className="pd-shell relative z-10 pb-6">
+          <div className="pd-rule" />
+          <div className="overflow-hidden" aria-hidden>
+            <p className="pd-mark">
+              {[...p.title.toUpperCase()].map((c, k) =>
+                c === " " ? (
+                  <span key={k} className="pd-ch-space" />
+                ) : (
+                  <span key={k} className="pd-ch">
+                    <span className="pd-ch-in">
+                      <span>{c}</span>
+                      <span>{c}</span>
+                    </span>
+                  </span>
+                ),
+              )}
+            </p>
+          </div>
         </div>
       </header>
 
-      {/* ── the product, on screen ─────────────────────────── */}
-      <section className="mx-auto max-w-[1400px] px-gutter pb-10 pt-8 [perspective:1600px]" aria-label="Product screen">
-        <figure className="pd-frame">
-          <div className="pd-frame-bar" aria-hidden>
-            <span className="flex gap-1.5">
-              <i />
-              <i />
-              <i />
-            </span>
-            <span className="pd-frame-url">{p.link ? host(p.link) : p.title.toLowerCase()}</span>
-            <span className="w-10" />
-          </div>
-          <div className="relative aspect-[16/10] overflow-hidden">
-            <div className="pd-frame-img absolute -inset-y-[6%] inset-x-0">
-              <Image src={p.cover} alt={`${p.title} — the live product`} fill sizes="(min-width: 1400px) 1400px, 100vw" className="object-cover object-top" />
-            </div>
-          </div>
-        </figure>
-        <figcaption className="label mt-4 flex justify-between">
-          <span>{p.title} — live product</span>
-          <span>{p.year}</span>
-        </figcaption>
-      </section>
-
-      {/* ── overview + numbers ─────────────────────────────── */}
-      <section className="mx-auto grid max-w-[1400px] gap-12 px-gutter py-20 md:grid-cols-12 md:gap-16 md:py-28" aria-label="Overview">
-        <div className="md:col-span-6">
-          <SectionLabel n={num()}>Overview</SectionLabel>
-          {p.verdict && <h2 className="pd-reveal pd-h2">{p.verdict.title}</h2>}
-          <div className="mt-7 space-y-5 text-lg leading-relaxed text-fg/75 md:text-xl">
-            {p.description.map((para, k) => (
-              <p key={k} className="pd-reveal">
-                {para}
-              </p>
-            ))}
-          </div>
-          <div className="pd-reveal mt-9 flex flex-wrap gap-2">
-            {p.stack.map((s) => (
-              <span key={s} className="pd-chip">
-                {s}
+      {/* ── approach: a bento of dark glass ────────────────── */}
+      <section id="approach" className="pd-bento pd-dark pd-shell scroll-mt-20 py-16 md:py-24" aria-label="Overview" data-surface="dark">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <article className="pd-tile pd-glass flex flex-col p-7 md:p-10">
+            <div className="flex">
+              <span className="pd-avatar" style={{ background: p.tint, color: "#111" }}>
+                {p.title[0]}
               </span>
+              <span className="pd-avatar -ml-2.5 bg-[#2a2a2a]">TA</span>
+            </div>
+            <h2 className="mt-8 text-[clamp(1.4rem,1.1rem+0.8vw,1.9rem)] leading-[1.05] tracking-[-0.045em]">
+              {p.verdict?.title ?? `${p.title}.`} <span className="pd-soft block">{p.category}.</span>
+            </h2>
+            <div className="mt-6 space-y-3 text-[15px] leading-snug tracking-[-0.01em] text-[var(--soft)]">
+              {p.description.map((d, k) => (
+                <p key={k}>{d}</p>
+              ))}
+            </div>
+            {p.link && (
+              <a href={p.link} target="_blank" rel="noreferrer" className="pd-btn pd-btn-ghost mt-8 self-end md:mt-auto" data-cursor="view">
+                <span className="pd-btn-dot" aria-hidden>
+                  ↗
+                </span>
+                Open it
+              </a>
+            )}
+          </article>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {tiles.map((t, k) => (
+              <article key={t.head + k} className="pd-tile pd-glass grid grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-4 p-4 md:p-5">
+                <div className="flex flex-col p-2 md:p-3">
+                  <p className="text-[clamp(1.5rem,1.1rem+1.2vw,2.4rem)] font-medium leading-none tracking-[-0.05em] tabular-nums" data-count={k < 3 ? t.head : undefined}>
+                    {t.head}
+                  </p>
+                  <p className="mt-2 text-[15px] leading-tight tracking-[-0.015em] text-[var(--soft)]">{t.text}</p>
+                  <p className="pd-caption mt-auto pt-6">{pad(k + 1)}.</p>
+                </div>
+                <div className="pd-well">
+                  <DotViz kind={VIZ[k]} seed={index + k} className="h-full w-full" />
+                </div>
+              </article>
             ))}
           </div>
         </div>
-
-        {p.metrics ? (
-          <div className="grid gap-3 self-end sm:grid-cols-2 md:col-span-6">
-            {p.metrics.map((m, k) => (
-              <div key={m.label} className={`pd-reveal pd-glass pd-metric ${k === 0 ? "sm:col-span-2" : ""}`}>
-                <div className="flex items-center justify-between">
-                  <span className="label pd-tint">Metric {pad(k + 1)}</span>
-                  <span aria-hidden className="pd-metric-pip" />
-                </div>
-                <p className="display mt-8 text-[22vw] !leading-[0.85] sm:text-[11vw] md:text-[6.4vw]" data-count={m.value}>
-                  {m.value}
-                </p>
-                <p className="label mt-3 !text-fg/70">{m.label}</p>
-                <div aria-hidden className="pd-metric-bar mt-6" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          p.verdict && (
-            <div className="pd-reveal pd-glass pd-statement self-end md:col-span-6">
-              <span className="label pd-tint">In one line</span>
-              <p className="mt-6 text-2xl font-medium leading-snug tracking-tight md:text-3xl">{p.verdict.statement}</p>
-            </div>
-          )
-        )}
       </section>
 
-      {/* ── friction → move ────────────────────────────────── */}
-      {p.challenges && (
-        <section className="mx-auto max-w-[1400px] px-gutter py-20 md:py-28" aria-label="Challenges">
-          <div className="mb-12 flex flex-col justify-between gap-6 md:flex-row md:items-end">
-            <div>
-              <SectionLabel n={num()}>Friction → Move</SectionLabel>
-              <h2 className="pd-reveal pd-h2">What was hard, and what answered it.</h2>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {p.challenges.map((c, k) => (
-              <div key={c.title} className="pd-reveal pd-glass pd-card group flex flex-col">
-                <div className="flex items-center justify-between border-b border-fg/10 pb-4">
-                  <span className="label">Friction {pad(k + 1)}</span>
-                  <span className="label !text-fg/30">Solved</span>
-                </div>
-                <h3 className="mt-6 text-2xl font-semibold tracking-tight">{c.title}</h3>
-                <p className="mt-3 text-[15px] leading-relaxed text-fg/60">{c.problem}</p>
-                <div className="pd-move mt-auto">
-                  <span className="label pd-tint flex items-center gap-2">
-                    <span aria-hidden className="pd-move-dot" /> The move
+      {/* ── story: pinned, told against the dot ruler ──────── */}
+      {story.length > 0 && (
+        <section className="pd-story pd-dark relative" style={{ height: `${(story.length + 1) * 95 + 100}vh` }} aria-label="Process" data-surface="dark">
+          <div className="sticky top-0 grid h-svh items-center overflow-hidden md:grid-cols-2">
+            <canvas aria-hidden className="pd-ruler absolute inset-y-0 left-0 hidden h-full w-1/2 md:block" />
+            <div className="pd-shell md:col-start-2 md:!pl-0">
+              <div className="relative h-[60vh]">
+              <div className="pd-say">
+                <p>
+                  <Words text={p.timeline ? "A clear process," : "What was hard,"} />{" "}
+                  <span className="pd-shimmer">
+                    <Words text={p.timeline ? `in ${count}.` : `and the ${count} that answered it.`} />
                   </span>
-                  <p className="mt-2.5 text-[15px] leading-relaxed text-fg/90">{c.move}</p>
-                </div>
+                </p>
               </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ── architecture ───────────────────────────────────── */}
-      {p.architecture && (
-        <section className="mx-auto grid max-w-[1400px] gap-12 px-gutter py-20 md:grid-cols-12 md:py-28" aria-label="Architecture">
-          <div className="md:col-span-4">
-            <SectionLabel n={num()}>Architecture</SectionLabel>
-            <h2 className="pd-reveal pd-h2">How it&apos;s wired.</h2>
-            <p className="pd-reveal mt-5 max-w-[34ch] text-fg/60">From the screen down to the data — every layer, one request&apos;s path.</p>
-          </div>
-          <ol className="pd-stack md:col-span-8">
-            <span aria-hidden className="pd-stack-line">
-              <span className="pd-stack-pulse" />
-            </span>
-            {p.architecture.map((layer, k) => (
-              <li key={layer.label} className="pd-reveal pd-layer">
-                <span aria-hidden className="pd-layer-node" />
-                <span className="label w-8 shrink-0 tabular-nums">{pad(k + 1)}</span>
-                <span className="label pd-tint w-28 shrink-0">{layer.label}</span>
-                <span className="text-base text-fg/85 md:text-lg">{layer.detail}</span>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {/* ── sequence ───────────────────────────────────────── */}
-      {p.timeline && (
-        <section className="mx-auto max-w-[1400px] px-gutter py-20 md:py-28" aria-label="Process">
-          <div className="mb-14 md:text-center">
-            <div className="md:flex md:justify-center">
-              <SectionLabel n={num()}>Sequence</SectionLabel>
-            </div>
-            <h2 className="pd-reveal pd-h2">From first visit to live.</h2>
-          </div>
-          <div className="pd-spine relative mx-auto max-w-5xl">
-            <span aria-hidden className="pd-spine-track">
-              <span className="pd-spine-fill" />
-            </span>
-            <ol className="space-y-10 md:space-y-16">
-              {p.timeline.map((step, k) => (
-                <li key={step.phase} className="relative grid pl-12 md:grid-cols-2 md:gap-24 md:pl-0">
-                  <span aria-hidden className="pd-spine-node" />
-                  <div className={`pd-reveal pd-glass pd-card ${k % 2 ? "md:col-start-2" : "md:text-right"}`}>
-                    <span className="label pd-tint">
-                      {pad(k + 1)} / {step.phase}
-                    </span>
-                    <h3 className="mt-3 text-2xl font-semibold tracking-tight">{step.title}</h3>
-                    <p className="mt-3 text-[15px] leading-relaxed text-fg/60">{step.description}</p>
-                  </div>
-                </li>
+              {story.map((s, k) => (
+                <div key={s.label} className="pd-say">
+                  <p className="pd-caption mb-5 tabular-nums">
+                    {pad(k + 1)} / {pad(story.length)} — {s.label}
+                  </p>
+                  <p>
+                    <Words text={`${s.lead}.`} accent /> <Words text={s.body} />
+                  </p>
+                </div>
               ))}
-            </ol>
-          </div>
-        </section>
-      )}
-
-      {/* ── outcome ────────────────────────────────────────── */}
-      {p.outcomes && p.verdict && (
-        <section className="mx-auto max-w-[1400px] px-gutter py-20 md:py-28" aria-label="Outcome">
-          <div className="pd-reveal pd-glass pd-outcome grid gap-10 md:grid-cols-12">
-            <div className="md:col-span-6">
-              <SectionLabel n={num()}>Outcome</SectionLabel>
-              <p className="display text-[13vw] md:text-[5.2vw]">{p.verdict.title}</p>
-              <p className="mt-6 max-w-[42ch] text-lg leading-relaxed text-fg/70">{p.verdict.statement}</p>
+              </div>
             </div>
-            <ul className="space-y-5 self-end md:col-span-6">
-              {p.outcomes.map((o) => (
-                <li key={o} className="flex gap-4 border-b border-fg/10 pb-5 text-base leading-relaxed text-fg/85 md:text-lg">
-                  <span aria-hidden className="pd-check">✓</span>
-                  {o}
-                </li>
-              ))}
-            </ul>
           </div>
         </section>
       )}
 
-      {/* ── onward ─────────────────────────────────────────── */}
-      <section className="mx-auto max-w-[1400px] px-gutter pb-28 pt-12" aria-label="More projects">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Onward project={prev} dir="prev" />
-          <Onward project={next} dir="next" />
-        </div>
-        <div className="pd-reveal mt-20 flex flex-col items-start justify-between gap-6 border-t border-fg/10 pt-10 md:flex-row md:items-end">
-          <p className="max-w-[22ch] text-3xl font-semibold leading-tight tracking-tight md:text-5xl">Building something like this?</p>
-          <CopyEmail className="text-xl md:text-3xl" />
+      {/* ── the wipe: dark into light ──────────────────────── */}
+      <div className="pd-wipe relative h-[130vh]" aria-hidden data-surface="dark">
+        <canvas className="pd-wipe-canvas sticky top-0 h-svh w-full" />
+      </div>
+
+      {/* ── the work, in orbit ─────────────────────────────── */}
+      <section className="pd-orbit pd-light relative h-[280vh]" aria-label="The product" data-surface="paper">
+        <div className="sticky top-0 flex h-svh items-center justify-center overflow-hidden [perspective:1600px]">
+          <div className="pd-scene">
+            <p className="pd-orbit-title">
+              {p.title}, on screen. <span className="pd-soft">{status}.</span>
+            </p>
+            <div className="pd-ring">
+              {ring.map((r, k) => (
+                <Link
+                  key={r.slug}
+                  href={`/projects/${r.slug}`}
+                  className="pd-card"
+                  // alternate heights, so the title always shows between the screens
+                  style={{ "--a": `${(360 / ring.length) * k}deg`, "--y": k % 2 ? "-34%" : "30%" } as React.CSSProperties}
+                  data-cursor="view"
+                  aria-label={r.slug === p.slug ? `${r.title} (this project)` : `Open ${r.title}`}
+                >
+                  <Image src={r.cover} alt="" fill sizes="420px" className="object-cover object-top" />
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
+
+      {/* ── friction → move, as white panels ───────────────── */}
+      {p.timeline && p.challenges && (
+        <section className="pd-light pd-shell py-16 md:py-24" aria-label="Challenges" data-surface="paper">
+          <Kicker n="01" of="03">
+            Friction
+          </Kicker>
+          <h2 className="pd-h2 pd-split">
+            What was hard. <span className="pd-soft">What answered it.</span>
+          </h2>
+          <div className="mt-10 grid gap-3">
+            {p.challenges.map((c, k) => (
+              <article key={c.title} className="pd-reveal pd-panel grid gap-6 p-3 md:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)] md:gap-10">
+                <div className="pd-well pd-well-grey aspect-square md:aspect-auto md:h-[220px]">
+                  <DotViz kind="glyph" text={String(k + 1)} seed={k} className="h-full w-full" />
+                </div>
+                <div className="px-3 md:py-5">
+                  <h3 className="text-[1.6rem] font-medium leading-tight tracking-[-0.045em]">{c.title}</h3>
+                  <p className="mt-2 text-[15px] leading-snug text-[var(--soft)]">{c.problem}</p>
+                </div>
+                <div className="px-3 pb-4 md:py-5 md:pr-8">
+                  <p className="pd-caption">The move</p>
+                  <p className="mt-3 flex gap-3 text-[16px] leading-snug tracking-[-0.01em]">
+                    <span aria-hidden className="pd-tick">✓</span>
+                    {c.move}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── architecture, as a summary ─────────────────────── */}
+      {p.architecture && (
+        <section className="pd-light pd-shell py-16 md:py-24" aria-label="Architecture" data-surface="paper">
+          <div className="grid gap-10 md:grid-cols-12">
+            <div className="md:col-span-5">
+              <Kicker n={p.timeline && p.challenges ? "02" : "01"} of={p.timeline && p.challenges ? "03" : "02"}>
+                Architecture
+              </Kicker>
+              <h2 className="pd-h2 pd-split">
+                How it&apos;s wired. <span className="pd-soft">Layer by layer.</span>
+              </h2>
+              <p className="pd-reveal mt-6 max-w-[34ch] text-[var(--soft)]">From the screen down to the data — one request&apos;s path through every layer.</p>
+            </div>
+            <div className="pd-reveal pd-panel p-3 md:col-span-7">
+              <div className="pd-summary">
+                <div>
+                  <p className="text-2xl font-medium tracking-[-0.045em]">{p.title}</p>
+                  <p className="mt-1 max-w-[36ch] text-[14px] leading-snug opacity-75">{p.stack.join(" · ")}</p>
+                </div>
+                <span className="pd-caption !text-white/80">{pad(p.architecture.length)} layers</span>
+              </div>
+              <ol className="px-5 pb-3 pt-2 md:px-7">
+                {p.architecture.map((l, k) => (
+                  <li key={l.label} className="pd-layer">
+                    <span className="flex items-baseline gap-3">
+                      <span className="pd-caption tabular-nums">{pad(k + 1)}</span>
+                      <span className="font-medium">+ {l.label}</span>
+                    </span>
+                    <span className="text-right text-[15px] text-[var(--soft)]">{l.detail}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── outcome, on a dashed card ──────────────────────── */}
+      {p.verdict && (
+        <section className="pd-light pd-shell py-16 md:py-24" aria-label="Outcome" data-surface="paper">
+          <div className="pd-reveal pd-outcome relative mx-auto max-w-[920px] px-6 py-16 text-center md:px-16 md:py-24">
+            <svg aria-hidden className="pd-dash absolute inset-3 h-[calc(100%-24px)] w-[calc(100%-24px)]" preserveAspectRatio="none">
+              <rect x="1" y="1" rx="22" />
+            </svg>
+            <svg aria-hidden viewBox="0 0 48 48" className="pd-cube mx-auto h-14 w-14">
+              <path d="M24 4 41 14v20L24 44 7 34V14Z" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray="7 5" />
+              <path d="M7 14l17 10 17-10M24 24v20" fill="none" stroke="currentColor" strokeWidth="2.5" />
+            </svg>
+            <p className="pd-caption mt-8">Outcome</p>
+            <h2 className="pd-h2 pd-split mx-auto mt-3 max-w-[16ch]">{p.verdict.title}</h2>
+            <p className="pd-reveal mx-auto mt-5 max-w-[44ch] text-lg leading-snug tracking-[-0.02em] text-[var(--soft)] md:text-xl">{p.verdict.statement}</p>
+            {outcomes && (
+              <ul className="mx-auto mt-12 grid max-w-[760px] gap-3 text-left md:grid-cols-3">
+                {outcomes.map((o) => (
+                  <li key={o} className="pd-reveal flex gap-3 rounded-2xl bg-white/70 p-4 text-[14px] leading-snug tracking-[-0.01em]">
+                    <span aria-hidden className="pd-tick">✓</span>
+                    {o}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── the end of the page ────────────────────────────── */}
+      <footer className="pd-light pd-shell pb-16 pt-20 md:pt-32" data-surface="paper">
+        <div className="grid gap-14 md:grid-cols-12">
+          <div className="md:col-span-7">
+            <p className="pd-h2 pd-split">
+              <span className="pd-soft">This is only the end of the case.</span> Imagine what comes next.
+            </p>
+            <div className="pd-reveal mt-8 flex flex-wrap gap-2.5">
+              <Link href="/contact" className="pd-btn pd-btn-tint" data-cursor="view">
+                <span className="pd-btn-dot" aria-hidden>
+                  →
+                </span>
+                <span className="flex flex-col leading-none">
+                  Start a project
+                  <small>Reply within a day</small>
+                </span>
+              </Link>
+              <Link href={`/projects/${next.slug}`} className="pd-btn pd-btn-ghost" data-cursor="view">
+                <span className="pd-btn-dot" aria-hidden>
+                  →
+                </span>
+                Next: {next.title}
+              </Link>
+            </div>
+            <div className="pd-reveal mt-10">
+              <CopyEmail className="text-lg md:text-xl" />
+            </div>
+          </div>
+          <nav className="pd-reveal grid grid-cols-2 gap-8 text-[15px] md:col-span-5" aria-label="More work">
+            <div>
+              <p className="pd-caption mb-4">More work</p>
+              <ul className="space-y-1.5">
+                {projects.map((r) => (
+                  <li key={r.slug}>
+                    <Link href={`/projects/${r.slug}`} className="pd-flink" aria-current={r.slug === p.slug ? "page" : undefined}>
+                      {r.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="text-right">
+              <p className="pd-caption mb-4">Elsewhere</p>
+              <ul className="space-y-1.5">
+                <li>
+                  <Link href="/projects" className="pd-flink">
+                    All work
+                  </Link>
+                </li>
+                <li>
+                  <Link href={`/projects/${prev.slug}`} className="pd-flink">
+                    Previous
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/contact" className="pd-flink">
+                    Contact
+                  </Link>
+                </li>
+                {person.socials.map((s) => (
+                  <li key={s.href}>
+                    <a href={s.href} target="_blank" rel="noreferrer" className="pd-flink">
+                      {s.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </nav>
+        </div>
+        <div className="pd-rule mt-16" />
+        <p className="pd-caption mt-5 flex justify-between">
+          <span>{person.name}</span>
+          <span>{person.location}</span>
+        </p>
+      </footer>
     </article>
   );
 }
 
-function SectionLabel({ n, children }: { n: string; children: React.ReactNode }) {
-  return (
-    <p className="pd-reveal mb-6 flex items-center gap-3">
-      <span aria-hidden className="pd-dot" />
-      <span className="label pd-tint">
-        {n} — {children}
-      </span>
-    </p>
-  );
+/** a sentence split into words the story lights one by one; with `accent`, its last word takes the tint */
+function Words({ text, accent = false }: { text: string; accent?: boolean }) {
+  const ws = text.split(" ");
+  return ws.map((w, k) => (
+    <span key={k} className={`pd-w ${accent && k === ws.length - 1 ? "pd-accent" : ""}`}>
+      {w}
+      {k < ws.length - 1 ? " " : ""}
+    </span>
+  ));
 }
 
-function Onward({ project, dir }: { project: Project; dir: "prev" | "next" }) {
-  const next = dir === "next";
+function Kicker({ n, of, children }: { n: string; of: string; children: React.ReactNode }) {
   return (
-    <Link
-      href={`/projects/${project.slug}`}
-      className={`pd-reveal pd-onward group ${next ? "md:text-right" : ""}`}
-      style={{ "--tint": project.tint } as React.CSSProperties}
-      data-cursor="view"
-    >
-      <Image src={project.cover} alt="" fill sizes="(min-width: 768px) 50vw, 100vw" className="pd-onward-img object-cover object-top" />
-      <span className="pd-onward-wash" aria-hidden />
-      <span className={`relative flex h-full flex-col justify-end p-7 md:p-9 ${next ? "md:items-end" : ""}`}>
-        <span className="label">{next ? "Next project →" : "← Previous project"}</span>
-        <span className="display mt-3 text-[11vw] transition-colors duration-500 group-hover:text-[var(--tint)] md:text-[4.4vw]">
-          {project.title}
-        </span>
-        <span className="label mt-3 !text-fg/50">{project.category}</span>
-      </span>
-    </Link>
+    <p className="pd-reveal pd-caption mb-4 flex items-center gap-2">
+      <span aria-hidden className="pd-live" />
+      {children} <span className="tabular-nums">{n}</span>
+      <span className="pd-soft -ml-1.5 tabular-nums">/{of}</span>
+    </p>
   );
 }

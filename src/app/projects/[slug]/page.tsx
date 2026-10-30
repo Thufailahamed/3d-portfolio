@@ -1,8 +1,19 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import HealthLanding from "@/components/landing/health/HealthLanding";
+import LegalLanding from "@/components/landing/legal/LegalLanding";
+import SchoolLanding from "@/components/landing/school/SchoolLanding";
+import VyroLanding from "@/components/landing/vyro/VyroLanding";
 import ProjectDetail from "@/components/project/ProjectDetail";
 import { getProject, projects } from "@/content/site";
+
+const LANDINGS: Record<string, typeof LegalLanding> = {
+  "legal-workspace": LegalLanding,
+  vyro: VyroLanding,
+  "school-system": SchoolLanding,
+  healthhub: HealthLanding,
+};
 
 export function generateStaticParams() {
   return projects.map((p) => ({ slug: p.slug }));
@@ -35,7 +46,12 @@ async function ProjectBody({ params }: { params: PageProps<"/projects/[slug]">["
 
   const i = projects.indexOf(project);
   const n = projects.length;
+  const prev = projects[(i - 1 + n) % n];
+  const next = projects[(i + 1) % n];
+  // some projects get a full product landing page of their own
+  const Landing = LANDINGS[project.slug];
+  if (Landing) return <Landing project={project} prev={prev} next={next} />;
   return (
-    <ProjectDetail project={project} index={i} total={n} prev={projects[(i - 1 + n) % n]} next={projects[(i + 1) % n]} />
+    <ProjectDetail project={project} index={i} total={n} prev={prev} next={next} />
   );
 }

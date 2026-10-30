@@ -161,346 +161,512 @@ html.has-cursor * {
 }
 
 /* ── project case study (/projects/[slug]) ─────────────────── */
+/* monochrome and printed: Overused Grotesk set tight, a dot lattice over every surface,
+   grey → black → light, with the project's tint kept for the few things you press */
 .pd {
   --tint: var(--color-accent);
-  --line: color-mix(in oklab, var(--color-fg) 10%, transparent);
-  --tint-soft: color-mix(in oklab, var(--tint) 40%, transparent);
+  --ink: #111;
+  --light: #e7e7e7;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --fg: #fff;
+  --soft: rgb(255 255 255 / 0.5);
+  --rule: rgb(255 255 255 / 0.18);
+  position: relative;
+  font-family: var(--font-grotesk), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--fg);
 }
 .pd ::selection {
   background: var(--tint);
+  color: var(--ink);
 }
-.pd-tint {
-  color: var(--tint) !important;
+.pd-dark {
+  --fg: #fff;
+  --soft: rgb(255 255 255 / 0.5);
+  --rule: rgb(255 255 255 / 0.18);
+  color: var(--fg);
+}
+.pd-light {
+  --fg: #111;
+  --soft: #8a8a8a;
+  --rule: rgb(0 0 0 / 0.12);
+  color: var(--fg);
+}
+.pd-shell {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: clamp(1.25rem, 0.9rem + 1.6vw, 2.75rem);
+}
+
+/* the fixed header turns to ink while light is under it (but not over the open menu) */
+body > header {
+  transition: color 0.4s;
+}
+html[data-surface="paper"] body:has(#site-menu.invisible) > header {
+  --color-fg: #111;
+  --color-bg: #f5f5f5;
+  color: var(--color-fg);
+}
+.pd-topfade {
+  background: linear-gradient(to bottom, rgb(0 0 0 / 0.35), transparent);
+  transition: opacity 0.4s;
+}
+html[data-surface="paper"] .pd-topfade {
+  opacity: 0;
 }
 .pd-progress {
-  background: linear-gradient(to right, transparent, var(--tint));
-  box-shadow: 0 0 12px var(--tint);
+  background: var(--tint);
 }
-.pd-hero-wash {
-  background:
-    radial-gradient(ellipse 70% 55% at 70% 20%, color-mix(in oklab, var(--tint) 18%, transparent), transparent 70%),
-    linear-gradient(to bottom, color-mix(in oklab, var(--color-bg) 30%, transparent), var(--color-bg) 92%);
+
+/* ── backdrop ── */
+.pd-bg {
+  /* first in the article, so every section after it paints on top */
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
-.pd-tag {
-  font-family: var(--font-mono);
-  font-size: clamp(11px, 1vw, 14px);
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--tint);
+.pd-bg-layer {
+  position: absolute;
+  inset: 0;
 }
-.pd-back {
+.pd-bg-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--dot) 0.7px, transparent 1.15px);
+  background-size: 10.5px 10.5px;
+}
+.pd-bg-grey {
+  --dot: rgb(255 255 255 / 0.2);
+  background: radial-gradient(ellipse 80% 70% at 70% 40%, #8a8a8a, #6a6a6a 55%, #5b5b5b);
+}
+.pd-bg-black {
+  --dot: rgb(255 255 255 / 0.1);
+  background: radial-gradient(ellipse 70% 60% at 50% 45%, #1d1d1d, #0d0d0d 70%);
+  opacity: 0;
+}
+.pd-bg-light {
+  --dot: rgb(0 0 0 / 0.11);
+  /* flat, so it meets the wipe's dots without a seam; the drifting blobs give it depth */
+  background: var(--light);
+  opacity: 0;
+}
+/* drifting soft light, like a lamp moving behind frosted glass */
+.pd-blobs i {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(255 255 255 / 0.22), transparent 62%);
+  mix-blend-mode: soft-light;
+  filter: blur(20px);
+  animation: pd-drift 26s ease-in-out infinite alternate;
+}
+.pd-blobs i:nth-child(1) { left: -20vmax; top: -25vmax; }
+.pd-blobs i:nth-child(2) { right: -25vmax; top: 10vmax; animation-duration: 32s; animation-delay: -8s; background: radial-gradient(circle, rgb(0 0 0 / 0.35), transparent 62%); mix-blend-mode: multiply; }
+.pd-blobs i:nth-child(3) { left: 20vmax; bottom: -35vmax; animation-duration: 38s; animation-delay: -16s; }
+@keyframes pd-drift {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(12vmax, 8vmax) scale(1.15); }
+  100% { transform: translate(-6vmax, 14vmax) scale(0.95); }
+}
+
+/* ── type ── */
+.pd-caption {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--soft);
+}
+.pd-soft {
+  color: var(--soft);
+}
+.pd-hero-head {
+  font-size: clamp(1.9rem, 1.2rem + 2.1vw, 3.4rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+.pd-h2 {
+  font-size: clamp(2rem, 1.3rem + 2.4vw, 3.6rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+.pd-price {
+  font-size: clamp(2.6rem, 1.8rem + 2.6vw, 4.5rem);
+  font-weight: 500;
+  line-height: 0.95;
+  letter-spacing: -0.065em;
+}
+.pd-price .pd-soft {
+  font-size: 0.42em;
+  letter-spacing: -0.04em;
+}
+.pd-rule {
+  height: 1px;
+  background: var(--rule);
+}
+/* the wordmark: book weight, fitted edge to edge, each letter a two-high roller */
+.pd-mark {
+  display: flex;
+  justify-content: space-between;
+  width: max-content;
+  margin-top: 0.06em;
+  font-weight: 400;
+  line-height: 0.8;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+.pd-ch {
+  display: inline-block;
+  height: 0.8em;
+  overflow: hidden;
+  padding-top: 0.04em;
+  box-sizing: content-box;
+}
+.pd-ch-in {
+  display: flex;
+  flex-direction: column;
+}
+.pd-ch-in > span {
+  display: block;
+  height: 0.8em;
+  line-height: 0.8;
+}
+.pd-ch-space {
+  width: 0.22em;
+}
+
+/* ── small parts ── */
+.pd-live {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--tint);
+}
+.pd-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: pd-ping 2s var(--ease-out) infinite;
+}
+@keyframes pd-ping {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+.pd-chip-btn {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  transition: color 0.3s;
+  gap: 8px;
+  height: 38px;
+  padding-inline: 16px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.3s;
 }
-.pd-back:hover {
-  color: var(--tint) !important;
+.pd-chip-btn:hover {
+  background: rgb(0 0 0 / 0.5);
 }
 .pd-back-arrow {
-  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .pd-back:hover .pd-back-arrow {
   transform: translateX(-4px);
 }
-.pd-cta {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 12px;
-  align-self: flex-start;
+.pd-avatar {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
-  background: var(--color-fg);
-  color: var(--color-bg);
-  padding: 16px 28px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  transition: background 0.4s, box-shadow 0.4s, transform 0.2s;
+  box-shadow: 0 0 0 3px #1a1a1a;
+  font-size: 15px;
+  font-weight: 500;
 }
-.pd-cta:hover {
-  background: var(--tint);
-  box-shadow: 0 0 40px color-mix(in oklab, var(--tint) 55%, transparent);
-}
-.pd-cta:active {
-  transform: scale(0.97);
-}
-.pd-cta-arrow {
-  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.pd-cta:hover .pd-cta-arrow {
-  transform: translate(3px, -3px);
-}
-.pd-glass {
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: linear-gradient(160deg, color-mix(in oklab, var(--color-fg) 5%, transparent), color-mix(in oklab, var(--color-fg) 1%, transparent));
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  transition: border-color 0.5s, background 0.5s;
-}
-.pd-glass:hover {
-  border-color: var(--tint-soft);
-}
-.pd-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--tint);
-  box-shadow: 0 0 10px var(--tint);
-  animation: pd-pulse 2s ease-in-out infinite;
-}
-@keyframes pd-pulse {
-  50% { opacity: 0.35; }
-}
-.pd-h2 {
-  font-size: clamp(2rem, 4.2vw, 4rem);
-  font-weight: 600;
-  line-height: 1.02;
-  letter-spacing: -0.035em;
-  text-wrap: balance;
-}
-.pd-chip {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 7px 14px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: color-mix(in oklab, var(--color-fg) 85%, transparent);
-}
-
-/* the live product in a browser window */
-.pd-frame {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: #0e0e10;
-  transform-origin: 50% 0%;
-  box-shadow:
-    0 60px 160px -40px color-mix(in oklab, var(--tint) 35%, transparent),
-    0 30px 80px -20px rgb(0 0 0 / 0.8);
-}
-.pd-frame-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--line);
-  padding: 11px 16px;
-}
-.pd-frame-bar i {
-  display: block;
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--color-fg) 18%, transparent);
-}
-.pd-frame-url {
-  overflow: hidden;
-  max-width: 60%;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--color-fg) 6%, transparent);
-  padding: 4px 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: color-mix(in oklab, var(--color-fg) 55%, transparent);
-}
-
-.pd-metric {
-  padding: 24px;
-}
-@media (min-width: 768px) {
-  .pd-metric { padding: 28px; }
-}
-.pd-metric-pip {
-  width: 7px;
-  height: 7px;
-  rotate: 45deg;
-  border: 1px solid var(--tint);
-}
-.pd-metric-bar {
-  height: 1px;
-  background: linear-gradient(to right, var(--tint), transparent 70%);
-  opacity: 0.7;
-}
-.pd-statement {
-  padding: 32px;
-}
-
-.pd-card {
-  padding: 26px;
-}
-@media (min-width: 768px) {
-  .pd-card { padding: 30px; }
-}
-.pd-move {
-  margin-top: 28px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px 18px;
-  transition: border-color 0.5s, background 0.5s;
-}
-.group:hover .pd-move {
-  border-color: var(--tint-soft);
-  background: color-mix(in oklab, var(--tint) 5%, transparent);
-}
-.pd-move-dot {
-  width: 5px;
-  height: 5px;
-  rotate: 45deg;
-  background: var(--tint);
-}
-
-/* architecture: a stack of layers on a live wire */
-.pd-stack {
-  position: relative;
-}
-.pd-stack-line {
-  position: absolute;
-  left: 3px;
-  top: 30px;
-  bottom: 30px;
-  width: 1px;
-  overflow: hidden;
-  background: var(--line);
-}
-.pd-stack-pulse {
-  position: absolute;
-  inset-inline: 0;
-  height: 30%;
-  background: linear-gradient(to bottom, transparent, var(--tint), transparent);
-  animation: pd-flow 2.6s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-}
-@keyframes pd-flow {
-  from { transform: translateY(-100%); }
-  to { transform: translateY(400%); }
-}
-.pd-layer {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 16px;
-  border-bottom: 1px solid var(--line);
-  padding: 24px 0 24px 28px;
-  transition: background 0.4s;
-}
-.pd-layer:hover {
-  background: linear-gradient(to right, color-mix(in oklab, var(--tint) 7%, transparent), transparent 70%);
-}
-.pd-layer-node {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  translate: 0 -50%;
-  rotate: 45deg;
-  border: 1px solid var(--tint);
-  background: var(--color-bg);
-}
-.pd-layer:hover .pd-layer-node {
-  background: var(--tint);
-  box-shadow: 0 0 12px var(--tint);
-}
-@media (max-width: 767px) {
-  .pd-layer > .label:first-of-type { display: none; }
-}
-
-/* timeline spine */
-.pd-spine-track {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 16px;
-  width: 1px;
-  background: var(--line);
-}
-.pd-spine-fill {
-  position: absolute;
-  inset: 0;
-  transform-origin: top;
-  background: linear-gradient(to bottom, var(--tint), color-mix(in oklab, var(--tint) 30%, transparent));
-  box-shadow: 0 0 12px var(--tint);
-}
-.pd-spine-node {
-  position: absolute;
-  left: 16px;
-  top: 30px;
-  width: 11px;
-  height: 11px;
-  translate: -50% 0;
-  border-radius: 999px;
-  background: var(--tint);
-  box-shadow: 0 0 16px var(--tint);
-  z-index: 1;
-}
-@media (min-width: 768px) {
-  .pd-spine-track,
-  .pd-spine-node {
-    left: 50%;
-  }
-  .pd-spine-track {
-    translate: -50% 0;
-  }
-}
-
-.pd-outcome {
-  padding: 32px;
-  background:
-    radial-gradient(ellipse at 0% 0%, color-mix(in oklab, var(--tint) 12%, transparent), transparent 60%),
-    linear-gradient(160deg, color-mix(in oklab, var(--color-fg) 5%, transparent), transparent);
-}
-@media (min-width: 768px) {
-  .pd-outcome { padding: 56px; }
-}
-.pd-check {
+.pd-tick {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--tint-soft);
+  width: 20px;
+  height: 20px;
   border-radius: 999px;
-  font-size: 12px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 10px;
+}
+.pd-accent {
   color: var(--tint);
 }
 
-.pd-onward {
+/* ── buttons: a pill with a round arrow that turns ── */
+.pd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  height: 50px;
+  padding: 0 24px 0 4px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+  transition: background 0.35s, color 0.35s, box-shadow 0.35s, scale 0.3s var(--ease-out);
+}
+.pd-btn small {
+  margin-top: 3px;
+  font-size: 10.5px;
+  letter-spacing: -0.01em;
+  opacity: 0.75;
+}
+.pd-btn:active {
+  scale: 0.96;
+}
+.pd-btn-dot {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  font-size: 18px;
+  transition: transform 0.6s var(--ease-out);
+}
+.pd-btn:hover .pd-btn-dot {
+  transform: rotate(-45deg);
+}
+.pd-btn-tint {
+  background: var(--tint);
+  color: var(--ink);
+}
+.pd-btn-tint .pd-btn-dot {
+  background: #fff;
+  color: var(--ink);
+}
+.pd-btn-tint:hover {
+  box-shadow: 0 10px 40px -10px var(--tint);
+}
+.pd-btn-ghost {
+  box-shadow: inset 0 0 0 1px var(--rule);
+  color: var(--fg);
+}
+.pd-btn-ghost .pd-btn-dot {
+  background: var(--fg);
+  color: color-mix(in oklab, var(--fg) 0%, #000);
+}
+.pd-dark .pd-btn-ghost .pd-btn-dot { color: #111; }
+.pd-light .pd-btn-ghost .pd-btn-dot { color: #fff; }
+.pd-btn-ghost:hover {
+  background: color-mix(in oklab, var(--fg) 8%, transparent);
+}
+
+/* ── bento: dark glass tiles, each with an inset dot display ── */
+.pd-glass {
+  border-radius: clamp(24px, 2.6vw, 36px);
+  background: linear-gradient(160deg, rgb(52 52 52 / 0.92), rgb(28 28 28 / 0.94));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 30px 60px -30px rgb(0 0 0 / 0.6);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.pd-well {
   position: relative;
-  display: block;
-  aspect-ratio: 16 / 10;
+  min-height: 150px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  transition: border-color 0.5s;
+  border-radius: clamp(18px, 2vw, 26px);
+  background: linear-gradient(160deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.015));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
 }
-.pd-onward:hover {
-  border-color: color-mix(in oklab, var(--tint) 50%, transparent);
+.pd-well-grey {
+  background: radial-gradient(ellipse at 30% 20%, #8c8c8c, #5c5c5c 70%);
+  box-shadow: none;
 }
-.pd-onward-img {
-  opacity: 0.35;
-  transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.6s;
-}
-.pd-onward:hover .pd-onward-img {
-  transform: scale(1.05);
-  opacity: 0.55;
-}
-.pd-onward-wash {
+
+/* ── story ── */
+.pd-say {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, var(--color-bg) 15%, color-mix(in oklab, var(--color-bg) 40%, transparent));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 21ch;
+  font-size: clamp(1.9rem, 1.2rem + 2.2vw, 3.4rem);
+  font-weight: 500;
+  line-height: 1.04;
+  letter-spacing: -0.055em;
+  opacity: 0;
+  transform: translateY(30px);
+  filter: blur(6px);
+  transition: opacity 0.7s var(--ease-out), transform 0.9s var(--ease-out), filter 0.7s var(--ease-out);
+  pointer-events: none;
+}
+.pd-say.is-on {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+.pd-say .pd-caption {
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+.pd-w {
+  opacity: 0.16;
+  transition: opacity 0.25s linear;
+}
+/* a slow sheen of the tint across the key words */
+.pd-shimmer {
+  background: linear-gradient(100deg, #fff 0%, #fff 30%, var(--tint) 45%, color-mix(in oklab, var(--tint) 50%, #fff) 55%, #fff 70%, #fff 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: pd-sheen 4.5s ease-in-out infinite;
+}
+@keyframes pd-sheen {
+  0% { background-position: 100% 0; }
+  100% { background-position: -50% 0; }
+}
+
+/* ── orbit: the screens on a slow carousel around the title ── */
+.pd-scene {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateX(-4deg);
+}
+.pd-orbit-title {
+  position: relative;
+  max-width: 13ch;
+  font-size: clamp(2.4rem, 1.5rem + 3vw, 4.6rem);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.06em;
+  text-align: center;
+  transform: translateZ(0);
+}
+.pd-ring {
+  --spin: 30deg;
+  --r: min(560px, 46vw);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-style: preserve-3d;
+  transform: rotateY(var(--spin));
+}
+.pd-card {
+  --w: min(360px, 44vw);
+  position: absolute;
+  left: calc(var(--w) / -2);
+  top: calc(var(--w) * -0.31);
+  width: var(--w);
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #ddd;
+  box-shadow: 0 40px 70px -30px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(0 0 0 / 0.06);
+  transform: rotateY(var(--a)) translateZ(var(--r)) translateY(var(--y, 0%));
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: box-shadow 0.4s;
+}
+.pd-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, rgb(255 255 255 / 0.25), transparent 35%, transparent 70%, rgb(0 0 0 / 0.12));
+}
+@media (max-width: 767px) {
+  .pd-ring { --r: 62vw; }
+  .pd-card { --w: 58vw; }
+}
+
+/* ── light panels ── */
+.pd-panel {
+  border-radius: clamp(24px, 2.6vw, 36px);
+  background: #fff;
+  box-shadow: 0 30px 60px -40px rgb(0 0 0 / 0.25);
+}
+.pd-summary {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: clamp(18px, 2vw, 26px);
+  background: radial-gradient(ellipse at 20% 0%, #8a8a8a, #575757 75%);
+  color: #fff;
+  padding: 26px 28px;
+}
+.pd-layer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--rule);
+  padding: 16px 0;
+}
+.pd-layer:last-child {
+  border-bottom: 0;
+}
+
+/* ── outcome ── */
+.pd-outcome {
+  border-radius: 34px;
+  background: rgb(0 0 0 / 0.045);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.pd-dash {
+  overflow: visible;
+}
+.pd-dash rect {
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  fill: none;
+  stroke: rgb(0 0 0 / 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 9 7;
+  animation: pd-march 30s linear infinite;
+}
+@keyframes pd-march {
+  to { stroke-dashoffset: -400; }
+}
+.pd-cube {
+  color: #3a3a3a;
+  animation: pd-float 5s ease-in-out infinite;
+}
+@keyframes pd-float {
+  50% { transform: translateY(-6px) rotate(-4deg); }
+}
+
+/* ── footer links ── */
+.pd-flink {
+  display: inline-block;
+  transition: color 0.3s, transform 0.4s var(--ease-out);
+}
+.pd-flink:hover {
+  transform: translateX(3px);
+}
+.text-right .pd-flink:hover {
+  transform: translateX(-3px);
+}
+.pd-flink[aria-current="page"] {
+  color: var(--soft);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pd-dot, .pd-stack-pulse { animation: none; }
+  .pd-live::after, .pd-blobs i, .pd-shimmer, .pd-dash rect, .pd-cube { animation: none; }
+  .pd-say { transition: none; filter: none; }
 }
 
 /* ── About ───────────────────────────────────────────────── */
@@ -581,6 +747,136 @@ html.has-cursor * {
   background: var(--color-accent);
   border-color: var(--color-accent);
   box-shadow: 0 0 32px color-mix(in oklab, var(--color-accent) 45%, transparent);
+}
+
+/* ── site footer ─────────────────────────────────────────── */
+/* the lite edition's night: paper-white type on near-black, its orange-red for accents */
+.site-footer {
+  --color-bg: #050505;
+  --color-fg: #f1eee6;
+  --color-accent: #ff3b12;
+  color-scheme: dark;
+  color: var(--color-fg);
+  font-variation-settings: normal;
+}
+/* on /lite it borrows the paper edition's faces */
+.paper .site-footer {
+  --font-display: var(--font);
+  --font-sans: var(--font);
+  --font-mono: var(--mono);
+  font-family: var(--font);
+}
+.site-footer ::selection {
+  background: var(--color-fg);
+  color: var(--color-bg);
+}
+.ft-fade {
+  background: linear-gradient(
+    to bottom,
+    var(--color-bg) 0%,
+    color-mix(in oklab, var(--color-bg) 25%, transparent) 30%,
+    color-mix(in oklab, var(--color-bg) 25%, transparent) 62%,
+    var(--color-bg) 100%
+  );
+}
+.ft-name {
+  font-family: var(--font-shoulders), "Arial Narrow", sans-serif;
+  text-transform: uppercase;
+  line-height: 0.8;
+  letter-spacing: -0.012em;
+  color: var(--color-fg);
+  padding-bottom: 0.02em;
+}
+.ft-char {
+  will-change: font-variation-settings, transform;
+}
+.ft-head {
+  font-family: var(--font-shoulders), "Arial Narrow", sans-serif;
+  font-variation-settings: "opsz" 72;
+  font-weight: 500;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+.ft-mono {
+  font-family: var(--font-shoulders), "Arial Narrow", sans-serif;
+  font-variation-settings: "opsz" 72;
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1;
+  padding: 5px 6px 3px;
+  border: 1px solid color-mix(in oklab, var(--color-fg) 70%, transparent);
+}
+.ft-pulse {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
+}
+.ft-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--color-accent);
+  animation: ft-pulse 2.2s ease-out infinite;
+}
+@keyframes ft-pulse {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(3.2); opacity: 0; }
+}
+/* a link that leans in: an accent tick draws, the text steps right */
+.ft-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding-block: 4px;
+  margin-block: -4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in oklab, var(--color-fg) 60%, transparent);
+  transition: color 0.35s, transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ft-link::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ft-link:hover,
+.ft-link:focus-visible {
+  color: var(--color-fg);
+  transform: translateX(16px);
+}
+.ft-link:hover::before,
+.ft-link:focus-visible::before {
+  transform: scaleX(1);
+}
+.ft-mail {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(18px, 1.6vw, 24px);
+  letter-spacing: -0.02em;
+  background: linear-gradient(var(--color-accent), var(--color-accent)) left bottom / 0% 1px no-repeat;
+  padding-bottom: 4px;
+  transition: background-size 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.35s;
+}
+.ft-mail:hover {
+  color: var(--color-accent);
+  background-size: 100% 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft-pulse::after { animation: none; }
 }
 
 /* ── the investigation board (/board) ───────────────────── */

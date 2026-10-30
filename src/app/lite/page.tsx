@@ -1,19 +1,34 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import Image from "next/image";
 import Link from "next/link";
 import CopyEmail from "@/components/CopyEmail";
 import FullExperienceLink from "@/components/FullExperienceLink";
-import Reveal from "@/components/Reveal";
-import { about, beats, board, contact, person, projects } from "@/content/site";
+import { Arrow, EmbedCluster, LossCurve, Mark, Mast, NeuralNet, ServerHall } from "@/components/paper/art";
+import LocalTime from "@/components/paper/LocalTime";
+import Missions from "@/components/paper/Missions";
+import PaperHeader from "@/components/paper/PaperHeader";
+import PaperMotion from "@/components/paper/PaperMotion";
+import SiteFooter from "@/components/SiteFooter";
+import { chapters, crates, exchange, hero, marquee, process, stats, story } from "@/content/paper";
+import { about, board, contact, person, projects } from "@/content/site";
+import "./paper.css";
+
+const archivo = Archivo({ variable: "--font-archivo", subsets: ["latin"], axes: ["wdth"] });
+const plex = IBM_Plex_Mono({ variable: "--font-plex", subsets: ["latin"], weight: ["400", "500", "700"] });
 
 export const metadata: Metadata = {
-  title: "Lite — Editorial Index",
-  description: `${person.intro} A fast, zero-WebGL editorial edition of the portfolio.`,
+  title: "Lite — Human × Machine",
+  description: `${person.intro} A fast, zero-WebGL edition of the portfolio.`,
   alternates: { canonical: "/lite" },
 };
 
+export const viewport: Viewport = { themeColor: "#f1eee6" };
+
 const pad = (n: number) => String(n).padStart(2, "0");
 const host = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+const bySlug = new Map(projects.map((p) => [p.slug, p]));
+const SHOP_TONES = ["ink", "violet", "porcelain", "indigo", "ink", "violet"];
 
 /** Convert lon/lat to SVG viewBox (1000 × 500 equirectangular) coordinates. */
 function mapXY(lon: number, lat: number) {
@@ -22,580 +37,731 @@ function mapXY(lon: number, lat: number) {
   return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
 }
 
-const STUDIO_STATS = [
-  { value: "06", label: "Production systems live" },
-  { value: "252", label: "Row-level security policies" },
-  { value: "865", label: "API route handlers shipped" },
-  { value: "327", label: "Cloudflare Edge endpoints" },
-];
+/** The loader's training curve: loss falling fast, then settling. */
+const LOADER_CURVE = (() => {
+  const pts: string[] = [];
+  for (let x = 0; x <= 1000; x += 8) {
+    const y = 250 - 200 * Math.exp(-x / 220) + 9 * Math.exp(-x / 500) * Math.sin(x / 13);
+    pts.push(`${x} ${Math.round(y * 10) / 10}`);
+  }
+  return `M${pts.join(" L")}`;
+})();
+const BOOT = ["Loading weights", "Warming the edge", "Grounding in records", "Calibrating human × machine"];
 
-/** The whole site without WebGL: same content, rich architectural editorial layout. */
+/** A ticker band: the stack in big type, sped up and reversed by the way you scroll. */
+function Marquee({ words, tone, reverse = false }: { words: string[]; tone: "paper" | "night"; reverse?: boolean }) {
+  const row = words.map((w, i) => (
+    <span key={i} className={`p-marquee__item ${i % 2 ? "is-outline" : ""}`}>
+      {w}
+      <i className="p-marquee__dot" />
+    </span>
+  ));
+  return (
+    <div className={`p-marquee p-marquee--${tone}`} data-marquee data-reverse={reverse ? "" : undefined} data-tone={tone} aria-hidden>
+      <div className="p-marquee__track" data-marquee-track>
+        <div className="p-marquee__row">{row}</div>
+        <div className="p-marquee__row">{row}</div>
+      </div>
+    </div>
+  );
+}
+
+/** The orange thread: a smooth line through normalised points, drawn on load or as its section scrolls by. */
+function Thread({ points, mode = "scroll", className = "" }: { points: [number, number][]; mode?: "scroll" | "load"; className?: string }) {
+  return (
+    <svg className={`p-thread ${className}`} data-thread={mode} data-points={JSON.stringify(points)} aria-hidden>
+      <path />
+      <circle r="4" />
+      <circle className="p-thread__ring" r="9" />
+      <circle r="3.5" />
+    </svg>
+  );
+}
+
+/** Waypoints for the page rope, as positions inside their section. PaperMotion threads one line through them. */
+function RopeAt({ points }: { points: [string, string][] }) {
+  return (
+    <>
+      {points.map(([left, top], i) => (
+        <i key={i} className="p-rope-at" data-rope-at style={{ left, top }} />
+      ))}
+    </>
+  );
+}
+
+/** A caption whose lines rise out of a mask; the last line takes the accent. */
+function Cap({ side, cap, words, em = true }: { side: "front" | "back" | "center"; cap: string; words: string[]; em?: boolean }) {
+  return (
+    <p className={`p-cap p-cap--${side}`} data-cap={cap}>
+      {words.map((w, i) => (
+        <span key={i} className="p-cap__line">
+          <span>{em && i === words.length - 1 ? <em>{w}</em> : w}</span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** What the machine half is running: the legal copilot's pipeline, as it works in production. */
+const TERMINAL = [
+  { t: "$ copilot ingest ./filings", c: "cmd" },
+  { t: "  ocr → bates → redact → records", c: "" },
+  { t: "$ copilot embed --store pgvector", c: "cmd" },
+  { t: "  indexed against the practice", c: "" },
+  { t: '$ copilot ask "summarise matter"', c: "cmd" },
+  { t: "  retrieving · grounding · citing", c: "dim" },
+  { t: "✓ answer cites the firm's own files", c: "ok" },
+].map((l, i, all) => ({
+  ...l,
+  // each line starts typing once the previous one has finished
+  delay: all.slice(0, i).reduce((s, p) => s + p.t.length * 0.028 + 0.22, 0.9),
+}));
+
+/** The paper edition: the whole site without WebGL, told as two sides of one street. */
 export default function LitePage() {
   const home = about.places[0];
   const homePt = mapXY(home.lon, home.lat);
-
-  const manifestoChapters = [
-    {
-      index: "01",
-      tag: "Origin // The Rule",
-      quote: beats.hero[0],
-      detail: "Every database schema, permission boundary and interface starts from a single invariant that holds under pressure.",
-    },
-    {
-      index: "02",
-      tag: "Deconstruct // The Fracture",
-      quote: beats.fracture.join(" "),
-      detail: "Multi-tenant isolation, edge routing and real-time ledgers split across portals while reconciling to one source of truth.",
-    },
-    {
-      index: "03",
-      tag: "Scale // The Living System",
-      quote: beats.about.join(" "),
-      detail: "From PostgreSQL row-level security and pgvector RAG copilots to the final pixel people work in every day.",
-    },
-  ];
+  // the copilot the terminal is driving
+  const lead2 = bySlug.get("legal-workspace") ?? projects[0];
 
   return (
-    <Reveal>
-      <div className="relative overflow-hidden">
-        {/* Ambient architectural backdrop (zero WebGL) */}
-        <div aria-hidden className="loader-grid pointer-events-none fixed inset-0 opacity-65" />
-        <div aria-hidden className="lite-wash pointer-events-none absolute inset-x-0 top-0 h-[1100px]" />
+    <PaperMotion className={`${archivo.variable} ${plex.variable}`}>
+      <noscript>
+        <style>{`.p-loader{display:none!important}.p-terminal__line{animation-play-state:running!important}`}</style>
+      </noscript>
 
-        <div className="relative z-10 mx-auto max-w-[1440px] px-gutter pb-14 pt-24 md:pt-32">
-          {/* ── Top Telemetry Bar ────────────────────────────────── */}
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-fg/10 pb-5">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="label inline-flex items-center gap-2 rounded-full border border-fg/15 bg-fg/[0.03] px-3.5 py-1.5 !text-fg/90">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_#c8ff3d]" />
-                {person.location} — Lite Edition
-              </span>
-              <span className="label hidden rounded-full border border-fg/10 px-3 py-1.5 !text-[10px] !text-fg/50 sm:inline-block">
-                06.93°N · 079.85°E · Zero-WebGL
-              </span>
-            </div>
+      {/* plays on a hard load; PaperMotion hides it before paint when navigating back in */}
+      <div className="p-loader" data-loader aria-hidden>
+        <div className="p-loader__half p-loader__half--front" data-loader-half="front" />
+        <div className="p-loader__half p-loader__half--back" data-loader-half="back" />
+        <svg className="p-loader__curve" viewBox="0 0 1000 300" preserveAspectRatio="none" data-loader-fade>
+          <defs>
+            <linearGradient id="p-ld" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0" stopColor="#ff3b12" />
+              <stop offset="0.5" stopColor="#ff5a2c" />
+              <stop offset="0.5" stopColor="#ff8a63" />
+              <stop offset="1" stopColor="#ff8a63" />
+            </linearGradient>
+          </defs>
+          <path d={LOADER_CURVE} pathLength={1} data-loader-curve />
+        </svg>
+        <div className="p-loader__top p-mono" data-loader-fade>
+          <span>
+            <Mark /> Training run 001
+          </span>
+          <span>Human × Machine</span>
+        </div>
+        <p className="p-loader__count" data-loader-fade>
+          <span data-count>000</span>
+        </p>
+        <div className="p-loader__bar" data-loader-fade>
+          <i data-loader-bar />
+        </div>
+        <ol className="p-loader__log p-mono" data-loader-fade>
+          {BOOT.map((l) => (
+            <li key={l} data-log>
+              <span>{l}</span>
+              <b>ok</b>
+            </li>
+          ))}
+        </ol>
+        <dl className="p-loader__meta p-mono" data-loader-fade>
+          <div>
+            <dt>Epoch</dt>
+            <dd data-epoch>00</dd>
+          </div>
+          <div>
+            <dt>Loss</dt>
+            <dd data-loss>2.400</dd>
+          </div>
+          <div>
+            <dt>Operator</dt>
+            <dd>{person.name}</dd>
+          </div>
+        </dl>
+      </div>
 
-            <nav aria-label="Section jump" className="flex flex-wrap items-center gap-2">
-              <a href="#work" className="label rounded-full border border-fg/12 px-3 py-1.5 transition-colors hover:border-fg/40 hover:!text-fg">
-                Work ({pad(projects.length)})
+      <div className="p-grain" aria-hidden />
+      <div className="p-gridlines" aria-hidden>
+        {Array.from({ length: 6 }, (_, i) => (
+          <span key={i} />
+        ))}
+      </div>
+      <div className="p-progress" data-progress aria-hidden />
+      <svg className="p-rope" data-rope aria-hidden>
+        <path />
+        <circle r="4" />
+        <circle className="p-rope__ring" r="10" />
+        <circle r="4" />
+      </svg>
+      <PaperHeader />
+
+      <nav className="p-rail" data-rail data-tone="paper" aria-label="Chapters">
+        <ol>
+          {chapters.map((c) => (
+            <li key={c.id}>
+              <a href={`#${c.id}`}>
+                <span className="p-rail__label p-mono">{c.label}</span>
+                <span className="p-rail__tick" />
               </a>
-              <a href="#about" className="label rounded-full border border-fg/12 px-3 py-1.5 transition-colors hover:border-fg/40 hover:!text-fg">
-                Studio &amp; Reach
-              </a>
-              <a href="#contact" className="label rounded-full border border-fg/12 px-3 py-1.5 transition-colors hover:border-fg/40 hover:!text-fg">
-                Contact
-              </a>
-              <FullExperienceLink className="label rounded-full border border-accent/40 bg-accent/10 px-3.5 py-1.5 !text-accent transition-all hover:bg-accent hover:!text-bg" />
-            </nav>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      {/* ── 00 The handshake ─────────────────────────────────────── */}
+      <section className="p-hs" id="top" data-chapter data-handshake aria-labelledby="hs-title">
+        <div className="p-hs__stage">
+          <div className="p-hs__tone p-hs__tone--left" data-tone="paper" data-hs-left />
+          <div className="p-hs__tone p-hs__tone--right" data-tone="night" />
+          <canvas className="p-hs__canvas" data-hs-canvas aria-hidden />
+
+          <div className="p-hs__thread" data-hs-thread>
+            <Thread
+              mode="load"
+              points={[[0.07, 0], [0.16, 0.16], [0.5, 0.27], [0.8, 0.36], [0.62, 0.5], [0.26, 0.56], [0.03, 0.7], [0.1, 0.88], [0.46, 0.92]]}
+            />
+          </div>
+          <div className="p-hs__copy" data-hs-fade>
+            <p className="p-hs__kicker p-mono" data-hs-in>
+              <i className="p-status" />
+              {person.name} · {person.role}
+            </p>
+            <h1 id="hs-title" className="p-hs__title">
+              <span className="sr-only">
+                {person.name}, {person.role}, {person.location}.{" "}
+              </span>
+              {hero.title.map((l, i) => (
+                <span key={l} className="p-hs__line">
+                  <span data-hs-line>{i === 1 ? <em>{l}</em> : i === 3 ? <>and <em>AI.</em></> : l}</span>
+                </span>
+              ))}
+            </h1>
           </div>
 
-          {/* ── 01 // Hero + Studio Dossier ──────────────────────── */}
-          <section aria-labelledby="lite-title" className="border-b border-fg/10 py-14 md:py-20">
-            <div className="grid items-start gap-12 lg:grid-cols-12 lg:gap-10">
-              {/* Left column: Monumental Headline & Intro */}
-              <div className="lg:col-span-7">
-                <p className="label mb-4 flex items-center gap-2.5 !text-accent">
-                  <span aria-hidden className="pd-dot" />
-                  01 — Architecture · SaaS · Agentic AI · Cloud
-                </p>
+          <div className="p-hs__side" data-hs-fade>
+            <p className="p-hs__intro" data-hs-in>
+              {hero.intro}
+            </p>
+            <div className="p-hs__actions" data-hs-in>
+              <a className="p-button p-button--solid" href={`mailto:${person.email}`} data-magnetic>
+                <span className="p-button__fill" />
+                <span>Start a project</span>
+                <Arrow />
+              </a>
+              <a className="p-hs__link p-mono" href="#work">
+                See the work ↓
+              </a>
+            </div>
+          </div>
 
-                <h1 id="lite-title" className="display text-[14.5vw] leading-[0.82] lg:text-[7.2vw]">
-                  {person.shortName}
-                </h1>
-                <p className="display mt-2 text-[6.8vw] text-fg/75 lg:text-[3.1vw]">{person.role}</p>
+          <p className="p-hs__hint p-mono" data-hs-fade aria-hidden>
+            <span data-hs-in>
+              Scroll to shake on it
+              <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden>
+                <path d="M12 4v16m0 0-6-6m6 6 6-6" />
+              </svg>
+            </span>
+          </p>
 
-                <p className="reveal mt-8 max-w-[56ch] text-lg leading-relaxed text-fg/78 md:text-xl">
-                  {person.intro}
-                </p>
+          <div className="p-hs__after" data-hs-after aria-hidden>
+            <p className="p-hs__after-title">
+              {hero.after[0]} <em>{hero.after[1]}</em>
+            </p>
+            <p className="p-mono">{hero.afterNote}</p>
+          </div>
+        </div>
+      </section>
 
-                <div className="reveal mt-9 flex flex-wrap items-center gap-3">
-                  <FullExperienceLink className="pd-cta" />
-                  <a href="#work" className="contact-btn !py-4 !px-6 !text-xs">
-                    Explore {pad(projects.length)} systems <span aria-hidden>↓</span>
-                  </a>
-                  <Link href="/board" className="contact-btn !py-4 !px-6 !text-xs">
-                    Investigation board <span aria-hidden>↗</span>
-                  </Link>
-                </div>
+      {/* ── 01 Two minds ─────────────────────────────────────────── */}
+      <section className="p-split p-split--story" id="two-minds" data-chapter data-story>
+        <div className="p-split__stage" data-tone="night">
+          <h2 className="sr-only">Every AI product has two minds</h2>
+          <div className="p-split__glow" aria-hidden />
+          <div className="p-split__hero" data-hero aria-hidden>
+            <NeuralNet />
+          </div>
+          <Cap side="center" cap="pick" words={story.pick} />
+          <Cap side="center" cap="hood" words={story.hood} />
 
-                {/* Studio Headline Metrics Row */}
-                <dl className="reveal mt-12 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {STUDIO_STATS.map((st) => (
-                    <div key={st.label} className="pd-glass px-4 py-4">
-                      <dt className="sr-only">{st.label}</dt>
-                      <dd className="display text-3xl text-accent md:text-4xl">{st.value}</dd>
-                      <dd className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-fg/55">{st.label}</dd>
-                    </div>
-                  ))}
-                </dl>
+          <div className="p-split__half p-split__half--front" data-half="front" data-tone="paper">
+            <Cap side="front" cap="open" words={story.open.front} />
+            <Cap side="front" cap="close" words={story.close.front} />
+            <p className="p-chat p-chat--human" data-chat>
+              <span className="p-mono">You</span>
+              {exchange.human}
+            </p>
+            <figure className="p-browser" data-device aria-hidden>
+              <div className="p-browser__bar">
+                <i />
+                <i />
+                <i />
+                <span className="p-mono">{lead2.link ? host(lead2.link) : lead2.slug}</span>
               </div>
-
-              {/* Right column: Archival Production Ledger Card */}
-              <aside aria-label="Production systems index" className="reveal pd-glass p-6 md:p-7 lg:col-span-5">
-                <div className="flex items-center justify-between border-b border-fg/10 pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <span className="h-2 w-2 rounded-full bg-[#ff3b2f] shadow-[0_0_8px_#ff3b2f]" />
-                    <span className="label !text-fg/90">SynapX // Production Index</span>
-                  </div>
-                  <span className="label !text-[10px]">Colombo Desk</span>
-                </div>
-
-                <p className="mt-3.5 text-xs leading-relaxed text-fg/60">
-                  Six live software systems engineered end to end from Colombo. Select a file to jump to its brief or open its full case study.
-                </p>
-
-                <ol className="mt-5 divide-y divide-fg/10">
-                  {projects.map((p, i) => (
-                    <li key={p.slug}>
-                      <Link
-                        href={`/projects/${p.slug}`}
-                        className="group flex items-center justify-between gap-4 py-3.5 transition-colors hover:bg-fg/[0.02]"
-                      >
-                        <div className="flex min-w-0 items-center gap-3.5">
-                          <span
-                            aria-hidden
-                            className="h-2.5 w-2.5 shrink-0 rounded-full transition-transform group-hover:scale-125"
-                            style={{ backgroundColor: p.tint, boxShadow: `0 0 10px ${p.tint}` }}
-                          />
-                          <span className="font-mono text-xs tabular-nums text-fg/40">{pad(i + 1)}</span>
-                          <div className="min-w-0">
-                            <p className="truncate font-display text-lg font-semibold uppercase tracking-tight text-fg transition-colors group-hover:text-accent">
-                              {p.title}
-                            </p>
-                            <p className="truncate font-mono text-[10px] uppercase tracking-wider text-fg/50">
-                              {p.category}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-3">
-                          {p.metrics?.[0] && (
-                            <span
-                              className="hidden rounded-full border border-fg/12 px-2.5 py-0.5 font-mono text-[10px] font-semibold sm:inline-block"
-                              style={{ color: p.tint }}
-                            >
-                              {p.metrics[0].value} {p.metrics[0].label.split(" ")[0]}
-                            </span>
-                          )}
-                          <span
-                            aria-hidden
-                            className="font-mono text-xs text-fg/40 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-fg"
-                          >
-                            ↗
-                          </span>
-                        </div>
-                      </Link>
-                    </li>
-                  ))}
-                </ol>
-
-                <div className="mt-5 flex items-center justify-between border-t border-fg/10 pt-4">
-                  <span className="label !text-[10px]">All systems verified in production</span>
-                  <Link href="/board" className="label !text-[10px] !text-accent hover:underline">
-                    Open 3D Board ↗
-                  </Link>
-                </div>
-              </aside>
-            </div>
-          </section>
-
-          {/* ── 02 // Engineering Manifesto ──────────────────────── */}
-          <section aria-label="Manifesto" className="border-b border-fg/10 py-16 md:py-24">
-            <div className="mb-10 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-              <div>
-                <p className="label mb-3 flex items-center gap-2.5 !text-accent">
-                  <span aria-hidden className="pd-dot" />
-                  02 — Engineering Philosophy
-                </p>
-                <h2 className="display text-[10vw] md:text-[4.2vw]">How the work holds its shape.</h2>
+              <div className="p-browser__view">
+                <Image src={lead2.cover} alt="" fill priority sizes="(min-width: 768px) 38vw, 1px" />
               </div>
-              <p className="label">Three movements · From invariant to scale</p>
-            </div>
+            </figure>
+          </div>
 
-            <div className="grid gap-5 md:grid-cols-3">
-              {manifestoChapters.map((ch) => (
-                <div key={ch.index} className="reveal pd-glass flex flex-col justify-between p-7 md:p-8">
-                  <div>
-                    <div className="flex items-center justify-between border-b border-fg/10 pb-4">
-                      <span className="label !text-accent">{ch.tag}</span>
-                      <span className="font-mono text-xs text-fg/35">{ch.index} / 03</span>
-                    </div>
-                    <p className="mt-7 font-display text-2xl font-semibold leading-tight tracking-[-0.03em] text-fg md:text-3xl">
-                      &ldquo;{ch.quote}&rdquo;
-                    </p>
-                  </div>
-                  <p className="mt-6 border-t border-fg/10 pt-4 text-sm leading-relaxed text-fg/62">{ch.detail}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* ── 03 // Selected Work (6 Production Dossiers) ──────── */}
-          <section id="work" aria-labelledby="work-title" className="scroll-mt-24 border-b border-fg/10 py-16 md:py-24">
-            <div className="mb-12 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-              <div>
-                <p className="label mb-3 flex items-center gap-2.5 !text-accent">
-                  <span aria-hidden className="pd-dot" />
-                  03 — Selected Work
-                </p>
-                <h2 id="work-title" className="display text-[11vw] md:text-[5.2vw]">
-                  Six systems, one desk.
-                </h2>
+          <div className="p-split__half p-split__half--back" data-half="back" data-tone="night">
+            <Cap side="back" cap="open" words={story.open.back} />
+            <Cap side="back" cap="close" words={story.close.back} />
+            <p className="p-chat p-chat--machine" data-chat>
+              <span className="p-mono">Copilot</span>
+              {exchange.machine}
+            </p>
+            <figure className="p-terminal" data-device aria-hidden>
+              <div className="p-terminal__bar p-mono">
+                <span>copilot · gemini + rag</span>
+                <span className="p-terminal__live">● live</span>
               </div>
-              <p className="max-w-[40ch] text-sm leading-relaxed text-fg/60">
-                Multi-tenant SaaS, AI copilots, marketplaces and ERPs — designed, architected and shipped end to end.
-              </p>
-            </div>
+              <div className="p-terminal__body p-mono">
+                {TERMINAL.map((l) => (
+                  <span
+                    key={l.t}
+                    className={`p-terminal__line ${l.c ? `is-${l.c}` : ""}`}
+                    style={{ "--n": l.t.length, "--d": `${l.delay.toFixed(2)}s` } as React.CSSProperties}
+                  >
+                    {l.t}
+                  </span>
+                ))}
+                <span className="p-terminal__caret" />
+              </div>
+            </figure>
+          </div>
 
-            <ol className="grid gap-8 lg:grid-cols-2">
-              {projects.map((p, i) => (
-                <li
-                  key={p.slug}
-                  className="reveal lite-card flex flex-col p-5 md:p-7"
-                  style={{ "--tint": p.tint } as React.CSSProperties}
+          <p className="p-split__name p-mono" data-name>
+            <span data-name-text>
+              {person.name} · {person.role} · {person.location}
+            </span>
+          </p>
+          <div className="p-split__banner" data-banner aria-hidden>
+            <p className="p-split__banner-inner" data-banner-inner>
+              <span className="p-split__banner-front">Human</span>
+              <span className="p-split__hex">×</span>
+              <span className="p-split__banner-back">Machine</span>
+            </p>
+          </div>
+          <p className="p-split__hint p-mono" data-hint aria-hidden>
+            <span>Scroll down</span>
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden>
+              <path d="M12 4v16m0 0-6-6m6 6 6-6" />
+            </svg>
+          </p>
+        </div>
+      </section>
+
+      <Marquee words={marquee} tone="paper" />
+
+      {/* ── 02 The street ────────────────────────────────────────── */}
+      <section className="p-street p-marks" id="work" data-chapter data-street data-strip data-tone="paper" aria-labelledby="street-title">
+        <div className="p-street__sky" aria-hidden>
+          <span className="p-street__orb" data-depth="0.05" />
+          <div className="p-street__cluster p-street__cluster--a" data-depth="0.12">
+            <EmbedCluster seed={3} label="intent · billing" />
+          </div>
+          <div className="p-street__cluster p-street__cluster--b" data-depth="0.16">
+            <EmbedCluster seed={9} label="intent · records" />
+          </div>
+          <div className="p-street__cluster p-street__cluster--c" data-depth="0.2">
+            <EmbedCluster seed={21} label="intent · pricing" />
+          </div>
+          <div className="p-street__skyline" data-depth="0.3">
+            <LossCurve />
+          </div>
+        </div>
+        <div className="p-street__ground" aria-hidden />
+        <p className="p-street__now">
+          <span className="p-street__now-label p-mono">
+            <i className="p-status" />
+            Now serving
+          </span>
+          <b data-now-title>{projects[0].title}</b>
+          <span className="p-street__now-line" data-now-line>
+            {projects[0].tagline}
+          </span>
+        </p>
+        <div className="p-street__runner p-mono" data-runner aria-hidden>
+          <i />
+          <i />
+          <i />
+          tokens
+        </div>
+
+        <header className="p-street__head">
+          <p className="p-kicker p-mono">
+            <b>02</b>
+            <span>Inference row</span>
+          </p>
+          <h2 id="street-title" className="p-title" data-chars>
+            Where models <em>meet people.</em>
+          </h2>
+          <p className="p-hint p-mono">
+            <i />
+            <span>Scroll sideways</span>
+          </p>
+        </header>
+        <p className="p-street__count p-mono" aria-hidden>
+          <b data-open>01</b> / {pad(projects.length)} serving
+        </p>
+
+        <div className="p-street__viewport">
+          <div className="p-street__track" data-track>
+            {projects.map((p, i) => (
+              <div key={p.slug} className="p-street__lot">
+                <Link
+                  className={`p-shop p-shop--${SHOP_TONES[i % SHOP_TONES.length]}`}
+                  href={`/projects/${p.slug}`}
+                  data-shop
+                  data-title={p.title}
+                  data-tagline={p.tagline}
+                  data-cursor="view"
+                  aria-label={`${p.title}: ${p.category}, ${p.year}`}
+                  style={{ "--glow": p.tint } as React.CSSProperties}
                 >
-                  {/* Top Dossier Meta Bar */}
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        aria-hidden
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: p.tint, boxShadow: `0 0 10px ${p.tint}` }}
-                      />
-                      <span className="font-mono text-xs font-semibold uppercase tracking-widest text-[color:var(--tint)]">
-                        File #{pad(i + 1)}
-                      </span>
-                      <span className="text-fg/25">·</span>
-                      <span className="font-mono text-[11px] uppercase tracking-wider text-fg/65">{p.category}</span>
-                    </div>
-                    <span className="rounded-full border border-fg/12 bg-fg/[0.03] px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-fg/60">
-                      {p.role}
-                    </span>
-                  </div>
-
-                  {/* Browser Window Screenshot Frame */}
-                  <Link href={`/projects/${p.slug}`} className="group block">
-                    <div className="overflow-hidden rounded-xl border border-fg/12 bg-[#0b0c10] shadow-xl">
-                      <div className="flex items-center justify-between border-b border-fg/10 bg-white/[0.02] px-3.5 py-2">
-                        <div className="flex items-center gap-1.5">
-                          <span className="h-2 w-2 rounded-full bg-fg/20" />
-                          <span className="h-2 w-2 rounded-full bg-fg/20" />
-                          <span className="h-2 w-2 rounded-full bg-fg/20" />
-                        </div>
-                        <span className="font-mono text-[10px] tracking-wider text-fg/50">
-                          {p.link ? host(p.link) : `${p.slug}.synapx.lk`}
-                        </span>
-                        <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[color:var(--tint)]">
-                          ● Live
-                        </span>
-                      </div>
-
-                      <div className="relative aspect-[16/10] overflow-hidden bg-black">
-                        <Image
-                          src={p.cover}
-                          alt={`${p.title} — live product screenshot`}
-                          fill
-                          sizes="(min-width: 1024px) 46vw, 96vw"
-                          className="object-cover object-top transition-transform duration-700 group-hover:scale-[1.03]"
-                        />
-                        <div
-                          aria-hidden
-                          className="pointer-events-none absolute inset-0"
-                          style={{
-                            background: "linear-gradient(to top, rgba(11,11,12,0.55) 0%, transparent 40%)",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </Link>
-
-                  {/* Title & Tagline */}
-                  <div className="mt-6 flex items-baseline justify-between gap-4">
-                    <Link href={`/projects/${p.slug}`} className="group">
-                      <h3 className="display text-3xl transition-colors group-hover:text-[color:var(--tint)] md:text-4xl">
-                        {p.title}
-                      </h3>
-                    </Link>
-                    <span className="label shrink-0 tabular-nums">{p.year}</span>
-                  </div>
-
-                  <p className="mt-2.5 text-[15px] leading-relaxed text-fg/80">{p.tagline}</p>
-                  {p.description[0] && (
-                    <p className="mt-2 text-xs leading-relaxed text-fg/55 line-clamp-2">{p.description[0]}</p>
-                  )}
-
-                  {/* 3-Column Metrics Strip */}
-                  {p.metrics && (
-                    <dl className="mt-5 grid grid-cols-3 gap-2">
-                      {p.metrics.map((m) => (
-                        <div key={m.label} className="bd-metric">
-                          <div className="bd-metric-bar" />
-                          <dt className="sr-only">{m.label}</dt>
-                          <dd className="display mt-1.5 text-xl text-[color:var(--tint)] md:text-2xl">{m.value}</dd>
-                          <dd className="mt-1 text-[10.5px] leading-snug text-fg/60">{m.label}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-
-                  {/* Stack Chips */}
-                  <ul className="mt-5 flex flex-wrap gap-1.5" aria-label="Tech stack">
-                    {p.stack.map((s) => (
-                      <li
-                        key={s}
-                        className="rounded-full border border-fg/12 bg-fg/[0.03] px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-fg/75"
-                      >
-                        {s}
-                      </li>
+                  <span className="p-shop__upper" aria-hidden>
+                    {Array.from({ length: 6 }, (_, k) => (
+                      <i key={k} style={{ animationDelay: `-${((i * 7 + k * 3) % 10) / 4}s` }} />
                     ))}
-                  </ul>
+                  </span>
+                  <span className="p-shop__sign">
+                    <span className="p-shop__num p-mono">{pad(i + 1)}</span>
+                    <span className="p-shop__name">{p.title}</span>
+                    {p.link && <span className="p-shop__live p-mono">Live</span>}
+                  </span>
+                  <span className="p-shop__status p-mono" aria-hidden>
+                    <span>serving · {p.stack[0]}</span>
+                  </span>
+                  <span className="p-shop__front">
+                    <span className="p-shop__window">
+                      <Image src={p.cover} alt="" fill sizes="(min-width: 768px) 40vh, 70vw" />
+                    </span>
+                    <span className="p-shop__door" aria-hidden>
+                      <i />
+                    </span>
+                  </span>
+                  <span className="p-shop__plate p-mono">
+                    {p.category} · {p.year}
+                  </span>
+                </Link>
+                {i < projects.length - 1 && (
+                  <span className="p-street__lamp" aria-hidden>
+                    <Mast />
+                  </span>
+                )}
+              </div>
+            ))}
+            <div className="p-street__end">
+              <p className="p-mono p-dim">
+                {pad(projects.length)} / {pad(projects.length)} serving
+              </p>
+              <FullExperienceLink className="p-signboard">
+                Ride the 3D city <Arrow />
+              </FullExperienceLink>
+              <span className="p-street__pole" aria-hidden />
+            </div>
+          </div>
+        </div>
+      </section>
 
-                  {/* Card Footer CTAs */}
-                  <div className="mt-auto flex flex-wrap items-center gap-2.5 border-t border-fg/10 pt-5 mt-6">
-                    <Link href={`/projects/${p.slug}`} className="bd-cta bd-cta--primary flex-1">
-                      <span>Open case study</span>
-                      <span aria-hidden>↘</span>
-                    </Link>
-                    {p.link && (
-                      <a href={p.link} target="_blank" rel="noreferrer" className="bd-cta bd-cta--secondary">
-                        <span>{p.liveLabel ?? "Live site"}</span>
-                        <span aria-hidden>↗</span>
-                      </a>
-                    )}
-                  </div>
+      {/* ── 03 The engine room ───────────────────────────────────── */}
+      <section className="p-factory" id="engine-room" data-chapter data-factory data-strip data-tone="night" aria-labelledby="engine-title">
+        <div className="p-factory__backdrop" aria-hidden>
+          <div className="p-factory__wall" data-depth="0.25">
+            <ServerHall />
+          </div>
+        </div>
+        <div className="p-factory__floor" aria-hidden />
+        <p className="p-factory__count p-mono" aria-hidden>
+          <b data-shipped>00</b> / {pad(crates.length)} deployed
+        </p>
+        <div className="p-factory__hud" data-hud aria-hidden>
+          <p className="p-factory__hud-label p-mono">
+            <i />
+            Last deployed
+          </p>
+          <p className="p-factory__hud-name" data-hud-name>
+            —
+          </p>
+          <p className="p-factory__hud-desc" data-hud-desc />
+          <div className="p-factory__hud-bar">
+            <i data-hud-bar />
+          </div>
+        </div>
+        <div className="p-press" data-press aria-hidden>
+          <span className="p-press__body" />
+          <span className="p-press__head" data-press-head />
+          {Array.from({ length: 7 }, (_, i) => (
+            <i key={i} className="p-press__spark" data-spark />
+          ))}
+        </div>
+
+        <div className="p-factory__viewport">
+          <div className="p-factory__track" data-track>
+            <header className="p-factory__head">
+              <p className="p-kicker p-mono">
+                <b>03</b>
+                <span>The training floor</span>
+              </p>
+              <h2 id="engine-title" className="p-title" data-chars>
+                Behind every product, <em>a training floor.</em>
+              </h2>
+              <p className="p-factory__lead">
+                The parts every live system is built from. Each one comes off the belt untrained, and is stamped only once it runs in production.
+              </p>
+              <p className="p-hint p-mono">
+                <i />
+                <span>Scroll sideways</span>
+              </p>
+            </header>
+
+            {crates.map((c) => {
+              const p = bySlug.get(c.project);
+              return (
+                <Link
+                  key={c.name + c.thin}
+                  className={`p-crate ${c.legendary ? "p-crate--legendary" : ""}`}
+                  href={`/projects/${c.project}`}
+                  data-crate
+                  data-name={c.name + c.thin}
+                  data-desc={c.desc}
+                  data-cursor="open"
+                  aria-label={`${c.name}${c.thin}, from ${p?.title}: ${c.desc}`}
+                >
+                  <span className="p-crate__raw" aria-hidden>
+                    <span className="p-crate__code p-mono">init()</span>
+                    <span className="p-crate__noise" />
+                    <span className="p-crate__raw-name p-mono">
+                      {c.name}
+                      {c.thin}
+                    </span>
+                  </span>
+                  <span className="p-crate__done" aria-hidden>
+                    <span className="p-crate__tape" />
+                    <span className="p-crate__label">
+                      <span className="p-crate__vendor p-mono">
+                        <Mark /> synapx
+                      </span>
+                      <span className="p-crate__name">
+                        {c.name}
+                        <span className="text-thin">{c.thin}</span>
+                      </span>
+                      <span className="p-crate__desc">{c.desc}</span>
+                    </span>
+                    <span className="p-crate__foot p-mono">
+                      <span>{c.stat}</span>
+                      <span>{p?.title}</span>
+                    </span>
+                    <span className="p-crate__stamp p-mono">Deployed</span>
+                  </span>
+                </Link>
+              );
+            })}
+
+            <div className="p-factory__dock">
+              <p className="p-mono p-dim">All {pad(crates.length)} in production</p>
+              <a className="p-signboard p-signboard--amber" href="#missions">
+                Pick a mission <Arrow />
+              </a>
+              <span className="p-factory__pole" aria-hidden />
+            </div>
+          </div>
+          <span className="p-belt" aria-hidden>
+            <span className="p-belt__rollers">
+              {Array.from({ length: 48 }, (_, i) => (
+                <i key={i} />
+              ))}
+            </span>
+          </span>
+        </div>
+      </section>
+
+      {/* ── 04 Under the hood ────────────────────────────────────── */}
+      <section className="p-player p-marks" id="about" data-chapter data-tone="night" aria-labelledby="player-title">
+        <RopeAt
+          points={[
+            ["94%", "0%"],
+            ["80%", "5%"],
+            ["52%", "9%"],
+            ["22%", "8%"],
+            ["5%", "17%"],
+            ["12%", "33%"],
+            ["47%", "43%"],
+            ["52%", "57%"],
+            ["30%", "66%"],
+            ["7%", "73%"],
+            ["24%", "86%"],
+            ["62%", "92%"],
+            ["90%", "99%"],
+          ]}
+        />
+        <header className="p-container p-section-head">
+          <p className="p-kicker p-mono">
+            <b>04</b>
+            <span>The engineer</span>
+          </p>
+          <h2 id="player-title" className="p-title" data-chars>
+            Who trains <em>the machine?</em>
+          </h2>
+        </header>
+
+        <div className="p-container p-player__grid">
+          <div className="p-player__stage" data-reveal>
+            <figure className="p-map">
+              <div className="p-map__frame">
+                <Image src="/earth/night.webp" alt={`World at night, with arcs from ${home.city} to every city the work reaches`} fill sizes="(min-width: 1024px) 40vw, 92vw" />
+                <svg viewBox="0 0 1000 500" aria-hidden>
+                  {about.places.slice(1).map((pl) => {
+                    const pt = mapXY(pl.lon, pl.lat);
+                    const mx = (homePt.x + pt.x) / 2;
+                    const my = Math.min(homePt.y, pt.y) - Math.abs(homePt.x - pt.x) * 0.16;
+                    return <path key={pl.city} className="p-map__arc" d={`M ${homePt.x} ${homePt.y} Q ${mx} ${my} ${pt.x} ${pt.y}`} />;
+                  })}
+                  {about.places.map((pl, i) => {
+                    const pt = mapXY(pl.lon, pl.lat);
+                    return (
+                      <g key={pl.city} transform={`translate(${pt.x} ${pt.y})`}>
+                        {i === 0 && <circle className="p-map__pulse" r="16" />}
+                        <circle className={i === 0 ? "p-map__home" : "p-map__city"} r={i === 0 ? 5 : 3} />
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+              <figcaption className="p-mono">{board.heading}</figcaption>
+            </figure>
+            <ul className="p-clocks p-mono" aria-label="Local times">
+              {about.places.map((pl, i) => (
+                <li key={pl.city} className={i === 0 ? "is-home" : ""}>
+                  <span>{pl.city}</span>
+                  <LocalTime tz={pl.tz} />
                 </li>
               ))}
-            </ol>
-          </section>
+            </ul>
+            <span className="p-player__pedestal" aria-hidden />
+          </div>
 
-          {/* ── 04 // Studio Architecture & 2D Global Reach Map ──── */}
-          <section id="about" aria-labelledby="about-lite-title" className="scroll-mt-24 border-b border-fg/10 py-16 md:py-24">
-            <div className="grid items-start gap-12 lg:grid-cols-12">
-              {/* Left Column: About & Services */}
-              <div className="lg:col-span-5">
-                <p className="label mb-3 flex items-center gap-2.5 !text-accent">
-                  <span aria-hidden className="pd-dot" />
-                  04 — Studio &amp; Architecture
-                </p>
-                <h2 id="about-lite-title" className="display text-[11vw] md:text-[4.6vw]">
-                  {about.headline}
-                </h2>
-
-                <div className="mt-6 space-y-4 text-base leading-relaxed text-fg/75 md:text-lg">
-                  {about.body.map((b, i) => (
-                    <p key={i} className="reveal">
-                      {b}
-                    </p>
-                  ))}
-                </div>
-
-                <dl className="reveal mt-8 grid grid-cols-2 gap-2.5">
-                  {about.annotations.map((n) => (
-                    <div key={n.label} className="pd-glass px-4 py-3.5">
-                      <dt className="label !text-[10px]">{n.label}</dt>
-                      <dd className="mt-1 text-sm font-medium text-fg">{n.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                <div className="reveal mt-8">
-                  <p className="label mb-3">Core Capabilities</p>
-                  <ul className="grid grid-cols-2 gap-2" aria-label="Services">
-                    {about.services.map((s, idx) => (
-                      <li
-                        key={s}
-                        className="flex items-center gap-2.5 rounded-xl border border-fg/12 bg-fg/[0.02] px-3.5 py-2.5 font-mono text-xs text-fg/85"
-                      >
-                        <span className="text-[10px] text-accent">{pad(idx + 1)}</span>
-                        <span>{s}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Right Column: 2D Cartographic Night Map & Global Reach */}
-              <div className="reveal lg:col-span-7">
-                <div className="pd-glass overflow-hidden p-5 md:p-6">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="label flex items-center gap-2 !text-fg/90">
-                        <span className="h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_#c8ff3d]" />
-                        {board.heading}
-                      </p>
-                      <p className="mt-1 text-xs text-fg/55">
-                        Origin Hub: Colombo (06.93°N, 079.85°E) · Global client &amp; deployment reach
-                      </p>
-                    </div>
-                    <Link
-                      href="/board"
-                      className="label rounded-full border border-fg/15 bg-fg/[0.04] px-3.5 py-1.5 !text-[10px] !text-fg transition-colors hover:border-accent hover:!text-accent"
-                    >
-                      Interactive 3D Board ↗
-                    </Link>
-                  </div>
-
-                  {/* 2D Night Earth Map + SVG Great-Circle Arcs */}
-                  <div className="relative aspect-[2/1] w-full overflow-hidden rounded-xl border border-fg/15 bg-[#060a14]">
-                    <Image
-                      src="/earth/night.webp"
-                      alt="World at night showing global reach from Colombo"
-                      fill
-                      sizes="(min-width: 1024px) 55vw, 95vw"
-                      className="object-cover opacity-80"
-                    />
-                    <svg
-                      viewBox="0 0 1000 500"
-                      className="absolute inset-0 h-full w-full"
-                      aria-hidden
-                    >
-                      {/* Subtle equirectangular graticule */}
-                      {[125, 250, 375].map((y) => (
-                        <line
-                          key={`lat-${y}`}
-                          x1={0}
-                          y1={y}
-                          x2={1000}
-                          y2={y}
-                          stroke="rgba(180,210,255,0.12)"
-                          strokeDasharray={y === 250 ? "8 4" : "2 6"}
-                        />
-                      ))}
-                      {[200, 400, 600, 800].map((x) => (
-                        <line
-                          key={`lon-${x}`}
-                          x1={x}
-                          y1={0}
-                          x2={x}
-                          y2={500}
-                          stroke="rgba(180,210,255,0.12)"
-                          strokeDasharray="2 6"
-                        />
-                      ))}
-
-                      {/* Geodesic arcs from Colombo to every global node */}
-                      {about.places.slice(1).map((pl) => {
-                        const pt = mapXY(pl.lon, pl.lat);
-                        const mx = (homePt.x + pt.x) / 2;
-                        const my = Math.min(homePt.y, pt.y) - Math.abs(homePt.x - pt.x) * 0.16;
-                        return (
-                          <g key={pl.city}>
-                            <path
-                              d={`M ${homePt.x} ${homePt.y} Q ${mx} ${my} ${pt.x} ${pt.y}`}
-                              fill="none"
-                              stroke="rgba(159, 208, 255, 0.3)"
-                              strokeWidth="1.2"
-                            />
-                            <path
-                              d={`M ${homePt.x} ${homePt.y} Q ${mx} ${my} ${pt.x} ${pt.y}`}
-                              fill="none"
-                              stroke="#c8ff3d"
-                              strokeWidth="1.5"
-                              strokeOpacity="0.65"
-                              className="lite-arc"
-                            />
-                          </g>
-                        );
-                      })}
-
-                      {/* City nodes */}
-                      {about.places.map((pl, idx) => {
-                        const pt = mapXY(pl.lon, pl.lat);
-                        const isHome = idx === 0;
-                        return (
-                          <g key={pl.city} transform={`translate(${pt.x}, ${pt.y})`}>
-                            {isHome && (
-                              <>
-                                <circle r="18" fill="none" stroke="#c8ff3d" strokeOpacity="0.35" strokeWidth="1.2" />
-                                <circle r="9" fill="none" stroke="#c8ff3d" strokeOpacity="0.7" strokeWidth="1.5" />
-                              </>
-                            )}
-                            <circle r={isHome ? 4.5 : 3} fill={isHome ? "#c8ff3d" : "#fff1d6"} />
-                          </g>
-                        );
-                      })}
-                    </svg>
-                  </div>
-
-                  {/* 8-City Telemetry Matrix */}
-                  <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Global hubs">
-                    {about.places.map((pl, idx) => {
-                      const isHome = idx === 0;
-                      return (
-                        <li
-                          key={pl.city}
-                          className={`rounded-lg border px-3 py-2 font-mono text-[10px] ${
-                            isHome
-                              ? "border-accent/45 bg-accent/10 text-accent"
-                              : "border-fg/10 bg-fg/[0.02] text-fg/75"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold uppercase">{pl.city}</span>
-                            <span>{isHome ? "ORIGIN" : pad(idx + 1)}</span>
-                          </div>
-                          <p className="mt-0.5 text-[9px] opacity-65">
-                            {Math.abs(pl.lat).toFixed(1)}°{pl.lat < 0 ? "S" : "N"} · {Math.abs(pl.lon).toFixed(1)}°
-                            {pl.lon < 0 ? "W" : "E"}
-                          </p>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* ── 05 // Contact CTA Banner ─────────────────────────── */}
-          <section id="contact" aria-labelledby="contact-lite-title" className="scroll-mt-24 py-16 md:py-24">
-            <div className="pd-glass pd-outcome relative overflow-hidden">
-              <div className="grid items-end gap-10 lg:grid-cols-12">
-                <div className="lg:col-span-7">
-                  <p className="label mb-4 flex items-center gap-2.5 !text-accent">
-                    <span aria-hidden className="pd-dot" />
-                    05 — {contact.label} · Available for new builds
-                  </p>
-                  <h2 id="contact-lite-title" className="display text-[11vw] leading-[0.86] md:text-[5vw]">
-                    {contact.heading}
-                  </h2>
-                  <p className="mt-5 max-w-[48ch] text-base leading-relaxed text-fg/70 md:text-lg">{contact.note}</p>
-                </div>
-
-                <div className="flex flex-col items-start gap-4 lg:col-span-5 lg:items-end">
-                  <p className="label">Direct line — click to copy</p>
-                  <CopyEmail className="font-display text-2xl font-semibold tracking-[-0.03em] md:text-3xl" />
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    <a href={`mailto:${person.email}`} className="pd-cta">
-                      Send an email <span aria-hidden>↗</span>
-                    </a>
-                    <FullExperienceLink className="contact-btn !py-4 !px-6 !text-xs" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* ── Footer ───────────────────────────────────────────── */}
-          <footer className="flex flex-col gap-4 border-t border-fg/10 pt-6 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-5">
-              <span className="display text-base">{person.shortName}</span>
-              <ul className="flex gap-5" aria-label="Elsewhere">
-                {person.socials.map((s) => (
-                  <li key={s.label}>
-                    <a href={s.href} target="_blank" rel="noreferrer" className="label !text-fg hover:!text-accent">
-                      {s.label} ↗
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <p className="label">
-              © {contact.year} {person.name} · {contact.footer}
+          <article className="p-player__card" data-reveal>
+            <header className="p-player__top p-mono">
+              <span>Operator 01</span>
+              {person.available && (
+                <span className="p-player__status">
+                  <i className="p-status" />
+                  Available for work
+                </span>
+              )}
+            </header>
+            <h3 className="p-player__name">{person.name}</h3>
+            <p className="p-player__class p-mono">
+              {person.role} · {person.location}
             </p>
-          </footer>
+            <p className="p-player__lead" data-words>
+              {person.intro}
+            </p>
+            <div className="p-player__body">
+              {about.body.map((b) => (
+                <p key={b}>{b}</p>
+              ))}
+            </div>
+            <dl className="p-player__stats p-mono">
+              {stats.map((s) => (
+                <div key={s.label}>
+                  <dt>{s.label}</dt>
+                  <dd data-count-to={s.value}>{s.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <ul className="p-pills" aria-label="Capabilities">
+              {about.services.map((s) => (
+                <li key={s} className="p-pill">
+                  {s}
+                </li>
+              ))}
+            </ul>
+            <div className="p-player__balance p-mono" role="img" aria-label="Human and machine, in balance">
+              <span>Human</span>
+              <span className="p-player__meter">
+                <i data-balance />
+              </span>
+              <span>Machine</span>
+            </div>
+          </article>
         </div>
-      </div>
-    </Reveal>
+
+        <div className="p-container p-process" data-process>
+          <div className="p-process__head">
+            <p className="p-kicker p-mono">
+              <b className="is-mark">—</b>
+              <span>How the work runs</span>
+            </p>
+            <h3 className="p-process__heading" data-chars>
+              Four moves, <em>every time.</em>
+            </h3>
+          </div>
+          <div className="p-process__line" aria-hidden>
+            <i data-process-line />
+          </div>
+          <ol className="p-process__steps">
+            {process.map((st, i) => (
+              <li key={st.title} className="p-process__step" data-step>
+                <span className="p-process__num p-mono">{pad(i + 1)}</span>
+                <h4 className="p-process__title">{st.title}</h4>
+                <p>{st.text}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* ── 05 Missions ──────────────────────────────────────────── */}
+      <Missions />
+
+      {/* ── 06 Both sides ────────────────────────────────────────── */}
+      <section className="p-split p-split--finale" id="contact" data-chapter data-finale aria-labelledby="finale-title">
+        <div className="p-split__stage" data-tone="night">
+          <h2 id="finale-title" className="sr-only">
+            {contact.heading}
+          </h2>
+          <div className="p-split__glow" aria-hidden />
+          <div className="p-split__half p-split__half--front" data-half="front" data-tone="paper">
+            <Cap side="front" cap="open" words={story.finale.front} em={false} />
+            <span className="p-finale__lamp p-finale__lamp--front" aria-hidden>
+              <Mast />
+            </span>
+          </div>
+          <div className="p-split__half p-split__half--back" data-half="back" data-tone="night">
+            <Cap side="back" cap="open" words={story.finale.back} />
+            <span className="p-finale__lamp" aria-hidden>
+              <Mast />
+            </span>
+          </div>
+          <RopeAt
+            points={[
+              ["50%", "3%"],
+              ["78%", "36%"],
+              ["62%", "80%"],
+              ["30%", "84%"],
+              ["12%", "97%"],
+            ]}
+          />
+          <div className="p-split__cta" data-cta>
+            <p className="p-split__note">{contact.note}</p>
+            <div className="p-split__actions">
+              <a className="p-button p-button--solid" href={`mailto:${person.email}`} data-magnetic>
+                <span className="p-button__fill" />
+                <span>Start a project</span>
+                <Arrow />
+              </a>
+              <CopyEmail className="p-split__mail p-mono" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <Marquee words={marquee} tone="night" reverse />
+
+      <SiteFooter />
+    </PaperMotion>
   );
 }

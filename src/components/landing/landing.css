@@ -1,0 +1,47 @@
+/* Effects shared by the product landing pages. */
+
+.lp-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 3px;
+  z-index: 70;
+  transform-origin: left;
+  transform: scaleX(0);
+  pointer-events: none;
+}
+
+/* a soft spotlight that follows the pointer across a card */
+[data-glow] {
+  position: relative;
+  isolation: isolate;
+}
+[data-glow]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.45s;
+  background: radial-gradient(380px circle at var(--mx, 50%) var(--my, 50%), var(--glow, rgba(255, 255, 255, 0.14)), transparent 65%);
+}
+[data-glow]:hover::before {
+  opacity: 1;
+}
+[data-tilt] {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* masked lines from SplitText keep descenders */
+[data-split] > div {
+  padding-bottom: 0.06em;
+  margin-bottom: -0.06em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-progress {
+    display: none;
+  }
+}

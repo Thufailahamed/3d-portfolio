@@ -118,6 +118,14 @@ export const contact = {
   year: 2026,
 };
 
+/** The footer of the lite edition (/lite). */
+export const footer = {
+  blurb:
+    "I design and build software end to end — SaaS platforms, AI copilots, marketplaces and ERPs — from the database schema to the last pixel.",
+  coords: "6.93°N · 79.85°E",
+  credits: "Design & code — Thufail Ahamed · Lite edition, zero WebGL · Big Shoulders, Archivo",
+};
+
 const cover = (slug: string) => ({ cover: `/projects/${slug}/cover.webp`, images: [] as string[] });
 
 export const projects: Project[] = [

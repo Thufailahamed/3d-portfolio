@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { Big_Shoulders, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import Cursor from "@/components/Cursor";
 import Curtain from "@/components/Curtain";
 import ExperienceGate from "@/components/ExperienceGate";
@@ -12,6 +12,14 @@ import "./globals.css";
 
 const display = Inter_Tight({ variable: "--font-inter-tight", subsets: ["latin"] });
 const mono = JetBrains_Mono({ variable: "--font-jetbrains", subsets: ["latin"] });
+// the footer's signature name and headings
+const shoulders = Big_Shoulders({
+  variable: "--font-shoulders",
+  subsets: ["latin"],
+  axes: ["opsz"],
+  fallback: ["Arial Narrow", "sans-serif"],
+  adjustFontFallback: false,
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(person.siteUrl),
@@ -24,7 +32,7 @@ export const viewport: Viewport = { themeColor: "#0b0b0c" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${display.variable} ${mono.variable}`}>
+    <html lang="en" className={`${display.variable} ${mono.variable} ${shoulders.variable}`}>
       <body>
         <noscript>
           <style>{`.loader{display:none!important}`}</style>

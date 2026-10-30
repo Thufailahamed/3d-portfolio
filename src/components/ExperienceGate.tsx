@@ -7,6 +7,7 @@ import GlobalCanvas from "./GlobalCanvas";
 import Loader from "./Loader";
 import PerfBanner from "./PerfBanner";
 import SizeGate from "./SizeGate";
+import { isLanding } from "./landing/routes";
 import { lenis } from "./SmoothScroll";
 
 const LITE_HASH: Record<string, string> = { "/": "", "/projects": "#work", "/about": "#about", "/contact": "#contact", "/board": "#work" };
@@ -41,14 +42,16 @@ export default function ExperienceGate() {
     if (want && pathname in LITE_HASH) router.replace(`/lite${LITE_HASH[pathname]}`);
   }, [pathname, onLitePath, router]);
 
-  // the journey locks scrolling until "Enter"; the lite site never does
+  const onLanding = isLanding(pathname);
+
+  // the journey locks scrolling until "Enter"; the lite site and the product landing pages never do
   useEffect(() => {
-    if (lite || onLitePath) lenis?.start();
+    if (lite || onLitePath || onLanding) lenis?.start();
     else if (!useApp.getState().entered) lenis?.stop();
-  }, [lite, onLitePath]);
+  }, [lite, onLitePath, onLanding]);
 
   // the car showrooms, the brick world and the other playground pieces bring their own canvas; the journey must not render underneath them
-  if (lite || onLitePath || pathname.startsWith("/lykan") || pathname.startsWith("/cars") || pathname.startsWith("/lego") || pathname.startsWith("/hotwheels") || pathname.startsWith("/rover") || pathname.startsWith("/diffusion") || pathname.startsWith("/voice")) return null;
+  if (lite || onLitePath || pathname.startsWith("/lykan") || pathname.startsWith("/cars") || pathname.startsWith("/lego") || pathname.startsWith("/hotwheels") || pathname.startsWith("/rover") || pathname.startsWith("/diffusion") || pathname.startsWith("/voice") || onLanding) return null;
   return (
     <>
       <Loader />

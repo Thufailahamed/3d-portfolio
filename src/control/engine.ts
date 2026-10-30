@@ -533,6 +533,8 @@ class MissionControl {
     // built-in hold for the propellant-load poll
     if (ops.tMinus > 2280 && t <= 2280 && ops.pollState !== "go") {
       t = 2280;
+      // the hold call stands in for the T−38 "stand by for the poll" line: it must not replay once the poll is go
+      this.fired.add(2280);
       s.set({ ops: { ...ops, tMinus: t, holding: true, hold: "Built-in hold: go/no-go poll for propellant load", pollState: "due" } });
       this.say("LD", "We are in the planned built-in hold at T minus 38 minutes. Stand by for the poll.", "info");
       return;
