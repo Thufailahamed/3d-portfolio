@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { person } from "@/content/site";
 import { gsap } from "@/lib/gsap";
@@ -13,6 +13,7 @@ import { useApp } from "@/store/useApp";
  */
 export default function Loader() {
   const pathname = usePathname();
+  const router = useRouter();
   const root = useRef<HTMLDivElement>(null);
   const counter = useRef<HTMLSpanElement>(null);
   const bar = useRef<HTMLSpanElement>(null);
@@ -67,8 +68,14 @@ export default function Loader() {
     }
   }, [canEnter, pathname]);
 
-  const enter = () => {
+  // the visitor picks the edition here; remembered for the session so the gate keeps their choice
+  const choose = (mode: "full" | "lite") => {
     if (!canEnter) return;
+    sessionStorage.setItem("mode", mode);
+    if (mode === "lite") {
+      router.push("/lite");
+      return;
+    }
     useApp.getState().set({ entered: true });
     if (!root.current) {
       sceneState.intro = 1;
@@ -102,22 +109,35 @@ export default function Loader() {
       </div>
 
       <div className="relative flex flex-1 items-center">
-        <button
-          ref={button}
-          type="button"
-          onClick={enter}
-          disabled={!canEnter}
-          data-cursor="enter"
-          className="loader-fade group label relative !text-fg transition-opacity duration-500 disabled:cursor-wait disabled:opacity-40 md:ml-[16vw]"
-        >
-          {canEnter ? "Enter the experience" : "Calibrating signal"}
-          <span className="absolute -bottom-2 left-0 h-px w-full origin-left bg-fg/20" />
-          <span
-            ref={bar}
-            className="absolute -bottom-2 left-0 h-px w-full origin-left bg-accent"
-            style={{ transform: "scaleX(0)" }}
-          />
-        </button>
+        <div className="loader-fade flex flex-col items-start gap-8 md:ml-[16vw]">
+          <button
+            ref={button}
+            type="button"
+            onClick={() => choose("full")}
+            disabled={!canEnter}
+            data-cursor="enter"
+            className="group label relative !text-fg transition-opacity duration-500 disabled:cursor-wait disabled:opacity-40"
+          >
+            {canEnter ? "Full 3D experience" : "Calibrating signal"}
+            <span className="absolute -bottom-2 left-0 h-px w-full origin-left bg-fg/20" />
+            <span
+              ref={bar}
+              className="absolute -bottom-2 left-0 h-px w-full origin-left bg-accent"
+              style={{ transform: "scaleX(0)" }}
+            />
+          </button>
+          {canEnter && (
+            <button
+              type="button"
+              onClick={() => choose("lite")}
+              data-cursor="enter"
+              className="group label relative !text-fg/60 transition-colors duration-500 hover:!text-fg"
+            >
+              Light version
+              <span className="absolute -bottom-2 left-0 h-px w-full origin-left bg-fg/20" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="relative flex items-end justify-between gap-4">

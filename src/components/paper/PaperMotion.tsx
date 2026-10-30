@@ -335,7 +335,10 @@ export default function PaperMotion({ className = "", children }: { className?: 
         const back = q(story, '[data-half="back"]');
         const hero = q(story, "[data-hero]");
         gsap.set([...lines(story, "pick"), ...lines(story, "hood"), ...lines(story, "close")], { yPercent: 115 });
+        const sides = q(story, "[data-nn-sides]");
+        const unify = q(story, "[data-nn-unify]");
         gsap.set(hero, { yPercent: 18, autoAlpha: 0 });
+        gsap.set([sides, unify], { autoAlpha: 0 });
         gsap
           .timeline({
             defaults: { ease: "none" },
@@ -350,8 +353,11 @@ export default function PaperMotion({ className = "", children }: { className?: 
           .to(back, { xPercent: 100, duration: 2, ease: "power2.inOut" }, 0.8)
           .to(hero, { yPercent: 0, autoAlpha: 1, duration: 1.6, ease: "power2.out" }, 1.5)
           .to(lines(story, "pick"), { yPercent: 0, duration: 0.8, stagger: 0.12 }, 2.8)
+          .to(sides, { autoAlpha: 1, duration: 0.8 }, 2.9)
           .to(lines(story, "pick"), { yPercent: -115, duration: 0.6, stagger: 0.08 }, 4.4)
+          .to(sides, { autoAlpha: 0, duration: 0.7 }, 4.5)
           .to(lines(story, "hood"), { yPercent: 0, duration: 0.8, stagger: 0.12 }, 5)
+          .to(unify, { autoAlpha: 1, duration: 1 }, 5.1)
           .to(lines(story, "hood"), { yPercent: -115, duration: 0.6, stagger: 0.08 }, 6.8)
           .to(hero, { scale: 0.92, duration: 1.6 }, 7)
           .to(front, { xPercent: 0, duration: 1.8, ease: "power2.inOut" }, 7.1)

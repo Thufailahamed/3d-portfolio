@@ -378,7 +378,7 @@ export const caseNote = () =>
   noteTexture([
     "Case file — 2026",
     person.name.toUpperCase(),
-    "Founder & engineer, SynapX",
+    "AI Engineer",
     "6 production systems · 1 desk",
     "Origin: Colombo (6.93°N 79.85°E)",
     "All systems verified live.",

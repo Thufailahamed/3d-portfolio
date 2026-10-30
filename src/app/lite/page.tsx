@@ -90,9 +90,14 @@ function RopeAt({ points }: { points: [string, string][] }) {
 }
 
 /** A caption whose lines rise out of a mask; the last line takes the accent. */
-function Cap({ side, cap, words, em = true }: { side: "front" | "back" | "center"; cap: string; words: string[]; em?: boolean }) {
+function Cap({ side, cap, words, em = true, kicker }: { side: "front" | "back" | "center"; cap: string; words: string[]; em?: boolean; kicker?: string }) {
   return (
     <p className={`p-cap p-cap--${side}`} data-cap={cap}>
+      {kicker && (
+        <span className="p-cap__line p-cap__kicker p-mono">
+          <span>{kicker}</span>
+        </span>
+      )}
       {words.map((w, i) => (
         <span key={i} className="p-cap__line">
           <span>{em && i === words.length - 1 ? <em>{w}</em> : w}</span>
@@ -281,8 +286,8 @@ export default function LitePage() {
           <div className="p-split__hero" data-hero aria-hidden>
             <NeuralNet />
           </div>
-          <Cap side="center" cap="pick" words={story.pick} />
-          <Cap side="center" cap="hood" words={story.hood} />
+          <Cap side="center" cap="pick" words={story.pick} kicker="The usual way" />
+          <Cap side="center" cap="hood" words={story.hood} kicker="The other way" />
 
           <div className="p-split__half p-split__half--front" data-half="front" data-tone="paper">
             <Cap side="front" cap="open" words={story.open.front} />

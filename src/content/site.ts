@@ -40,7 +40,7 @@ export type Project = {
 export const person = {
   name: "Thufail Ahamed",
   shortName: "THUFAIL AHAMED",
-  role: "Founder & engineer, SynapX",
+  role: "AI Engineer",
   location: "Colombo, Sri Lanka",
   email: "thufailahamed627@gmail.com",
   available: true,
@@ -75,7 +75,7 @@ export const beats = {
 export const about = {
   headline: "From schema to screen",
   body: [
-    "I'm Thufail Ahamed, founder of SynapX — an engineering studio in Colombo building software, agentic AI, IoT and cloud systems.",
+    "I'm Thufail Ahamed, an AI engineer at SynapX — an engineering studio in Colombo building software, agentic AI, IoT and cloud systems.",
     "I work end to end: data models and row-level security, edge APIs, AI copilots grounded in real records, and the interfaces people use every day. Six of those systems are live above.",
   ],
   annotations: [

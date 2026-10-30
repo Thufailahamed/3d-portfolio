@@ -106,58 +106,119 @@ export function Mast() {
 /** The hero behind the split: a small network, with activations running through it. */
 export function NeuralNet() {
   const rnd = seeded(11);
+  const CX = 380;
   const layers = [
-    { x: 80, n: 4, label: "Input" },
-    { x: 225, n: 6, label: "Embed" },
-    { x: 375, n: 6, label: "Attend" },
-    { x: 520, n: 3, label: "Output" },
+    { x: 196, n: 4, label: "Input" },
+    { x: 322, n: 6, label: "Embed" },
+    { x: 438, n: 6, label: "Attend" },
+    { x: 564, n: 3, label: "Output" },
   ];
-  const nodes = layers.map((l) => Array.from({ length: l.n }, (_, j) => ({ x: l.x, y: 300 + (j - (l.n - 1) / 2) * 74 })));
-  const edges: { a: { x: number; y: number }; b: { x: number; y: number }; live: boolean; delay: number }[] = [];
+  const nodes = layers.map((l) => Array.from({ length: l.n }, (_, j) => ({ x: l.x, y: 290 + (j - (l.n - 1) / 2) * 72 })));
+  const curve = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    const k = (b.x - a.x) * 0.5;
+    return `M${a.x} ${a.y}C${a.x + k} ${a.y} ${b.x - k} ${b.y} ${b.x} ${b.y}`;
+  };
+  const edges: { d: string; w: number; live: boolean; delay: number }[] = [];
   for (let i = 0; i < nodes.length - 1; i++)
-    for (const a of nodes[i]) for (const b of nodes[i + 1]) edges.push({ a, b, live: rnd() > 0.66, delay: r1(rnd() * 3.2 + i * 0.5) });
+    for (const a of nodes[i])
+      for (const b of nodes[i + 1]) edges.push({ d: curve(a, b), w: r1(0.25 + rnd() * 0.75), live: rnd() > 0.62, delay: r1(rnd() * 3.2 + i * 0.5) });
+  const inputs = ["prompt", "files", "records", "context"];
   const outputs = ["answer", "citation", "action"];
+  // mono at 11px runs ~6.6px a glyph; pills are sized to their word
+  const pill = (w: string) => Math.round(w.length * 6.6 + 22);
   return (
-    <svg viewBox="0 0 600 640" aria-hidden focusable="false">
+    <svg viewBox="0 0 760 640" aria-hidden focusable="false">
       <defs>
         <radialGradient id="p-nn-glow">
           <stop offset="0" className="p-nn__glow-a" />
           <stop offset="1" className="p-nn__glow-b" />
         </radialGradient>
+        <linearGradient id="p-nn-floor" x1="0" x2="1">
+          <stop offset="0" stopColor="#ff6a3d" stopOpacity="0" />
+          <stop offset="0.5" stopColor="#ff6a3d" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#ff6a3d" stopOpacity="0" />
+        </linearGradient>
       </defs>
-      <ellipse cx="300" cy="300" rx="300" ry="270" fill="url(#p-nn-glow)" />
-      <ellipse className="p-nn__shadow" cx="300" cy="600" rx="220" ry="26" />
-      {edges.map((e, i) => (
-        <path key={i} className="p-nn__edge" d={`M${e.a.x} ${e.a.y}L${e.b.x} ${e.b.y}`} />
+
+      <ellipse cx={CX} cy="290" rx="330" ry="280" fill="url(#p-nn-glow)" />
+      <g className="p-nn__orbits">
+        <circle cx={CX} cy="290" r="170" />
+        <circle cx={CX} cy="290" r="250" />
+        <circle className="p-nn__orbit-spin" cx={CX} cy="290" r="250" pathLength={100} />
+      </g>
+
+      {/* pick a side: the product half and the model half, drawn apart */}
+      <g className="p-nn__sides" data-nn-sides>
+        <rect className="p-nn__side p-nn__side--front" x="120" y="40" width={CX - 120} height="500" rx="18" />
+        <rect className="p-nn__side p-nn__side--back" x={CX} y="40" width={CX - 120} height="500" rx="18" />
+        <path className="p-nn__divide" d={`M${CX} 28V552`} />
+        <text className="p-nn__side-label" x="136" y="64">
+          Product
+        </text>
+        <text className="p-nn__side-label p-nn__side-label--back" x={2 * CX - 136} y="64" textAnchor="end">
+          Model
+        </text>
+      </g>
+
+      {layers.map((l, i) => (
+        <rect key={l.label} className="p-nn__rail" x={l.x - 22} y={nodes[i][0].y - 30} width="44" height={nodes[i][l.n - 1].y - nodes[i][0].y + 60} rx="22" />
       ))}
+
+      {edges.map((e, i) => (
+        <path key={i} className="p-nn__edge" d={e.d} style={{ "--w": e.w } as React.CSSProperties} />
+      ))}
+      {/* this one builds both: every weight lights at once */}
+      <g className="p-nn__unify" data-nn-unify>
+        {edges.map((e, i) => (
+          <path key={i} d={e.d} style={{ "--w": e.w } as React.CSSProperties} />
+        ))}
+      </g>
       {edges
         .filter((e) => e.live)
         .map((e, i) => (
-          <path
-            key={i}
-            className="p-nn__pulse"
-            d={`M${e.a.x} ${e.a.y}L${e.b.x} ${e.b.y}`}
-            pathLength={100}
-            style={{ animationDelay: `-${e.delay}s` }}
-          />
+          <path key={i} className="p-nn__pulse" d={e.d} pathLength={100} style={{ animationDelay: `-${e.delay}s` }} />
         ))}
+
+      {nodes[0].map((n, j) => (
+        <g key={inputs[j]} className="p-nn__tag p-nn__tag--in">
+          <path d={`M${n.x - 40} ${n.y}H${n.x - 15}`} />
+          <rect x={n.x - 40 - pill(inputs[j])} y={n.y - 12} width={pill(inputs[j])} height="24" rx="12" />
+          <text x={n.x - 40 - pill(inputs[j]) / 2} y={n.y + 4} textAnchor="middle">
+            {inputs[j]}
+          </text>
+        </g>
+      ))}
+      {nodes[3].map((n, j) => (
+        <g key={outputs[j]} className="p-nn__tag p-nn__tag--out">
+          <path d={`M${n.x + 15} ${n.y}H${n.x + 40}`} />
+          <rect x={n.x + 40} y={n.y - 12} width={pill(outputs[j])} height="24" rx="12" />
+          <text x={n.x + 40 + pill(outputs[j]) / 2} y={n.y + 4} textAnchor="middle">
+            {outputs[j]}
+          </text>
+        </g>
+      ))}
+
       {nodes.map((col, i) =>
         col.map((n, j) => (
           <g key={`${i}-${j}`} className={`p-nn__unit p-nn__unit--${i}`}>
-            <circle className="p-nn__node" cx={n.x} cy={n.y} r="13" />
-            <circle className="p-nn__core" cx={n.x} cy={n.y} r="4.5" style={{ animationDelay: `-${r1(rnd() * 2.4)}s` }} />
+            <circle className="p-nn__halo" cx={n.x} cy={n.y} r="20" />
+            <circle className="p-nn__node" cx={n.x} cy={n.y} r="12" />
+            <circle className="p-nn__core" cx={n.x} cy={n.y} r="4" style={{ animationDelay: `-${r1(rnd() * 2.4)}s` }} />
           </g>
         )),
       )}
-      {nodes[3].map((n, j) => (
-        <text key={j} className="p-nn__out" x={n.x + 24} y={n.y + 4}>
-          {outputs[j]}
-        </text>
-      ))}
-      {layers.map((l) => (
-        <text key={l.label} className="p-nn__label" x={l.x} y="560" textAnchor="middle">
-          {l.label}
-        </text>
+
+      <path className="p-nn__floor" d="M120 552H640" />
+      {layers.map((l, i) => (
+        <g key={l.label} className="p-nn__label">
+          <text className="p-nn__label-n" x={l.x} y="580" textAnchor="middle">
+            0{i + 1}
+          </text>
+          <text x={l.x} y="598" textAnchor="middle">
+            {l.label}
+          </text>
+          <path d={`M${l.x} 556v8`} />
+        </g>
       ))}
     </svg>
   );

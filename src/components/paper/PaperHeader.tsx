@@ -76,6 +76,9 @@ export default function PaperHeader() {
                   </a>
                 </li>
               ))}
+              <li>
+                <FullExperienceLink className="p-navlink p-mono">3D version</FullExperienceLink>
+              </li>
             </ul>
           </nav>
           <p className="p-head__meta p-mono">

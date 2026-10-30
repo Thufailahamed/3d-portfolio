@@ -34,9 +34,11 @@ export default function ExperienceGate() {
   useEffect(() => {
     const chosen = sessionStorage.getItem("mode");
     if (onLitePath) sessionStorage.setItem("mode", "lite");
+    // the home page offers the choice again on every visit, so a lite pick only sticks elsewhere
+    const pickedLite = chosen === "lite" && pathname !== "/";
     const want =
       onLitePath ||
-      chosen === "lite" ||
+      pickedLite ||
       (chosen !== "full" && (!hasWebGL2() || matchMedia("(prefers-reduced-motion: reduce)").matches));
     useApp.getState().set({ lite: want });
     if (want && pathname in LITE_HASH) router.replace(`/lite${LITE_HASH[pathname]}`);
